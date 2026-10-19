@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=GameTable
+Comment=Play games against up to ten AI models
+Exec=gametable
+Icon=io.github.takmikill.GameTable
+Terminal=false
+Type=Application
+Categories=Game;
+Keywords=board;mafia;werewolf;cards;ai;
+StartupWMClass=GameTable

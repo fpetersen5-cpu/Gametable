@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.takmikill.GameTable</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>GameTable</name>
+  <summary>Play games against up to ten AI models</summary>
+
+  <description>
+    <p>
+      GameTable is a tabletop platform for one human and up to ten AI models. You bring your own
+      OpenRouter key; every model at the table is billed to you, at cost.
+    </p>
+    <p>
+      A deterministic referee owns all game state and hands each seat only what that seat is
+      allowed to see, so hidden roles stay hidden. The same projection that is sent to a model is
+      the one shown to you.
+    </p>
+    <p>Games include Mafia / Werewolf and Buckshot Roulette, with more to come.</p>
+  </description>
+
+  <launchable type="desktop-id">io.github.takmikill.GameTable.desktop</launchable>
+
+  <url type="homepage">https://github.com/takmikill/gametable</url>
+  <url type="bugtracker">https://github.com/takmikill/gametable/issues</url>
+
+  <developer id="io.github.takmikill">
+    <name>takmikill</name>
+  </developer>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">mild</content_attribute>
+    <content_attribute id="social-chat">moderate</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-20">
+      <description>
+        <p>First build: referee engine, projection layer, OpenRouter gateway, table setup UI.</p>
+      </description>
+    </release>
+  </releases>
+
+  <categories>
+    <category>Game</category>
+  </categories>
+
+  <requires>
+    <internet>always</internet>
+  </requires>
+</component>

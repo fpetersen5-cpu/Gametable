@@ -1,0 +1,175 @@
+import {
+  matchAction,
+  type ActionRequest,
+  type Controller,
+  type GameAction,
+  type Seat,
+  type SeatId,
+  type SeatUsage,
+} from '@gametable/engine';
+import {
+  type CompletionRequest,
+  type CompletionResult,
+  type ProviderPreferences,
+} from './openrouter.js';
+import {
+  actionSchema,
+  buildSystemPrompt,
+  buildUserPrompt,
+  parseJsonReply,
+} from './prompt.js';
+import { Semaphore } from './semaphore.js';
+
+export interface LlmSeatConfig {
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  persona?: string;
+  provider?: ProviderPreferences;
+}
+
+export interface LlmControllerDeps {
+  client: CompletionClient;
+  gameName: string;
+  config: LlmSeatConfig;
+  /** Shared across every seat so the key is not hammered. */
+  semaphore?: Semaphore;
+}
+
+export interface CompletionClient {
+  complete(req: CompletionRequest): Promise<CompletionResult>;
+}
+
+/**
+ * An LLM seat. It sees exactly the projection the human seat sees, and can only
+ * emit an action the engine already offered.
+ */
+export class LlmController implements Controller {
+  readonly kind = 'llm' as const;
+  private notes = '';
+  private counters = {
+    calls: 0,
+    tokensIn: 0,
+    tokensOut: 0,
+    costUsd: 0,
+    latencyMs: 0,
+    invalidActions: 0,
+    fallbacks: 0,
+  };
+
+  constructor(private readonly deps: LlmControllerDeps) {}
+
+  async act(req: ActionRequest): Promise<GameAction> {
+    const { client, gameName, config, semaphore } = this.deps;
+    const legal = req.view.legalActions;
+    if (legal.length === 0) throw new Error(`no legal actions for ${req.seat.id}`);
+
+    const seatNames = new Map(req.view.seats.map((s) => [s.id, s.name]));
+    const system = buildSystemPrompt({
+      gameName,
+      briefing: req.view.briefing,
+      seat: req.seat,
+      persona: config.persona,
+      legalActions: legal,
+    });
+    const messages = [
+      { role: 'system' as const, content: system },
+      ...buildUserPrompt({ view: req.view, seatNames, memoryNotes: this.notes }),
+    ];
+
+    const schema = actionSchema(legal);
+    const call = (msgs: typeof messages) =>
+      (semaphore ? semaphore.run(() => this.complete(msgs, schema, req)) : this.complete(msgs, schema, req));
+
+    let result = await call(messages);
+    let reply = parseJsonReply(result.text);
+    let action = reply ? matchAction(legal, reply.action) : null;
+
+    if (!action) {
+      this.counters.invalidActions += 1;
+      messages.push(
+        { role: 'assistant', content: result.text.slice(0, 2_000) },
+        {
+          role: 'user',
+          content:
+            'That reply was not one of the legal actions. Respond again with a single JSON ' +
+            'object whose "action" copies one legal action exactly, including its "type".',
+        },
+      );
+      result = await call(messages);
+      reply = parseJsonReply(result.text);
+      action = reply ? matchAction(legal, reply.action) : null;
+    }
+
+    if (!action) {
+      throw new Error(
+        `model ${config.model} did not produce a legal action for seat ${req.seat.id}`,
+      );
+    }
+
+    if (typeof reply?.notes === 'string' && reply.notes.trim()) {
+      this.notes = reply.notes.trim().slice(-1_200);
+    }
+    return action;
+  }
+
+  usage(): Partial<SeatUsage> {
+    return {
+      calls: this.counters.calls,
+      tokensIn: this.counters.tokensIn,
+      tokensOut: this.counters.tokensOut,
+      costUsd: Number(this.counters.costUsd.toFixed(6)),
+      latencyMs: this.counters.latencyMs,
+      invalidActions: this.counters.invalidActions,
+    };
+  }
+
+  get privateNotes(): string {
+    return this.notes;
+  }
+
+  private async complete(
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    schema: ReturnType<typeof actionSchema>,
+    req: ActionRequest,
+  ): Promise<CompletionResult> {
+    const { client, config } = this.deps;
+    this.counters.calls += 1;
+    const result = await client.complete({
+      model: config.model,
+      messages,
+      temperature: config.temperature ?? 0.8,
+      maxTokens: config.maxTokens ?? 600,
+      jsonSchema: schema,
+      provider: {
+        requireParameters: true,
+        allowFallbacks: true,
+        ...config.provider,
+      },
+      signal: AbortSignal.timeout(Math.max(1_000, req.timeoutMs)),
+    });
+    this.counters.tokensIn += result.usage.promptTokens;
+    this.counters.tokensOut += result.usage.completionTokens;
+    this.counters.costUsd += result.usage.costUsd;
+    this.counters.latencyMs += result.latencyMs;
+    return result;
+  }
+}
+
+/** Build controllers for an all-LLM table (spectator mode or Gauntlet). */
+export function createLlmControllers(
+  seats: Seat[],
+  configs: Map<SeatId, LlmSeatConfig>,
+  client: CompletionClient,
+  gameName: string,
+  concurrency = 6,
+): Map<SeatId, LlmController> {
+  const semaphore = new Semaphore(concurrency);
+  const controllers = new Map<SeatId, LlmController>();
+  for (const seat of seats) {
+    const config = configs.get(seat.id);
+    if (!config) throw new Error(`no LLM config for seat ${seat.id}`);
+    controllers.set(seat.id, new LlmController({ client, gameName, config, semaphore }));
+  }
+  return controllers;
+}

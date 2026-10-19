@@ -1,0 +1,27 @@
+{
+  "name": "gametable",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One human vs. up to ten AI models. A Flatpak tabletop platform.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint:games": "node scripts/check-game-branching.mjs",
+    "check": "npm run typecheck && npm run lint:games && npm test",
+    "build": "npm run build -w @gametable/desktop && npm run build -w @gametable/cli",
+    "cli": "npm run build -w @gametable/cli && node apps/cli/dist/cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

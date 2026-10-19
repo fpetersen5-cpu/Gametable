@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@gametable/engine": ["packages/engine/src/index.ts"],
+      "@gametable/agent": ["packages/agent/src/index.ts"],
+      "@gametable/stats": ["packages/stats/src/index.ts"],
+      "@gametable/sdk-conformance": ["packages/sdk-conformance/src/index.ts"],
+      "@gametable/games-mafia": ["packages/games-mafia/src/index.ts"],
+      "@gametable/games-buckshot": ["packages/games-buckshot/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/**/*.ts",
+    "apps/**/*.tsx"
+  ],
+  "exclude": ["node_modules", "**/dist/**"]
+}

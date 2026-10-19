@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint:games
+      - run: npm test
+      - run: npm run build
+
+  flatpak:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder pipx
+          pipx install flatpak-node-generator
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y flathub org.freedesktop.Sdk//24.08 \
+            org.freedesktop.Sdk.Extension.node22//24.08 \
+            org.electronjs.Electron2.BaseApp//24.08
+      - run: npm ci
+      - run: flatpak-node-generator npm package-lock.json -o flatpak/node-sources.json
+      - run: ./flatpak/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gametable-flatpak
+          path: GameTable.flatpak

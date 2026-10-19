@@ -1,0 +1,18 @@
+{
+  "name": "@gametable/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gametable": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && node dist/cli.js"
+  },
+  "dependencies": {    "@gametable/agent": "*",
+    "@gametable/engine": "*",
+    "@gametable/sdk-conformance": "*",
+    "@gametable/stats": "*"
+  }
+}

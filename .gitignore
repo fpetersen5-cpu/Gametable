@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+*.log
+*.flatpak
+*.flatpakref
+flatpak/build/
+flatpak/repo/
+flatpak/.flatpak-builder/
+node-cache/
+.generated-sources/
+.secrets/
+results/
+.DS_Store
