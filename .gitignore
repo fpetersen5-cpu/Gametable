@@ -12,3 +12,4 @@ node-cache/
 .secrets/
 results/
 .DS_Store
+results.jsonl

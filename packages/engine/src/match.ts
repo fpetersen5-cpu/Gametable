@@ -74,7 +74,7 @@ export interface RunOptions {
   now?: () => number;
 }
 
-export const ENGINE_VERSION = '0.1.0';
+export const ENGINE_VERSION = '1.0.0';
 
 function emptyUsage(): SeatUsage {
   return {
@@ -100,8 +100,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, seatId: SeatId): Promis
 
 /**
  * A submission is legal when it carries the option's `type` and agrees with
- * every field of the option. Extra fields (a model's reasoning, a persona tag)
- * are stripped so they can never reach game state.
+ * every field of the option. An empty string in a legal action is a wildcard
+ * for free text (a chat line, an accusation). Extra fields (a model's
+ * reasoning, a persona tag) are stripped so they can never reach game state.
  */
 export function matchAction(legal: GameAction[], submitted: unknown): GameAction | null {
   if (typeof submitted !== 'object' || submitted === null) return null;
@@ -109,10 +110,18 @@ export function matchAction(legal: GameAction[], submitted: unknown): GameAction
   if (typeof candidate.type !== 'string') return null;
   for (const option of legal) {
     if (option.type !== candidate.type) continue;
-    const agrees = Object.entries(option).every(([key, value]) =>
-      key === 'type' ? true : deepEqual(candidate[key], value),
-    );
-    if (agrees) return option;
+    const agrees = Object.entries(option).every(([key, value]) => {
+      if (key === 'type') return true;
+      if (value === '') return typeof candidate[key] === 'string';
+      return deepEqual(candidate[key], value);
+    });
+    if (agrees) {
+      const normalized: GameAction = { ...option };
+      for (const [key, value] of Object.entries(option)) {
+        if (value === '' && typeof candidate[key] === 'string') normalized[key] = candidate[key];
+      }
+      return normalized;
+    }
   }
   return null;
 }

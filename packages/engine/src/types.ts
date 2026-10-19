@@ -1,6 +1,10 @@
 /**
  * Core game-definition contract.
  *
+ * Frozen at v1.0 (M2c). Additions must be optional and additive; breaking
+ * changes require a major version bump of ENGINE_VERSION and every shipped
+ * game must move with it.
+ *
  * The engine is a referee: it owns all state, decides what each seat is
  * allowed to see (`view`) and allowed to do (`legalActions` via the view),
  * and validates every action (`apply`). Game modules never call out to the

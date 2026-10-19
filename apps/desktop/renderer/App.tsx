@@ -282,11 +282,10 @@ function TableSetup(props: {
 
       <section className="callout">
         <div>
-          <strong>Buckshot Roulette is in.</strong>
+          <strong>Buckshot Roulette and Mafia are in.</strong>
           <p className="muted">
-            The duel rules, all nine items and the exact-optimality solver are done, and playable
-            from the CLI today. The in-app table lands with the UI milestone; Mafia/Werewolf rules
-            are next.
+            Both rule sets, the expectiminimax solver and the cross-game compatibility gate are
+            done, and playable from the CLI today. The in-app table lands with the UI milestone.
           </p>
         </div>
         <button className="primary" disabled>

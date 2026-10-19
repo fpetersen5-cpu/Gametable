@@ -10,12 +10,14 @@ import { resolve } from 'node:path';
 import { RandomBot, runMatch, type Controller, type GameDef, type Seat } from '@gametable/engine';
 import { mines } from '@gametable/sdk-conformance';
 import { buckshot, runGauntlet } from '@gametable/games-buckshot';
+import { mafia } from '@gametable/games-mafia';
 import { OpenRouterClient, LlmController, createLlmControllers, type LlmSeatConfig } from '@gametable/agent';
 import { ResultsStore, bradleyTerry, toRecord } from '@gametable/stats';
 
 const games = new Map<string, GameDef<any>>([
   [mines.id, mines],
   [buckshot.id, buckshot],
+  [mafia.id, mafia],
 ]);
 
 function usage(): void {

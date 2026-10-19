@@ -15,6 +15,7 @@ import {
   type Seat,
   type SeatId,
 } from '@gametable/engine';
+import { auditCapabilities, runGatewayRoundTrip, runPipelineCheck } from './audits.js';
 
 export interface CheckResult {
   name: string;
@@ -141,8 +142,13 @@ export async function runConformance<S>(
                   throw new Error(`seat ${actorId} has no legal actions in ${phase.id}`);
                 }
               }
-              const action = def.view(state, actors[0] as SeatId).legalActions[0] as GameAction;
-              state = def.apply(state, actors[0] as SeatId, action);
+              // Apply every actor in the phase: simultaneous phases only
+              // advance once all of them have acted.
+              for (const actorId of actors) {
+                const action = def.view(state, actorId).legalActions[0] as GameAction;
+                state = def.apply(state, actorId, action);
+                if (def.terminal(state)) break;
+              }
               if (++steps > maxActions) throw new Error('detected a possible loop');
             }
           }
@@ -191,6 +197,33 @@ export async function runConformance<S>(
         if (!threw) throw new Error('view() returned a projection for an unknown seat');
       },
     },
+    {
+      name: 'capabilities satisfy the platform contract',
+      run: async () => {
+        const issues = auditCapabilities(def);
+        if (issues.length > 0) throw new Error(issues.join('; '));
+        return `${def.capabilities.uiPanels.length} panels declared`;
+      },
+    },
+    {
+      name: 'a full match is playable through the LLM gateway',
+      run: async () => {
+        const trip = await runGatewayRoundTrip(def);
+        if (trip.result.events.length === 0) throw new Error('the match produced no actions');
+        if (trip.fallbacks > 0) {
+          throw new Error(`${trip.fallbacks} fallback actions: a model reply was rejected`);
+        }
+        return `${trip.result.events.length} actions, ${trip.calls} model calls`;
+      },
+    },
+    {
+      name: 'results survive the store and produce ratings',
+      run: async () => {
+        const { records, ratings } = await runPipelineCheck(def);
+        if (ratings.length === 0) throw new Error('no model ratings produced');
+        return `${records.length} record, ${ratings.length} rated models`;
+      },
+    },
   ];
 
   for (const check of checks) {
@@ -224,3 +257,5 @@ function expectEqual(actual: unknown, expected: unknown, message: string): void 
 
 export { mines } from './toy-mines.js';
 export type { MinesState } from './toy-mines.js';
+export * from './audits.js';
+export * from './fake-model.js';

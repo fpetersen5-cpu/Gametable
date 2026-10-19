@@ -42,7 +42,7 @@ export const mines: GameDef<MinesState> = {
     items: false,
     health: false,
     solver: false,
-    uiPanels: [],
+    uiPanels: ['seat-ring', 'phase-banner', 'action-panel'],
   },
 
   setup(ctx: SetupContext): MinesState {

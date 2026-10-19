@@ -9,6 +9,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@gametable/engine": "*"
+    "@gametable/agent": "*",
+    "@gametable/engine": "*",
+    "@gametable/stats": "*"
   }
 }

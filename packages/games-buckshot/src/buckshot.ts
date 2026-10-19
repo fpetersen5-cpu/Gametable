@@ -390,7 +390,7 @@ export const buckshot: GameDef<BuckshotState> = {
     items: true,
     health: true,
     solver: true,
-    uiPanels: ['health-bar', 'item-belt', 'chamber', 'round-tracker'],
+    uiPanels: ['seat-ring', 'phase-banner', 'action-panel', 'health-bar', 'item-belt', 'chamber', 'round-tracker'],
   },
 
   setup(ctx: SetupContext): BuckshotState {

@@ -25,15 +25,15 @@ makes hidden-role games work at all.
 | **M0** — skeleton, Flatpak manifest, key entry, model picker, secret storage, headless CLI | done |
 | M1 — engine hardening, agent gateway polish, leak checker in CI | engine + gateway are in place, being hardened |
 | **M2a** — Buckshot Roulette: rules, 9 items, expectiminimax oracle, Gauntlet | **done** |
-| M2b — Mafia / Werewolf | next |
-| M2c — cross-game compatibility gate | next |
-| M3 — game tables, spectator mode, replay | pending |
+| **M2b** — Mafia / Werewolf: roles, night phases, discussion, votes, runoff | **done** |
+| **M2c** — cross-game compatibility gate (GameDef frozen at v1.0) | **done** |
+| M3 — game tables, spectator mode, replay | next |
 | M4 — results store + leaderboards | store and Bradley–Terry ratings are in place |
 | M5 — signed `.flatpak` bundle | manifest ready, build not yet verified on this machine |
 
 The Table screen currently sets up seats and models; "Deal me in" is disabled
-until the in-app game table lands (M3). Buckshot Roulette is playable today from
-the CLI.
+until the in-app game table lands (M3). Both games are playable today from the
+CLI.
 
 ## Quick start (development)
 
@@ -50,6 +50,7 @@ Headless, no API key needed:
 ```bash
 npm run cli -- run --game toy.mines --seats 5 --seed 42
 npm run cli -- run --game buckshot --seed 7 --oracle
+npm run cli -- run --game mafia --seats 8 --seed 11
 npm run cli -- gauntlet --seed 3
 npm run cli -- leaderboard --file ./results.jsonl
 ```
@@ -74,9 +75,10 @@ npm test
 ```
 packages/engine/           referee, projections, event log, match runner, bots
 packages/games-buckshot/   duel rules, items, expectiminimax oracle, gauntlet
+packages/games-mafia/      roles, night phases, discussion, votes, runoff
 packages/agent/            OpenRouter client, prompt builder, LLM seat, semaphore
 packages/stats/            frozen results record, JSONL store, Bradley–Terry
-packages/sdk-conformance/  generic GameDef test suite + toy game fixture
+packages/sdk-conformance/  cross-game gate + toy game fixture + fake model
 apps/desktop/              Electron main + preload + React renderer
 apps/cli/                  headless runner (also the eval harness)
 flatpak/                   manifest, metainfo, icon, launcher, build scripts
@@ -111,6 +113,50 @@ It reports **EV loss per decision**, which is an objective suboptimality number
 rather than a win rate. Two documented approximations: a refilled chamber is
 assumed 2 live / 2 blank, and a burner phone is modelled as a peek at the next
 shell. The oracle is engine-side only and never reachable from a prompt.
+
+## Mafia / Werewolf
+
+5 to 11 seats. Roles are dealt by seat count: one mafia for 5–6, two for 7–9,
+three for 10–11; a doctor always, a detective from 6 seats, a jester from 8.
+The mafia confer in a private channel, then vote on a kill; the doctor may
+protect one seat; the detective learns one alignment. At dawn the result is
+announced and the dead seat's role is revealed. The town discusses in seat
+order, then votes; a tie goes to a runoff between the tied seats, and a tied
+runoff kills nobody. The town wins when every mafia is gone; the mafia win when
+they equal or outnumber the town; the jester wins by being voted out.
+
+```bash
+npm run cli -- run --game mafia --seats 8 --seed 11
+```
+
+A seat's view contains its own role, the public log and chat, the mafia
+channel only if it is mafia, and investigations only if it is the detective.
+`discussionRounds: 0` plays a silent day — the null-chat path the gate exercises.
+
+## The cross-game compatibility gate
+
+`packages/sdk-conformance` is a generic suite that every `GameDef` must pass.
+It runs against all three games (Mafia, Buckshot, and a deliberately tiny toy
+fixture), so an abstraction shaped around one genre shows up immediately.
+
+| Check | Catches |
+|---|---|
+| every seat count completes a match | untested seat ranges, deadlocks |
+| same seed and actions produce the same match | hidden nondeterminism |
+| replay reconstructs the final state | event-log gaps |
+| state survives a JSON round-trip | save/resume breakage |
+| illegal actions are rejected | permissive `apply()` |
+| the acting seat always has a legal move | soft-locks |
+| no seat sees another seat's secrets | leaks of roles, hands, chamber order |
+| unknown seats are rejected | projection bugs |
+| capabilities satisfy the platform contract | UI panels missing for a declared capability |
+| a full match is playable through the LLM gateway | schema/prompt/parse mismatches (fake transport, zero tokens) |
+| results survive the store and produce ratings | stats pipeline regressions |
+
+`GameDef` and the results record are **frozen at v1.0**: new fields must be
+optional and additive. `npm run check` runs the gate in CI, and `lint:games`
+fails the build if a literal `gameId` comparison appears outside
+`packages/games-*`.
 
 ## How a seat works
 
