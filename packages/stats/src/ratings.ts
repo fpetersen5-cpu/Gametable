@@ -60,11 +60,23 @@ export function bradleyTerry(records: MatchRecord[], options: RatingOptions = {}
       total.cost += seat.costUsd;
       total.latency += seat.latencyMs;
     }
-    for (const [name, value] of Object.entries(record.metrics)) {
+    // Per-seat metrics (EV loss and friends) beat game-wide aggregates.
+    const hasSeatMetrics = models.some((seat) => seat.metrics);
+    if (hasSeatMetrics) {
       for (const seat of models) {
         const total = totals.get(seat.modelId as string);
         if (!total) continue;
-        total.metrics.set(name, (total.metrics.get(name) ?? 0) + value / models.length);
+        for (const [name, value] of Object.entries(seat.metrics ?? {})) {
+          total.metrics.set(name, (total.metrics.get(name) ?? 0) + value);
+        }
+      }
+    } else {
+      for (const [name, value] of Object.entries(record.metrics)) {
+        for (const seat of models) {
+          const total = totals.get(seat.modelId as string);
+          if (!total) continue;
+          total.metrics.set(name, (total.metrics.get(name) ?? 0) + value / models.length);
+        }
       }
     }
 

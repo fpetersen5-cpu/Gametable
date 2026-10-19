@@ -9,22 +9,28 @@ import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { RandomBot, runMatch, type Controller, type GameDef, type Seat } from '@gametable/engine';
 import { mines } from '@gametable/sdk-conformance';
-import { OpenRouterClient, createLlmControllers, type LlmSeatConfig } from '@gametable/agent';
+import { buckshot, runGauntlet } from '@gametable/games-buckshot';
+import { OpenRouterClient, LlmController, createLlmControllers, type LlmSeatConfig } from '@gametable/agent';
 import { ResultsStore, bradleyTerry, toRecord } from '@gametable/stats';
 
-const games = new Map<string, GameDef<any>>([[mines.id, mines]]);
+const games = new Map<string, GameDef<any>>([
+  [mines.id, mines],
+  [buckshot.id, buckshot],
+]);
 
 function usage(): void {
   console.log(`GameTable
 
   run          play a match headlessly
-                 --game <id> --seats <n> [--seed <n>] [--llm --model <id>]
+                 --game <id> --seats <n> [--seed <n>] [--llm --model <id>] [--oracle]
+  gauntlet     duel a ladder of opponents (Buckshot)
+                 [--models a,b,c] [--oracle] [--seed <n>]
   models       list models available to your OpenRouter key
   leaderboard  Bradley–Terry ratings from a results file
   games        list installed rule sets
 
 Environment:
-  OPENROUTER_API_KEY   required for --llm and models
+  OPENROUTER_API_KEY   required for --llm, --models and models
 `);
 }
 
@@ -33,9 +39,11 @@ async function main(): Promise<void> {
     allowPositionals: true,
     options: {
       game: { type: 'string', default: 'toy.mines' },
-      seats: { type: 'string', default: '4' },
+      seats: { type: 'string' },
       seed: { type: 'string' },
       llm: { type: 'boolean', default: false },
+      oracle: { type: 'boolean', default: false },
+      models: { type: 'string' },
       model: { type: 'string' },
       file: { type: 'string', default: './results.jsonl' },
       help: { type: 'boolean', short: 'h', default: false },
@@ -79,6 +87,8 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'gauntlet') return runGauntletCommand(values);
+
   if (command !== 'run') {
     usage();
     process.exitCode = 1;
@@ -87,7 +97,7 @@ async function main(): Promise<void> {
 
   const def = games.get(values.game);
   if (!def) throw new Error(`unknown game ${values.game}`);
-  const count = Number(values.seats);
+  const count = Number(values.seats ?? def.minSeats);
   if (!Number.isInteger(count) || count < def.minSeats || count > def.maxSeats) {
     throw new Error(`${def.id} needs ${def.minSeats}..${def.maxSeats} seats`);
   }
@@ -119,6 +129,7 @@ async function main(): Promise<void> {
   const seed = values.seed ? Number(values.seed) : Math.floor(Math.random() * 1e9);
   const result = await runMatch(def, seats, controllers, {
     seed,
+    options: { trackOptimality: values.oracle === true },
     actionTimeoutMs: values.llm ? 60_000 : 1_000,
     onEvent: (event) => {
       if (!values.llm) console.log(`  ${event.seatId} → ${JSON.stringify(event.action)}`);
@@ -132,12 +143,75 @@ async function main(): Promise<void> {
   console.log(`actions: ${result.events.length}  duration: ${result.durationMs}ms`);
   const totalCost = result.seats.reduce((sum, s) => sum + s.usage.costUsd, 0);
   if (totalCost > 0) console.log(`cost: $${totalCost.toFixed(4)}`);
+  for (const seat of result.seats) {
+    const metrics = seat.metrics;
+    if (metrics && typeof metrics.decisions === 'number' && metrics.decisions > 0) {
+      console.log(
+        `${seat.name}: EV loss ${metrics.evLoss} over ${metrics.decisions} decisions ` +
+          `(${metrics.evLossPerDecision} per decision)`,
+      );
+    }
+  }
 
   await new ResultsStore(resolve(values.file)).append(toRecord(result));
 }
 
-function requireKey(): string {
-  const key = process.env.OPENROUTER_API_KEY;
+async function runGauntletCommand(values: {
+  models?: string | undefined;
+  oracle: boolean;
+  seed?: string | undefined;
+}): Promise<void> {
+  const names = values.models
+    ? values.models.split(',').map((name) => name.trim()).filter(Boolean)
+    : ['bot-1', 'bot-2', 'bot-3'];
+  const seed = values.seed ? Number(values.seed) : 4242;
+  const useLlm = Boolean(values.models);
+  const client = useLlm
+    ? new OpenRouterClient({ apiKey: requireKey(), appName: 'GameTable' })
+    : null;
+
+  const hero: Seat = { id: 'hero', name: 'You', kind: 'bot' };
+  const opponents = names.map((name, index) => {
+    const seat: Seat = {
+      id: `opp${index + 1}`,
+      name,
+      kind: useLlm ? 'llm' : 'bot',
+      ...(useLlm ? { modelId: name } : {}),
+    };
+    const controller: Controller = client
+      ? new LlmController({
+          client,
+          gameName: 'Buckshot Roulette',
+          config: { model: name, temperature: 0.8 },
+        })
+      : new RandomBot(101 + index);
+    return { seat, controller };
+  });
+
+  const result = await runGauntlet({
+    hero,
+    heroController: new RandomBot(1),
+    opponents,
+    seed,
+    trackOptimality: values.oracle,
+    onDuel: (duel, index) => {
+      const heroWon = duel.result.winners.includes('hero');
+      console.log(
+        `duel ${index + 1}: vs ${duel.opponent.name.padEnd(36)} ` +
+          `${heroWon ? 'win ' : 'loss'} ${duel.result.scores.hero ?? 0}-${
+            duel.result.scores[duel.opponent.id] ?? 0
+          }  carried ${duel.carried.length}`,
+      );
+    },
+  });
+
+  console.log(
+    `\ngauntlet: ${result.duelsWon}/${result.duels.length} duels, ` +
+      `${result.roundWins} rounds won, $${result.totalCostUsd.toFixed(4)}`,
+  );
+}
+
+function requireKey(): string {  const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('set OPENROUTER_API_KEY first');
   return key;
 }

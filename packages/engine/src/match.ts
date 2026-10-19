@@ -41,6 +41,7 @@ export interface MatchSeatResult {
   kind: SeatKind;
   modelId?: string;
   role?: string;
+  metrics?: Record<string, number>;
   usage: SeatUsage;
 }
 
@@ -266,6 +267,7 @@ export async function runMatch<S>(
         kind: seat.kind,
         modelId: seat.modelId,
         role: def.roleOf?.(state, seat.id),
+        metrics: def.metricsFor?.(state, seat.id),
         usage: { ...base, ...reported },
       };
     }),
@@ -277,8 +279,14 @@ export async function runMatch<S>(
 }
 
 /** Reproduce a finished match from its seed and action log. */
-export function replay<S>(def: GameDef<S>, seed: number, seats: Seat[], events: MatchEvent[]): S {
-  let state = def.setup({ seed, seats, options: {} });
+export function replay<S>(
+  def: GameDef<S>,
+  seed: number,
+  seats: Seat[],
+  events: MatchEvent[],
+  options: Record<string, unknown> = {},
+): S {
+  let state = def.setup({ seed, seats, options });
   for (const event of events) {
     state = def.apply(state, event.seatId, event.action);
   }

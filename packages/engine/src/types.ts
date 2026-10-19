@@ -117,6 +117,11 @@ export interface GameDef<S = unknown> {
   scoring(state: S): Scoring;
   /** Game-specific numbers for the leaderboard, e.g. { accusations: 12 }. */
   metrics(state: S): Record<string, number>;
+  /**
+   * Per-seat numbers for the leaderboard, e.g. { evLoss: 0.42 }.
+   * Preferred over `metrics` when ranking individual models.
+   */
+  metricsFor?(state: S, seatId: SeatId): Record<string, number>;
   /** Rules + role card for this seat, used by the agent prompt builder. */
   briefing(state: S, seatId: SeatId): string;
   /**

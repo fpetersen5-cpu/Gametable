@@ -16,6 +16,7 @@ export interface MatchRecord {
     modelId?: string;
     persona?: string;
     role?: string;
+    metrics?: Record<string, number>;
     tokensIn: number;
     tokensOut: number;
     costUsd: number;
@@ -44,6 +45,7 @@ export function toRecord(result: MatchResult, personas: Record<string, string> =
       modelId: seat.modelId,
       persona: personas[seat.seatId],
       role: seat.role,
+      metrics: seat.metrics,
       tokensIn: seat.usage.tokensIn,
       tokensOut: seat.usage.tokensOut,
       costUsd: seat.usage.costUsd,

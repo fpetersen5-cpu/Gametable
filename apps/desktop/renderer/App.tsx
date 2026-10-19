@@ -282,11 +282,11 @@ function TableSetup(props: {
 
       <section className="callout">
         <div>
-          <strong>Rules engines are next.</strong>
+          <strong>Buckshot Roulette is in.</strong>
           <p className="muted">
-            The referee, projection layer and OpenRouter gateway are in place. Mafia/Werewolf and
-            Buckshot Roulette rule sets are the next milestone, after which this button starts a
-            real match.
+            The duel rules, all nine items and the exact-optimality solver are done, and playable
+            from the CLI today. The in-app table lands with the UI milestone; Mafia/Werewolf rules
+            are next.
           </p>
         </div>
         <button className="primary" disabled>

@@ -24,7 +24,7 @@ makes hidden-role games work at all.
 |---|---|
 | **M0** — skeleton, Flatpak manifest, key entry, model picker, secret storage, headless CLI | done |
 | M1 — engine hardening, agent gateway polish, leak checker in CI | engine + gateway are in place, being hardened |
-| M2a — Buckshot Roulette | next |
+| **M2a** — Buckshot Roulette: rules, 9 items, expectiminimax oracle, Gauntlet | **done** |
 | M2b — Mafia / Werewolf | next |
 | M2c — cross-game compatibility gate | next |
 | M3 — game tables, spectator mode, replay | pending |
@@ -32,7 +32,8 @@ makes hidden-role games work at all.
 | M5 — signed `.flatpak` bundle | manifest ready, build not yet verified on this machine |
 
 The Table screen currently sets up seats and models; "Deal me in" is disabled
-until the first rule sets land.
+until the in-app game table lands (M3). Buckshot Roulette is playable today from
+the CLI.
 
 ## Quick start (development)
 
@@ -48,6 +49,8 @@ Headless, no API key needed:
 
 ```bash
 npm run cli -- run --game toy.mines --seats 5 --seed 42
+npm run cli -- run --game buckshot --seed 7 --oracle
+npm run cli -- gauntlet --seed 3
 npm run cli -- leaderboard --file ./results.jsonl
 ```
 
@@ -70,6 +73,7 @@ npm test
 
 ```
 packages/engine/           referee, projections, event log, match runner, bots
+packages/games-buckshot/   duel rules, items, expectiminimax oracle, gauntlet
 packages/agent/            OpenRouter client, prompt builder, LLM seat, semaphore
 packages/stats/            frozen results record, JSONL store, Bradley–Terry
 packages/sdk-conformance/  generic GameDef test suite + toy game fixture
@@ -77,6 +81,36 @@ apps/desktop/              Electron main + preload + React renderer
 apps/cli/                  headless runner (also the eval harness)
 flatpak/                   manifest, metainfo, icon, launcher, build scripts
 ```
+
+## Buckshot Roulette
+
+A two-seat duel with a shotgun holding live and blank shells. Remaining live
+and blank counts are public; the order is not. On your turn you may use any
+number of items, then you must shoot — at yourself or at your opponent.
+Shooting yourself with a blank keeps your turn. Three rounds with 2/4/6 health;
+first to two rounds wins.
+
+Items, all implemented: cigarette (+1 health), beer (eject and reveal the
+current shell), magnifying glass (private peek), handsaw (next shot deals 2),
+handcuffs (opponent skips a turn), pills (50/50 +2/−1), burner phone (private
+peek at a future shell), inverter (flip the current shell), adrenaline (steal
+and immediately use an opponent's item).
+
+**Gauntlet** chains duels against a list of opponents, carrying up to two items
+into the next duel:
+
+```bash
+npm run cli -- gauntlet --models openai/gpt-4o-mini,anthropic/claude-haiku
+```
+
+### Optimality metric
+
+`--oracle` scores every decision against an expectiminimax solver over the
+belief state (live/blank counts, both item belts, the mover's peek knowledge).
+It reports **EV loss per decision**, which is an objective suboptimality number
+rather than a win rate. Two documented approximations: a refilled chamber is
+assumed 2 live / 2 blank, and a burner phone is modelled as a peek at the next
+shell. The oracle is engine-side only and never reachable from a prompt.
 
 ## How a seat works
 
