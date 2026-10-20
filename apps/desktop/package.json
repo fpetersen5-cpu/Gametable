@@ -1,5 +1,6 @@
 {
   "name": "@gametable/desktop",
+  "productName": "GameTable",
   "version": "0.1.0",
   "private": true,
   "type": "module",

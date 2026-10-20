@@ -61,7 +61,7 @@ export interface MatchResult {
   events: MatchEvent[];
 }
 
-export interface RunOptions {
+export interface RunOptions<S = unknown> {
   matchId?: string;
   seed: number;
   actionTimeoutMs?: number;
@@ -70,7 +70,9 @@ export interface RunOptions {
   /** Hard guard against a game that never terminates. */
   maxActions?: number;
   options?: Record<string, unknown>;
-  onEvent?: (event: MatchEvent) => void;
+  onEvent?: (event: MatchEvent, state: S) => void;
+  /** Cooperative abort, checked between actions. */
+  signal?: AbortSignal;
   now?: () => number;
 }
 
@@ -189,7 +191,7 @@ export async function runMatch<S>(
   def: GameDef<S>,
   seats: Seat[],
   controllers: Map<SeatId, Controller>,
-  options: RunOptions,
+  options: RunOptions<S>,
 ): Promise<MatchResult> {
   const matchId = options.matchId ?? `match-${options.seed}`;
   const actionTimeoutMs = options.actionTimeoutMs ?? 45_000;
@@ -213,6 +215,7 @@ export async function runMatch<S>(
 
   let guard = 0;
   while (!def.terminal(state)) {
+    if (options.signal?.aborted) throw new Error('match aborted');
     if (guard++ >= maxActions) {
       throw new Error(`match ${matchId} exceeded ${maxActions} actions`);
     }
@@ -251,7 +254,7 @@ export async function runMatch<S>(
         at: now(),
       };
       events.push(event);
-      options.onEvent?.(event);
+      options.onEvent?.(event, state);
     }
   }
 

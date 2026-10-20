@@ -596,14 +596,38 @@ export const mafia: GameDef<MafiaState> = {
     return lines.join('\n');
   },
 
+  godView(state): GameView {
+    const first = state.seats[0]?.id;
+    const base = mafia.view(state, first as SeatId);
+    return {
+      ...base,
+      seatId: '__all__',
+      data: {
+        ...(base.data as Record<string, unknown>),
+        yourRole: null,
+        yourRoleText: '',
+        teammates: [],
+        checks: [],
+        god: {
+          roles: state.roles,
+          mafia: aliveWithRole(state, 'mafia'),
+          checks: Object.entries(state.checks).flatMap(([owner, results]) =>
+            Object.entries(results).map(([target, result]) => ({ owner, target, result })),
+          ),
+        },
+      },
+      chat: [...state.chat],
+      legalActions: [],
+    };
+  },
+
   secrets(state, seatId) {
     const role = roleOf(state, seatId);
     const secrets: string[] = [];
     for (const seat of state.seats) {
       if (seat.id === seatId) continue;
       secrets.push(`#role#${seat.id}#${state.roles[seat.id]}#`);
-    }
-    if (role !== 'mafia') {
+    }    if (role !== 'mafia') {
       for (const mafioso of aliveWithRole(state, 'mafia')) {
         secrets.push(`#mafia#${mafioso}#`);
       }

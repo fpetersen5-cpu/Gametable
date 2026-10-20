@@ -27,13 +27,12 @@ makes hidden-role games work at all.
 | **M2a** — Buckshot Roulette: rules, 9 items, expectiminimax oracle, Gauntlet | **done** |
 | **M2b** — Mafia / Werewolf: roles, night phases, discussion, votes, runoff | **done** |
 | **M2c** — cross-game compatibility gate (GameDef frozen at v1.0) | **done** |
-| M3 — game tables, spectator mode, replay | next |
-| M4 — results store + leaderboards | store and Bradley–Terry ratings are in place |
+| **M3** — game tables, action panel, spectator cinema, replay, post-game report | **done** |
+| **M4** — results store, Bradley–Terry leaderboard, EV-loss ranking | **done** |
 | M5 — signed `.flatpak` bundle | manifest ready, build not yet verified on this machine |
 
-The Table screen currently sets up seats and models; "Deal me in" is disabled
-until the in-app game table lands (M3). Both games are playable today from the
-CLI.
+Everything is playable in-app now. `GAMETABLE_DEMO=1 npx electron apps/desktop`
+runs the whole UI against a fake transport, with no key and no spend.
 
 ## Quick start (development)
 
@@ -158,7 +157,42 @@ optional and additive. `npm run check` runs the gate in CI, and `lint:games`
 fails the build if a literal `gameId` comparison appears outside
 `packages/games-*`.
 
-## How a seat works
+## Playing in the app
+
+1. **Table** — pick a game, add up to ten models (search the OpenRouter
+   catalogue, filter to free or structured-output models), optionally give each
+   a play style, then **Deal me in**. **Watch AI vs AI** drops the human seat and
+   reveals everything.
+2. **Match** — the seat ring shows who is alive, thinking, and (once revealed)
+   what they were. In Mafia you get a role card, the night/day log, the live
+   vote tally, your investigations, and a chat panel with the mafia channel only
+   if you are mafia. In Buckshot you get both health bars, the chamber, your
+   item belt, and any peeks you have paid for.
+3. **Action panel** — built only from the legal actions the engine offers:
+   target buttons for votes and kills, item chips, two big shoot buttons, and a
+   text box for table talk. Nothing you can click is illegal.
+4. **Live controls** — pause, 0.5×–8× speed, abort, and a cost meter against the
+   match budget. Reaching the budget aborts the match instead of overspending.
+5. **Post-game** — winners, roles, per-seat cost/tokens/invalid actions, EV loss
+   per decision (Buckshot), and a transcript export through the file dialog.
+6. **Replays** — every match is stored with a view for each action. Scrub the
+   timeline, play it back at speed, and toggle **reveal all** to see the hidden
+   state.
+7. **Leaderboard** — Bradley–Terry ratings from your own matches. The human is a
+   fixed anchor, so a single-model duel still moves that model's rating; the
+   human never appears on the board.
+
+### Demo mode
+
+```bash
+GAMETABLE_DEMO=1 npx electron apps/desktop
+```
+
+A fake catalogue and a fake transport that always answers with a legal action.
+Useful for trying the UI, taking screenshots, or checking a change without
+spending tokens.
+
+## What a seat sees
 
 A game implements `GameDef` (`packages/engine/src/types.ts`):
 

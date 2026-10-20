@@ -3,13 +3,14 @@ import { app, BrowserWindow, shell } from 'electron';
 import { registerIpc } from './ipc.js';
 
 const isDev = process.env.GAMETABLE_DEV === '1';
+let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
   const window = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 900,
-    minHeight: 640,
+    width: 1360,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 680,
     backgroundColor: '#0e1116',
     title: 'GameTable',
     show: false,
@@ -22,7 +23,11 @@ function createWindow(): void {
     },
   });
 
+  mainWindow = window;
   window.once('ready-to-show', () => window.show());
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+  });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -37,7 +42,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  registerIpc(app.getPath('userData'));
+  registerIpc(app.getPath('userData'), () => mainWindow);
   createWindow();
 
   app.on('activate', () => {
@@ -49,7 +54,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// The renderer never needs the key; keep it out of crash reports too.
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandled rejection', String(reason).slice(0, 200));
 });

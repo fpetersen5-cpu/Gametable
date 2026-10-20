@@ -115,6 +115,11 @@ export interface GameDef<S = unknown> {
   phase(state: S): Phase;
   /** Projection for one seat. Must be pure and must reject unknown seats. */
   view(state: S, seatId: SeatId): GameView;
+  /**
+   * Omniscient projection for spectators and replays. Never sent to a player.
+   * Optional: the UI falls back to the first seat's view when absent.
+   */
+  godView?(state: S): GameView;
   /** Pure transition. Throws `IllegalAction` for anything not in the view. */
   apply(state: S, seatId: SeatId, action: GameAction): S;
   terminal(state: S): boolean;

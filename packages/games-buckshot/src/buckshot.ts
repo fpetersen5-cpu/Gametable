@@ -493,6 +493,10 @@ export const buckshot: GameDef<BuckshotState> = {
         phase: state.phase,
         recent: visibleLog,
         over: state.over,
+        publicRoles: {
+          [state.seats[0]?.id ?? 'p1']: 'player',
+          [state.seats[1]?.id ?? 'p2']: 'dealer',
+        },
       },
       briefing: buckshot.briefing(state, seatId),
       chat: [] as ChatLine[],
@@ -605,6 +609,30 @@ export const buckshot: GameDef<BuckshotState> = {
       '',
       `You are ${seatName(state, p)}, the ${p === 0 ? 'player' : 'dealer'}.`,
     ].join('\n');
+  },
+
+  godView(state): GameView {
+    const first = state.seats[0]?.id;
+    const base = buckshot.view(state, first as SeatId);
+    return {
+      ...base,
+      seatId: '__all__',
+      data: {
+        ...(base.data as Record<string, unknown>),
+        yourHp: state.hp[0],
+        theirHp: state.hp[1],
+        god: {
+          hp: [...state.hp],
+          items: [[...state.items[0]], [...state.items[1]]],
+          chamber: [...state.chamber],
+          knowledge: state.knowledge.map((entry) => ({
+            top: entry.top,
+            future: entry.future.map((f) => ({ ...f })),
+          })),
+        },
+      },
+      legalActions: [],
+    };
   },
 
   secrets(state, seatId) {

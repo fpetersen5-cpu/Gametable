@@ -47,15 +47,42 @@ export function bradleyTerry(records: MatchRecord[], options: RatingOptions = {}
     }
   };
 
+  // Human seats are a fixed anchor: beating a person moves your rating, but the
+  // person never appears on the board. This keeps 1v1 duels meaningful.
+  const ANCHOR = '\u0000human';
+  const strengthOf = (id: string) =>
+    id === ANCHOR ? 1 : (strength.get(id) ?? 1);
+
+  const pairRow = (map: Map<string, Map<string, number>>, id: string) => {
+    let row = map.get(id);
+    if (!row) {
+      row = new Map();
+      map.set(id, row);
+    }
+    return row;
+  };
+
+  const addPair = (w: string, l: string, wWeight: number): void => {
+    if (w === l || wWeight <= 0) return;
+    const wRow = pairRow(pairs, w);
+    wRow.set(l, (wRow.get(l) ?? 0) + wWeight);
+    const wGames = pairRow(games, w);
+    wGames.set(l, (wGames.get(l) ?? 0) + wWeight);
+    const lGames = pairRow(games, l);
+    lGames.set(w, (lGames.get(w) ?? 0) + wWeight);
+  };
+
   for (const record of records) {
     const models = record.seats.filter((s) => s.kind === 'llm' && s.modelId);
-    if (models.length < 2) continue;
+    if (models.length === 0) continue;
     for (const seat of models) touch(seat.modelId as string);
 
     for (const seat of models) {
       const total = totals.get(seat.modelId as string);
       if (!total) continue;
       total.matches += 1;
+      if (record.winnerSeats.includes(seat.seatId)) total.wins += 1;
+      else total.losses += 1;
       total.invalidActions += seat.invalidActions;
       total.cost += seat.costUsd;
       total.latency += seat.latencyMs;
@@ -82,27 +109,22 @@ export function bradleyTerry(records: MatchRecord[], options: RatingOptions = {}
 
     const winners = models.filter((s) => record.winnerSeats.includes(s.seatId));
     const losers = models.filter((s) => !record.winnerSeats.includes(s.seatId));
-    if (winners.length === 0) continue;
 
     for (const winner of winners) {
       for (const loser of losers) {
         const w = winner.modelId as string;
         const l = loser.modelId as string;
         if (w === l) continue; // same model in two seats: no information
-        const wWeight = weight(record, winner.seatId, loser.seatId);
-        if (wWeight <= 0) continue;
+        addPair(w, l, weight(record, winner.seatId, loser.seatId));
+      }
+    }
 
-        const wIdx = totals.get(w);
-        const lIdx = totals.get(l);
-        if (wIdx) wIdx.wins += 1;
-        if (lIdx) lIdx.losses += 1;
-
-        const wRow = pairs.get(w) as Map<string, number>;
-        wRow.set(l, (wRow.get(l) ?? 0) + wWeight);
-        const wGames = games.get(w) as Map<string, number>;
-        wGames.set(l, (wGames.get(l) ?? 0) + wWeight);
-        const lGames = games.get(l) as Map<string, number>;
-        lGames.set(w, (lGames.get(w) ?? 0) + wWeight);
+    for (const human of record.seats.filter((seat) => seat.kind === 'human')) {
+      const humanWon = record.winnerSeats.includes(human.seatId);
+      for (const seat of models) {
+        const modelWon = record.winnerSeats.includes(seat.seatId);
+        if (modelWon && !humanWon) addPair(seat.modelId as string, ANCHOR, 1);
+        else if (!modelWon && humanWon) addPair(ANCHOR, seat.modelId as string, 1);
       }
     }
   }
@@ -112,36 +134,35 @@ export function bradleyTerry(records: MatchRecord[], options: RatingOptions = {}
 
   const strength = new Map<string, number>(ids.map((id) => [id, 1]));
 
+  // A weak prior against a fixed average opponent keeps a 3–0 model from
+  // shooting to a nonsense rating when the sample is tiny.
+  const PRIOR_WINS = 1;
+  const PRIOR_GAMES = 2;
+
   for (let iter = 0; iter < iterations; iter++) {
-    let logSum = 0;
     for (const id of ids) {
       const wins = pairs.get(id) ?? new Map<string, number>();
       let winsTotal = 0;
       for (const n of wins.values()) winsTotal += n;
-      if (winsTotal === 0) {
-        strength.set(id, 1e-6); // a model that never won cannot rise
-        continue;
-      }
+      winsTotal += PRIOR_WINS;
+
       const opponents = games.get(id) ?? new Map<string, number>();
-      let denom = 0;
+      let denom = PRIOR_GAMES / ((strength.get(id) as number) + 1);
       for (const [opponent, n] of opponents) {
-        denom += n / ((strength.get(id) as number) + (strength.get(opponent) as number));
+        denom += n / ((strength.get(id) as number) + strengthOf(opponent));
       }
       strength.set(id, denom > 0 ? winsTotal / denom : 1e-6);
     }
-    // Anchor the scale: geometric mean = 1.
-    logSum = 0;
-    for (const id of ids) logSum += Math.log(strength.get(id) as number);
-    const mean = Math.exp(logSum / ids.length);
-    for (const id of ids) strength.set(id, (strength.get(id) as number) / mean);
+    // The fixed anchor pins the scale, so no renormalisation is needed.
   }
 
   return ids
     .map((id) => {
       const total = totals.get(id) as NonNullable<ReturnType<typeof totals.get>>;
+      const rating = 400 * Math.log10(strength.get(id) as number) + 1500;
       return {
         modelId: id,
-        rating: 400 * Math.log10(strength.get(id) as number) + 1500,
+        rating: Math.max(800, Math.min(2400, rating)),
         matches: total.matches,
         wins: total.wins,
         losses: total.losses,

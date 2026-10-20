@@ -1,15 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import type { AppConfig, AppStatus, ModelInfo, SeatConfig } from '../shared/api';
+import type {
+  AppConfig,
+  AppStatus,
+  GameInfo,
+  MatchSummary,
+  ModelInfo,
+  StartMatchRequest,
+  TableSnapshot,
+} from '../shared/api';
+import { TableSetup } from './screens/TableSetup';
+import { MatchScreen } from './screens/MatchScreen';
+import { ReplayScreen } from './screens/ReplayScreen';
+import { LeaderboardScreen } from './screens/LeaderboardScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
 
-type Screen = 'table' | 'leaderboard' | 'settings';
+type Screen = 'table' | 'match' | 'replays' | 'leaderboard' | 'settings';
 
 export function App() {
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [games, setGames] = useState<GameInfo[]>([]);
   const [screen, setScreen] = useState<Screen>('table');
+
+  const [snapshot, setSnapshot] = useState<TableSnapshot | null>(null);
+  const [summary, setSummary] = useState<MatchSummary | null>(null);
+  const [matchError, setMatchError] = useState<string | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  const [replayMatchId, setReplayMatchId] = useState<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
     setStatus(await window.gametable.status());
@@ -17,13 +37,26 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const [initialStatus, initialConfig] = await Promise.all([
+      const [initialStatus, initialConfig, initialGames] = await Promise.all([
         window.gametable.status(),
         window.gametable.loadConfig(),
+        window.gametable.listGames(),
       ]);
       setStatus(initialStatus);
       setConfig(initialConfig);
+      setGames(initialGames);
     })();
+  }, []);
+
+  useEffect(() => {
+    const offTable = window.gametable.onTable((next) => setSnapshot(next));
+    const offFinished = window.gametable.onFinished((next) => setSummary(next));
+    const offError = window.gametable.onMatchError((message) => setMatchError(message));
+    return () => {
+      offTable();
+      offFinished();
+      offError();
+    };
   }, []);
 
   useEffect(() => {
@@ -32,7 +65,10 @@ export function App() {
     void (async () => {
       try {
         const result = await window.gametable.listModels(false);
-        if (!cancelled) setModels(result.models);
+        if (!cancelled) {
+          setModels(result.models);
+          setModelsError(null);
+        }
       } catch (error) {
         if (!cancelled) setModelsError(error instanceof Error ? error.message : String(error));
       }
@@ -47,6 +83,16 @@ export function App() {
     await window.gametable.saveConfig(next);
   }, []);
 
+  const startMatch = useCallback(async (request: StartMatchRequest) => {
+    setSnapshot(null);
+    setSummary(null);
+    setMatchError(null);
+    setExportNote(null);
+    const result = await window.gametable.startMatch(request);
+    if (result.ok) setScreen('match');
+    return result;
+  }, []);
+
   if (!status || !config) return <Splash />;
 
   if (!status.hasKey) {
@@ -59,6 +105,8 @@ export function App() {
     );
   }
 
+  const live = snapshot && snapshot.status !== 'finished' && snapshot.status !== 'aborted';
+
   return (
     <div className="shell">
       <nav className="rail">
@@ -69,8 +117,24 @@ export function App() {
             <small>one human · ten minds</small>
           </div>
         </div>
+
         <RailButton active={screen === 'table'} onClick={() => setScreen('table')} icon="▦">
           Table
+        </RailButton>
+        <RailButton
+          active={screen === 'match'}
+          onClick={() => setScreen('match')}
+          icon="✦"
+          disabled={!snapshot}
+        >
+          Match{live ? ' •' : ''}
+        </RailButton>
+        <RailButton
+          active={screen === 'replays'}
+          onClick={() => setScreen('replays')}
+          icon="◷"
+        >
+          Replays
         </RailButton>
         <RailButton
           active={screen === 'leaderboard'}
@@ -82,19 +146,22 @@ export function App() {
         <RailButton active={screen === 'settings'} onClick={() => setScreen('settings')} icon="⚙">
           Settings
         </RailButton>
+
         <div className="rail-foot">
           <span className="dot" /> OpenRouter connected
           <small>{status.keyInfo?.label ?? 'personal key'}</small>
         </div>
       </nav>
 
-      <main className="panel">
+      <main className={`panel${screen === 'match' || screen === 'replays' ? ' wide' : ''}`}>
         {screen === 'table' && (
           <TableSetup
             config={config}
             models={models}
             modelsError={modelsError}
+            games={games}
             onChange={updateConfig}
+            onStart={startMatch}
             onRefreshModels={async (refresh) => {
               const result = await window.gametable.listModels(refresh);
               setModels(result.models);
@@ -102,9 +169,43 @@ export function App() {
             }}
           />
         )}
-        {screen === 'leaderboard' && <Leaderboard />}
+
+        {screen === 'match' &&
+          (snapshot ? (
+            <MatchScreen
+              snapshot={snapshot}
+              summary={summary}
+              error={matchError}
+              exportNote={exportNote}
+              onAction={(action) => void window.gametable.submitAction(action)}
+              onPause={(paused) => void window.gametable.setPaused(paused)}
+              onSpeed={(speed) => void window.gametable.setSpeed(speed)}
+              onAbort={() => void window.gametable.abortMatch()}
+              onExit={() => {
+                setScreen('table');
+                setSnapshot(null);
+                setSummary(null);
+              }}
+              onReplay={() => {
+                setReplayMatchId(summary?.matchId ?? null);
+                setScreen('replays');
+              }}
+              onExport={async () => {
+                if (!summary) return;
+                const result = await window.gametable.exportTranscript(summary.matchId);
+                setExportNote(result.ok ? `Saved to ${result.path}` : result.error ?? 'Export failed');
+              }}
+            />
+          ) : (
+            <Splash label="Dealing the table…" />
+          ))}
+
+        {screen === 'replays' && <ReplayScreen initialMatchId={replayMatchId} />}
+
+        {screen === 'leaderboard' && <LeaderboardScreen />}
+
         {screen === 'settings' && (
-          <Settings
+          <SettingsScreen
             status={status}
             config={config}
             onChange={updateConfig}
@@ -119,12 +220,31 @@ export function App() {
   );
 }
 
-function Splash() {
+function Splash({ label = 'Laying the table…' }: { label?: string }) {
   return (
     <div className="splash">
       <span className="spinner" />
-      <p>Laying the table…</p>
+      <p>{label}</p>
     </div>
+  );
+}
+
+function RailButton(props: {
+  active: boolean;
+  onClick: () => void;
+  icon: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      className={`rail-button${props.active ? ' active' : ''}`}
+      onClick={props.onClick}
+      disabled={props.disabled}
+    >
+      <span className="rail-icon">{props.icon}</span>
+      {props.children}
+    </button>
   );
 }
 
@@ -187,330 +307,4 @@ function KeyGate({ onAccepted }: { onAccepted: () => Promise<void> }) {
       </div>
     </div>
   );
-}
-
-function RailButton(props: {
-  active: boolean;
-  onClick: () => void;
-  icon: string;
-  children: ReactNode;
-}) {
-  return (
-    <button className={`rail-button${props.active ? ' active' : ''}`} onClick={props.onClick}>
-      <span className="rail-icon">{props.icon}</span>
-      {props.children}
-    </button>
-  );
-}
-
-function TableSetup(props: {
-  config: AppConfig;
-  models: ModelInfo[];
-  modelsError: string | null;
-  onChange: (config: AppConfig) => Promise<void>;
-  onRefreshModels: (refresh: boolean) => Promise<void>;
-}) {
-  const { config, models, onChange } = props;
-  const [picking, setPicking] = useState(false);
-
-  const seatLabel = (seat: SeatConfig, index: number) => {
-    const model = models.find((m) => m.id === seat.modelId);
-    return model?.name ?? seat.modelId;
-  };
-
-  const setSeats = (seats: SeatConfig[]) => void onChange({ ...config, seats });
-
-  return (
-    <div className="stack">
-      <header className="page-head">
-        <div>
-          <h1>The table</h1>
-          <p className="muted">
-            You plus up to ten models. Mafia seats up to eleven; Buckshot is a duel and a gauntlet.
-          </p>
-        </div>
-        <div className="head-actions">
-          <button className="ghost" onClick={() => void props.onRefreshModels(true)}>
-            Refresh models
-          </button>
-        </div>
-      </header>
-
-      <div className="table-grid">
-        <SeatCard
-          name={config.humanName}
-          subtitle="Human seat"
-          badge="YOU"
-          human
-          onName={(name) => void onChange({ ...config, humanName: name })}
-        />
-        {config.seats.map((seat, index) => (
-          <SeatCard
-            key={`${seat.modelId}-${index}`}
-            name={seatLabel(seat, index)}
-            subtitle={seat.modelId}
-            badge={`AI ${index + 1}`}
-            persona={seat.persona}
-            onPersona={(persona) => {
-              const seats = [...config.seats];
-              seats[index] = { ...seat, persona };
-              setSeats(seats);
-            }}
-            onRemove={() => setSeats(config.seats.filter((_, i) => i !== index))}
-          />
-        ))}
-        {config.seats.length < 10 && (
-          <button className="seat-card add" onClick={() => setPicking(true)}>
-            <span className="plus">+</span>
-            <span>Add a model</span>
-            <small>{10 - config.seats.length} seats left</small>
-          </button>
-        )}
-      </div>
-
-      {picking && (
-        <ModelPicker
-          models={models}
-          error={props.modelsError}
-          onClose={() => setPicking(false)}
-          onPick={(model) => {
-            setSeats([...config.seats, { modelId: model.id }]);
-            setPicking(false);
-          }}
-        />
-      )}
-
-      <section className="callout">
-        <div>
-          <strong>Buckshot Roulette and Mafia are in.</strong>
-          <p className="muted">
-            Both rule sets, the expectiminimax solver and the cross-game compatibility gate are
-            done, and playable from the CLI today. The in-app table lands with the UI milestone.
-          </p>
-        </div>
-        <button className="primary" disabled>
-          Deal me in
-        </button>
-      </section>
-    </div>
-  );
-}
-
-function SeatCard(props: {
-  name: string;
-  subtitle: string;
-  badge: string;
-  human?: boolean;
-  persona?: string;
-  onName?: (name: string) => void;
-  onPersona?: (persona: string) => void;
-  onRemove?: () => void;
-}) {
-  return (
-    <div className={`seat-card${props.human ? ' human' : ''}`}>
-      <div className="seat-top">
-        <span className="badge">{props.badge}</span>
-        {props.onRemove && (
-          <button className="icon" onClick={props.onRemove} aria-label="Remove seat">
-            ×
-          </button>
-        )}
-      </div>
-      {props.human ? (
-        <input
-          className="name-input"
-          value={props.name}
-          onChange={(event) => props.onName?.(event.target.value)}
-          aria-label="Your name"
-        />
-      ) : (
-        <strong className="seat-name">{props.name}</strong>
-      )}
-      <small className="seat-sub">{props.subtitle}</small>
-      {props.onPersona && (
-        <input
-          className="persona-input"
-          placeholder="play style (optional)"
-          value={props.persona ?? ''}
-          onChange={(event) => props.onPersona?.(event.target.value)}
-        />
-      )}
-    </div>
-  );
-}
-
-function ModelPicker(props: {
-  models: ModelInfo[];
-  error: string | null;
-  onPick: (model: ModelInfo) => void;
-  onClose: () => void;
-}) {
-  const [query, setQuery] = useState('');
-  const [freeOnly, setFreeOnly] = useState(false);
-  const [toolsOnly, setToolsOnly] = useState(true);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return props.models
-      .filter((m) => (freeOnly ? m.free : true))
-      .filter((m) => (toolsOnly ? m.supportedParameters.includes('structured_outputs') || m.supportedParameters.includes('response_format') : true))
-      .filter((m) => (!q ? true : `${m.name} ${m.id}`.toLowerCase().includes(q)))
-      .sort((a, b) => Number(a.free) - Number(b.free) || a.name.localeCompare(b.name))
-      .slice(0, 200);
-  }, [props.models, query, freeOnly, toolsOnly]);
-
-  return (
-    <div className="modal-backdrop" onClick={props.onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-head">
-          <h2>Choose a model</h2>
-          <button className="icon" onClick={props.onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-        <div className="filters">
-          <input
-            autoFocus
-            placeholder="Search models…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={freeOnly}
-              onChange={(event) => setFreeOnly(event.target.checked)}
-            />
-            Free only
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={toolsOnly}
-              onChange={(event) => setToolsOnly(event.target.checked)}
-            />
-            Structured output
-          </label>
-        </div>
-        {props.error && <p className="error">{props.error}</p>}
-        <ul className="model-list">
-          {filtered.map((model) => (
-            <li key={model.id}>
-              <button className="model-row" onClick={() => props.onPick(model)}>
-                <div className="model-main">
-                  <strong>{model.name}</strong>
-                  <small>{model.id}</small>
-                </div>
-                <div className="model-meta">
-                  <span>{formatContext(model.contextLength)}</span>
-                  <span>{formatPrice(model.promptPrice, model.completionPrice)}</span>
-                  {model.free && <span className="pill free">free</span>}
-                </div>
-              </button>
-            </li>
-          ))}
-          {filtered.length === 0 && <li className="empty">No models match that filter.</li>}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-function Leaderboard() {
-  return (
-    <div className="stack">
-      <header className="page-head">
-        <div>
-          <h1>Leaderboard</h1>
-          <p className="muted">
-            Bradley–Terry ratings, per game, adjusted for seat count and role. Buckshot adds an
-            exact-optimality column: EV lost per decision.
-          </p>
-        </div>
-      </header>
-      <div className="empty-state">
-        <span className="big">★</span>
-        <h2>No matches yet</h2>
-        <p className="muted">
-          Ratings appear once models have played each other here. Everything stays on this machine
-          unless you export a match.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function Settings(props: {
-  status: AppStatus;
-  config: AppConfig;
-  onChange: (config: AppConfig) => Promise<void>;
-  onDisconnect: () => Promise<void>;
-}) {
-  const usage = props.status.keyInfo?.usage ?? 0;
-  const limit = props.status.keyInfo?.limit;
-  return (
-    <div className="stack">
-      <header className="page-head">
-        <div>
-          <h1>Settings</h1>
-          <p className="muted">Key, budget and storage.</p>
-        </div>
-      </header>
-
-      <section className="settings-card">
-        <h2>OpenRouter key</h2>
-        <dl>
-          <dt>Label</dt>
-          <dd>{props.status.keyInfo?.label ?? 'unnamed'}</dd>
-          <dt>Used</dt>
-          <dd>
-            ${usage.toFixed(2)}
-            {typeof limit === 'number' ? ` of $${limit.toFixed(2)}` : ' (no limit set)'}
-          </dd>
-          <dt>Stored as</dt>
-          <dd>{props.status.storage === 'file' ? '0600 file in the app config dir' : 'portal secret'}</dd>
-        </dl>
-        <button className="ghost danger" onClick={() => void props.onDisconnect()}>
-          Forget key
-        </button>
-      </section>
-
-      <section className="settings-card">
-        <h2>Budget</h2>
-        <p className="muted">A match pauses when it reaches this ceiling.</p>
-        <label className="budget">
-          <span>$</span>
-          <input
-            type="number"
-            min={0}
-            step={0.25}
-            value={props.config.budgetUsd}
-            onChange={(event) =>
-              void props.onChange({ ...props.config, budgetUsd: Number(event.target.value) })
-            }
-          />
-          <span className="muted">per match</span>
-        </label>
-      </section>
-    </div>
-  );
-}
-
-function formatContext(tokens: number): string {
-  if (!tokens) return '—';
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M ctx`;
-  return `${Math.round(tokens / 1000)}k ctx`;
-}
-
-function formatPrice(prompt: number, completion: number): string {
-  const inUsd = prompt * 1_000_000;
-  const outUsd = completion * 1_000_000;
-  if (inUsd === 0 && outUsd === 0) return '$0';
-  return `$${trim(inUsd)}/$${trim(outUsd)} per M`;
-}
-
-function trim(value: number): string {
-  if (value < 0.01) return value.toFixed(4);
-  if (value < 1) return value.toFixed(2);
-  return value.toFixed(1);
 }
