@@ -2,27 +2,62 @@
 # Build, install and bundle the Flatpak.
 #
 # One-time setup:
-#   flatpak install flathub org.flatpak.Builder
-#   flatpak install flathub org.freedesktop.Sdk//24.08 org.freedesktop.Sdk.Extension.node22//24.08 \
-#                    org.electronjs.Electron2.BaseApp//24.08
-#   ./flatpak/generate-sources.sh
+#   flatpak install --user flathub org.flatpak.Builder \
+#     org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.node22//25.08 \
+#     org.electronjs.Electron2.BaseApp//25.08
+#   pipx install flatpak-node-generator && ./flatpak/generate-sources.sh
+#
+# Signing (optional, recommended for distribution):
+#   export GAMETABLE_GPG_KEY=<key-id>
+#   export GAMETABLE_GPG_HOME=$HOME/.gnupg      # defaults to ~/.gnupg
+#
 set -euo pipefail
 cd "$(dirname "$0")/.."
+ROOT="$(git rev-parse --show-toplevel)"
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+SOURCE_URL="${GAMETABLE_SOURCE_URL:-file://$ROOT}"
+APP_ID=io.github.takmikill.GameTable
 
 if [[ ! -f flatpak/node-sources.json ]]; then
   echo "flatpak/node-sources.json is missing — run ./flatpak/generate-sources.sh first" >&2
   exit 1
 fi
 
-flatpak run --filesystem="$PWD" org.flatpak.Builder \
+mkdir -p flatpak/.build
+cp flatpak/node-sources.json flatpak/.build/node-sources.json
+sed -e "s|https://github.com/takmikill/gametable.git|${SOURCE_URL}|" \
+    -e "s|branch: main|branch: ${BRANCH}|" \
+    flatpak/${APP_ID}.yml > flatpak/.build/manifest.yml
+
+SIGN_ARGS=()
+if [[ -n "${GAMETABLE_GPG_KEY:-}" ]]; then
+  SIGN_ARGS=(--gpg-sign="${GAMETABLE_GPG_KEY}"
+             --gpg-homedir="${GAMETABLE_GPG_HOME:-$HOME/.gnupg}")
+fi
+
+EXTRA_FS=()
+if [[ -n "${GAMETABLE_GPG_KEY:-}" ]]; then
+  EXTRA_FS+=(--filesystem="${GAMETABLE_GPG_HOME:-$HOME/.gnupg}")
+fi
+
+flatpak run --filesystem="$ROOT" --filesystem="$PWD" "${EXTRA_FS[@]}" org.flatpak.Builder \
   --force-clean \
   --repo=flatpak/repo \
   --install-deps-from=flathub \
   --user \
   --install \
-  flatpak/build \
-  flatpak/io.github.takmikill.GameTable.yml
+  "${SIGN_ARGS[@]}" \
+  flatpak/build-dir \
+  flatpak/.build/manifest.yml
 
-flatpak build-bundle flatpak/repo GameTable.flatpak io.github.takmikill.GameTable
-echo "Installed and bundled: $(pwd)/GameTable.flatpak"
-echo "Share it with:  flatpak install GameTable.flatpak"
+BUNDLE_ARGS=()
+if [[ -n "${GAMETABLE_GPG_KEY:-}" ]]; then
+  BUNDLE_ARGS=(--gpg-sign="${GAMETABLE_GPG_KEY}"
+               --gpg-homedir="${GAMETABLE_GPG_HOME:-$HOME/.gnupg}")
+fi
+
+flatpak build-bundle "${BUNDLE_ARGS[@]}" flatpak/repo GameTable.flatpak "$APP_ID"
+echo
+echo "Installed:   flatpak run $APP_ID"
+echo "Bundle:      $(pwd)/GameTable.flatpak"
+echo "Share it:    flatpak install GameTable.flatpak"

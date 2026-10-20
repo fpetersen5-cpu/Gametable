@@ -13,3 +13,11 @@ node-cache/
 results/
 .DS_Store
 results.jsonl
+
+flatpak/.build/
+flatpak/build-dir/
+flatpak/repo/
+GameTable.flatpak
+GameTable.flatpakref
+gametable.gpg
+.gnupg/

@@ -29,10 +29,11 @@ makes hidden-role games work at all.
 | **M2c** — cross-game compatibility gate (GameDef frozen at v1.0) | **done** |
 | **M3** — game tables, action panel, spectator cinema, replay, post-game report | **done** |
 | **M4** — results store, Bradley–Terry leaderboard, EV-loss ranking | **done** |
-| M5 — signed `.flatpak` bundle | manifest ready, build not yet verified on this machine |
+| **M5** — signed `.flatpak` bundle, self-hosted repo, `.flatpakref` | **done** |
 
-Everything is playable in-app now. `GAMETABLE_DEMO=1 npx electron apps/desktop`
-runs the whole UI against a fake transport, with no key and no spend.
+Everything is playable in-app and installs as a Flatpak. `GAMETABLE_DEMO=1
+flatpak run io.github.takmikill.GameTable` runs the whole UI against a fake
+transport, with no key and no spend.
 
 ## Quick start (development)
 
@@ -224,21 +225,58 @@ model cannot stall the table.
 
 ## Flatpak
 
+Built against `org.freedesktop.Platform//25.08`, `org.electronjs.Electron2.BaseApp//25.08`
+and the Node 22 SDK extension. (24.08 is end-of-life as of 2026.) The build is
+fully offline: npm tarballs come from `flatpak/node-sources.json` and Electron's
+binary is an explicit manifest source. Permissions are `--share=network` (the app
+is an OpenRouter client), Wayland/X11, audio, DRI and optional keyring access —
+no `--filesystem=home`, so saves and exports go through the file chooser portal.
+
 ```bash
-./flatpak/generate-sources.sh    # needs flatpak-node-generator
-./flatpak/build.sh               # builds, installs and writes GameTable.flatpak
+# one-time
+flatpak install --user flathub org.flatpak.Builder \
+  org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.node22//25.08 \
+  org.electronjs.Electron2.BaseApp//25.08
+pipx install flatpak-node-generator
+
+./flatpak/generate-sources.sh     # rewrites flatpak/node-sources.json
+./flatpak/build.sh                # builds, installs, writes GameTable.flatpak
+flatpak run io.github.takmikill.GameTable
 ```
 
-The manifest uses `org.electronjs.Electron2.BaseApp//24.08` plus the Node 22 SDK
-extension, builds fully offline from vendored npm sources, and grants only
-`--share=network` (the app is an OpenRouter client), Wayland/X11, audio, DRI and
-optional keyring access. There is no `--filesystem=home`; file imports and
-exports must go through the file chooser portal.
+### Signing and self-hosting
 
-**Not yet verified:** this machine has no 24.08 SDK or Electron base app
-installed and the Flathub remote did not answer, so the Flatpak build has not
-been run end to end here. The manifest follows the official Electron Flatpak
-guide; the first real build is the next packaging task.
+```bash
+export GAMETABLE_GPG_KEY=<key id>
+export GAMETABLE_GPG_HOME=$HOME/.gnupg
+export GAMETABLE_REPO_URL=https://example.com/gametable/repo/
+./flatpak/release.sh
+```
+
+That produces a signed `GameTable.flatpak`, a public `gametable.gpg`, a
+`GameTable.flatpakref` with the key embedded, and `flatpak/repo/` to upload.
+Users then install with one click, or:
+
+```bash
+flatpak --user remote-add --gpg-import=gametable.gpg gametable https://example.com/gametable/repo/
+flatpak install gametable io.github.takmikill.GameTable
+```
+
+### Two generator bugs worked around
+
+`flatpak/generate-sources.py` exists because `flatpak-node-generator` (1.0.0)
+misdetects every package as a local source when `node_modules` exists — it
+compares a string against `Path.parents` — silently dropping ~85 tarballs, and
+then tries to fetch an Electron `armv7l` build that no longer exists. The
+wrapper runs it against a clean manifest-only tree and skips its Electron
+handler, since the binary is supplied as a manifest source.
+
+### Verified
+
+Built and installed on this machine, signature checked by installing from a
+signed local repository, and a full Buckshot Roulette match was played inside
+the sandbox (results and replay written to
+`~/.var/app/io.github.takmikill.GameTable/config/GameTable`).
 
 ## Security notes
 

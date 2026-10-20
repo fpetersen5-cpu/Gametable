@@ -9,7 +9,7 @@ import { join, relative } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
 const allowed = ['packages/games-', 'packages/sdk-conformance/'];
-const skipped = ['node_modules', 'dist', '.git'];
+const skipped = ['node_modules', 'dist', '.git', '.flatpak-builder', '.flatpak-builder-2'];
 // Only comparisons against a literal game id are a boundary violation;
 // `record.gameId === requestedGame` is a legitimate parameterised query.
 const patterns = [
