@@ -22,6 +22,28 @@ finish-args:
   # No --filesystem=home: imports and exports go through the file chooser portal.
 
 modules:
+  # Offline speech synthesis. Chromium's speechSynthesis needs
+  # speech-dispatcher, which Flatpak does not expose, so the app ships its own
+  # tiny TTS engine and gives every seat a distinct voice variant.
+  - name: espeak-ng
+    buildsystem: cmake
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=OFF
+      - -DUSE_ASYNC=OFF
+      - -DUSE_LIBSONIC=OFF
+      - -DUSE_LIBPCAUDIO=OFF
+      - -DUSE_MBROLA=OFF
+      - -DUSE_SPEECHPLAYER=OFF
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /share/man
+    sources:
+      - type: archive
+        url: https://codeload.github.com/espeak-ng/espeak-ng/tar.gz/refs/tags/1.52.0
+        sha256: bb4338102ff3b49a81423da8a1a158b420124b055b60fa76cfb4b18677130a23
+
   - name: gametable
     buildsystem: simple
     build-options:

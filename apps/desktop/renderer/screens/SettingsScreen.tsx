@@ -72,6 +72,21 @@ export function SettingsScreen({ status, config, onChange, onDisconnect }: Props
       </section>
 
       <section className="settings-card">
+        <h2>Voice</h2>
+        <p className="muted">
+          Models read their messages aloud, each seat with its own synthesised voice.
+        </p>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={config.voice}
+            onChange={(event) => void onChange({ ...config, voice: event.target.checked })}
+          />
+          Read model messages aloud
+        </label>
+      </section>
+
+      <section className="settings-card">
         <h2>Local data</h2>
         <p className="muted">
           Keys, replays and results stay in this machine's application data directory. Nothing is

@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import type { GameAction, MatchSummary, TableSnapshot } from '../../shared/api';
 import { formatUsd } from '../game-data';
 import { GameTable } from '../components/GameTable';
+import { useSeatVoices } from '../voice';
 
 interface Props {
   snapshot: TableSnapshot;
   summary: MatchSummary | null;
   error: string | null;
   exportNote: string | null;
+  voiceEnabled: boolean;
+  onVoiceChange: (enabled: boolean) => void;
   onAction: (action: GameAction) => void;
   onPause: (paused: boolean) => void;
   onSpeed: (speed: number) => void;
@@ -24,6 +27,13 @@ export function MatchScreen(props: Props) {
   useEffect(() => {
     setShowSummary(true);
   }, [summary?.matchId]);
+
+  useSeatVoices({
+    matchId: snapshot.matchId,
+    chat: snapshot.view.chat,
+    humanSeatId: snapshot.humanSeatId,
+    enabled: props.voiceEnabled,
+  });
 
   const phase = snapshot.view.phase;
   const finished = snapshot.status === 'finished' || snapshot.status === 'aborted';
@@ -64,6 +74,13 @@ export function MatchScreen(props: Props) {
               {snapshot.paused ? 'Resume' : 'Pause'}
             </button>
           )}
+          <button
+            className={`ghost${props.voiceEnabled ? ' voice-on' : ''}`}
+            onClick={() => props.onVoiceChange(!props.voiceEnabled)}
+            title="Read model messages aloud"
+          >
+            {props.voiceEnabled ? '🔊 Voice' : '🔇 Voice'}
+          </button>
           <label className="speed">
             speed
             <select

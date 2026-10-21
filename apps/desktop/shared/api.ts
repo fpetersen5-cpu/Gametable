@@ -26,6 +26,7 @@ export interface DesktopApi {
   loadReplay(matchId: string): Promise<ReplayBundle | null>;
   exportTranscript(matchId: string): Promise<ExportResult>;
   leaderboard(): Promise<LeaderboardRow[]>;
+  speak(text: string, seatId: string): Promise<{ audio?: string; error?: string }>;
   openDataFolder(): Promise<void>;
 }
 
@@ -63,6 +64,8 @@ export interface AppConfig {
   budgetUsd: number;
   /** Delay between AI actions, higher is faster. */
   speed: number;
+  /** Read model messages aloud, each seat with its own voice. */
+  voice: boolean;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -70,6 +73,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   seats: [],
   budgetUsd: 2,
   speed: 1,
+  voice: true,
 };
 
 export interface GameInfo {

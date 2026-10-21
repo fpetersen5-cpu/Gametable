@@ -178,6 +178,8 @@ export function App() {
               summary={summary}
               error={matchError}
               exportNote={exportNote}
+              voiceEnabled={config.voice}
+              onVoiceChange={(voice) => void updateConfig({ ...config, voice })}
               onAction={(action) => void window.gametable.submitAction(action)}
               onPause={(paused) => void window.gametable.setPaused(paused)}
               onSpeed={(speed) => void window.gametable.setSpeed(speed)}

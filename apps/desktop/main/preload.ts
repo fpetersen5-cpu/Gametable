@@ -29,6 +29,7 @@ const api: DesktopApi = {
   loadReplay: (matchId) => ipcRenderer.invoke('matches:replay', matchId),
   exportTranscript: (matchId) => ipcRenderer.invoke('matches:export', matchId),
   leaderboard: () => ipcRenderer.invoke('leaderboard'),
+  speak: (text, seatId) => ipcRenderer.invoke('tts:speak', { text, seatId }),
   openDataFolder: () => ipcRenderer.invoke('app:open-data'),
 };
 

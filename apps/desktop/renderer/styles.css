@@ -1781,3 +1781,8 @@ select {
   align-self: center;
   white-space: nowrap;
 }
+
+button.ghost.voice-on {
+  color: var(--accent);
+  border-color: rgba(110, 231, 183, 0.35);
+}

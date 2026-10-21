@@ -11,6 +11,7 @@ import { ModelCatalogCache } from './catalog.js';
 import { MatchSession } from './session.js';
 import { DEMO_MODELS, DemoClient } from './demo.js';
 import { buildTranscript } from './transcript.js';
+import { synthesize } from './tts.js';
 import {
   DEFAULT_CONFIG,
   type AppConfig,
@@ -306,6 +307,19 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       avgCostUsd: rating.avgCostUsd,
       metrics: rating.metrics,
     }));
+  });
+
+  ipcMain.handle('tts:speak', async (_event, payload: unknown) => {
+    const { text, seatId } = (payload ?? {}) as { text?: unknown; seatId?: unknown };
+    if (typeof text !== 'string' || typeof seatId !== 'string') {
+      return { error: 'invalid speech request' };
+    }
+    try {
+      const audio = await synthesize(text, seatId);
+      return audio ? { audio } : { error: 'nothing to say' };
+    } catch (error) {
+      return { error: describe(error) };
+    }
   });
 
   ipcMain.handle('app:open-data', async () => {
