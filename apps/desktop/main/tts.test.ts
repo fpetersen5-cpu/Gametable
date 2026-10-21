@@ -5,20 +5,24 @@ describe('seat voices', () => {
   it('gives the same seat the same voice every time', () => {
     const first = voiceFor('s3');
     expect(voiceFor('s3')).toEqual(first);
-    expect(first.rate).toBeGreaterThan(140);
-    expect(first.pitch).toBeGreaterThan(30);
+    expect(first.speaker).toBeGreaterThanOrEqual(0);
+    expect(first.speaker).toBeLessThan(904);
+    expect(first.lengthScale).toBeGreaterThan(0.85);
+    expect(first.lengthScale).toBeLessThan(1.15);
   });
 
-  it('spreads seats across many distinct voices', () => {
-    const variants = new Set(
-      Array.from({ length: 10 }, (_, index) => voiceFor(`s${index + 1}`).variant),
+  it('gives the first ten seats ten different speakers', () => {
+    const speakers = new Set(
+      Array.from({ length: 10 }, (_, index) => voiceFor(`s${index + 1}`).speaker),
     );
-    expect(variants.size).toBeGreaterThan(5);
+    expect(speakers.size).toBe(10);
   });
 
-  it('does not collide on the first ten seats for rate and pitch', () => {
-    const profiles = Array.from({ length: 10 }, (_, index) => voiceFor(`s${index + 1}`));
-    const signatures = new Set(profiles.map((p) => `${p.variant}:${p.rate}:${p.pitch}`));
-    expect(signatures.size).toBe(10);
+  it('stays inside the model speaker range for many seats', () => {
+    for (let index = 0; index < 2000; index++) {
+      const profile = voiceFor(`seat-${index}`);
+      expect(profile.speaker).toBeGreaterThanOrEqual(0);
+      expect(profile.speaker).toBeLessThan(904);
+    }
   });
 });

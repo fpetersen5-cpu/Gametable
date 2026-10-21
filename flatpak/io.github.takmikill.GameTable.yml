@@ -22,29 +22,28 @@ finish-args:
   # No --filesystem=home: imports and exports go through the file chooser portal.
 
 modules:
-  # Offline speech synthesis. Chromium's speechSynthesis needs
-  # speech-dispatcher, which Flatpak does not expose, so the app ships its own
-  # tiny TTS engine and gives every seat a distinct voice variant.
-  - name: espeak-ng
-    # Autotools, not CMake: espeak-ng's CMake always clones libsonic from git
-    # even with USE_LIBSONIC=OFF, which an offline build cannot do.
-    buildsystem: autotools
-    config-opts:
-      - --disable-shared
-      - --without-sonic
-      - --without-pcaudiolib
-      - --without-async
-      - --without-mbrola
-      - --without-speechplayer
-    cleanup:
-      - /include
-      - /lib/pkgconfig
-      - /share/man
+  # Neural speech synthesis. Piper bundles onnxruntime plus an espeak-ng
+  # phonemiser; the LibriTTS-R model carries 904 speakers, so every seat gets a
+  # genuinely different voice from a single 79 MB model file.
+  - name: piper
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/piper/voices
+      - cp -r piper/* /app/piper/
+      - install -Dm644 en_US-libritts_r-medium.onnx /app/piper/voices/en_US-libritts_r-medium.onnx
+      - install -Dm644 en_US-libritts_r-medium.onnx.json /app/piper/voices/en_US-libritts_r-medium.onnx.json
     sources:
       - type: archive
-        url: https://codeload.github.com/espeak-ng/espeak-ng/tar.gz/refs/tags/1.52.0
-        sha256: bb4338102ff3b49a81423da8a1a158b420124b055b60fa76cfb4b18677130a23
-        dest-filename: espeak-ng-1.52.0.tar.gz
+        url: https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
+        sha256: a50cb45f355b7af1f6d758c1b360717877ba0a398cc8cbe6d2a7a3a26e225992
+      - type: file
+        url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx
+        sha256: 10bb85e071d616fcf4071f369f1799d0491492ab3c5d552ec19fb548fac13195
+        dest-filename: en_US-libritts_r-medium.onnx
+      - type: file
+        url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
+        sha256: b471dc60d2d8335e819c393d196d6fbf792817f40051257b269878505bc9afb3
+        dest-filename: en_US-libritts_r-medium.onnx.json
 
   - name: gametable
     buildsystem: simple

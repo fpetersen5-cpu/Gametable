@@ -1,74 +1,37 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /**
- * Seat voices.
- *
- * Chromium's speechSynthesis needs speech-dispatcher, which a Flatpak sandbox
- * does not expose, so the app ships espeak-ng. Each seat gets a stable variant,
- * rate and pitch derived from its id, so the same seat always sounds the same.
+ * Seat voices, synthesised by Piper (neural TTS) with a 904-speaker model.
+ * Each seat maps to a stable speaker id plus a small pace variation, so ten
+ * seats sound like ten different people and the same seat always sounds the
+ * same.
  */
 
-const VOICES = [
-  'en+m1',
-  'en+m2',
-  'en+m3',
-  'en+m4',
-  'en+m5',
-  'en+m6',
-  'en+m7',
-  'en+f1',
-  'en+f2',
-  'en+f3',
-  'en+f4',
-  'en+f5',
-  'en-gb+m1',
-  'en-gb+f2',
-  'en-us+m3',
-  'en-us+f4',
-];
+const PIPER_ROOT = process.env.PIPER_ROOT ?? '/app/piper';
+const PIPER = process.env.PIPER_BIN ?? join(PIPER_ROOT, 'piper');
+const MODEL = process.env.PIPER_MODEL ?? join(PIPER_ROOT, 'voices', 'en_US-libritts_r-medium.onnx');
+const NUM_SPEAKERS = Number(process.env.PIPER_SPEAKERS ?? 904);
 
 export interface VoiceProfile {
-  variant: string;
-  rate: number;
-  pitch: number;
+  /** Index into the model's speaker set. */
+  speaker: number;
+  /** Piper's length_scale: >1 slower, <1 faster. */
+  lengthScale: number;
 }
 
 export function voiceFor(seatId: string): VoiceProfile {
   const digest = createHash('sha1').update(seatId).digest();
-  const pick = digest[0] ?? 0;
-  return {
-    variant: VOICES[pick % VOICES.length] as string,
-    rate: 150 + ((digest[1] ?? 0) % 45),
-    pitch: 35 + ((digest[2] ?? 0) % 45),
-  };
+  const speaker = (((digest[0] ?? 0) << 8) | (digest[1] ?? 0)) % NUM_SPEAKERS;
+  const lengthScale = 0.92 + ((digest[2] ?? 0) % 5) * 0.045;
+  return { speaker, lengthScale: Number(lengthScale.toFixed(3)) };
 }
 
 const cache = new Map<string, string>();
 const CACHE_LIMIT = 80;
-
-function run(command: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      command,
-      args,
-      {
-        timeout: 15_000,
-        env: {
-          ...process.env,
-          ESPEAK_DATA_PATH: process.env.ESPEAK_DATA_PATH ?? '/app/share/espeak-ng-data',
-        },
-      },
-      (error, _stdout, stderr) => {
-        if (error) reject(new Error(stderr?.trim() || error.message));
-        else resolve();
-      },
-    );
-  });
-}
 
 /** Returns base64 WAV, or null when there is nothing to say. */
 export async function synthesize(text: string, seatId: string): Promise<string | null> {
@@ -80,24 +43,14 @@ export async function synthesize(text: string, seatId: string): Promise<string |
   if (!clean) return null;
 
   const profile = voiceFor(seatId);
-  const key = `${profile.variant}:${profile.rate}:${profile.pitch}:${clean}`;
+  const key = `${profile.speaker}:${profile.lengthScale}:${clean}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
   const directory = await mkdtemp(join(tmpdir(), 'gametable-tts-'));
   const file = join(directory, 'speech.wav');
   try {
-    await run(process.env.ESPEAK_NG ?? 'espeak-ng', [
-      '-v',
-      profile.variant,
-      '-s',
-      String(profile.rate),
-      '-p',
-      String(profile.pitch),
-      '-w',
-      file,
-      clean,
-    ]);
+    await runPiper(clean, profile, file);
     const wav = await readFile(file);
     const encoded = wav.toString('base64');
     if (cache.size >= CACHE_LIMIT) {
@@ -109,4 +62,41 @@ export async function synthesize(text: string, seatId: string): Promise<string |
   } finally {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+function runPiper(text: string, profile: VoiceProfile, output: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      PIPER,
+      [
+        '--model',
+        MODEL,
+        '--speaker',
+        String(profile.speaker),
+        '--length_scale',
+        String(profile.lengthScale),
+        '--output_file',
+        output,
+      ],
+      {
+        env: {
+          ...process.env,
+          LD_LIBRARY_PATH: `${PIPER_ROOT}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ''}`,
+          ESPEAK_DATA_PATH: process.env.ESPEAK_DATA_PATH ?? join(PIPER_ROOT, 'espeak-ng-data'),
+        },
+      },
+    );
+
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => reject(error));
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim().slice(-300) || `piper exited with ${code}`));
+    });
+    child.stdin.on('error', () => undefined);
+    child.stdin.end(text);
+  });
 }
