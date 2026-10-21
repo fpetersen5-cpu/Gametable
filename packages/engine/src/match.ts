@@ -124,7 +124,8 @@ export function matchAction(legal: GameAction[], submitted: unknown): GameAction
     if (option.type !== candidate.type) continue;
     const agrees = Object.entries(option).every(([key, value]) => {
       if (key === 'type') return true;
-      if (value === '') return typeof candidate[key] === 'string';
+      // A free-text field may be omitted entirely; games substitute their own.
+      if (value === '') return typeof candidate[key] === 'string' || candidate[key] === undefined;
       return deepEqual(candidate[key], value);
     });
     if (agrees) {

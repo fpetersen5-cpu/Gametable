@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IllegalAction, RandomBot, findLeaks, runMatch, type ActionRequest, type GameDef, type Seat } from '@gametable/engine';
+import { IllegalAction, RandomBot, findLeaks, matchAction, runMatch, type ActionRequest, type GameDef, type Seat } from '@gametable/engine';
 import { runGatewayRoundTrip } from '@gametable/sdk-conformance';
 import { mafia, type MafiaState, type Role, type StepId } from './index.js';
 
@@ -247,6 +247,22 @@ describe('privacy', () => {
   it('rejects an action from a seat that is not acting', () => {
     const state = position(five, ['night-kill']);
     expect(() => mafia.apply(state, 's2', { type: 'kill', target: 's3' })).toThrow(IllegalAction);
+  });
+});
+
+describe('vote submissions', () => {
+  it('accepts a vote with no rationale and fills one in', () => {
+    const legal = [{ type: 'vote', target: 's2', text: '' }];
+    expect(matchAction(legal, { type: 'vote', target: 's2' })).toEqual({
+      type: 'vote',
+      target: 's2',
+      text: '',
+    });
+    expect(matchAction(legal, { type: 'vote', target: 's2', text: 'because' })).toEqual({
+      type: 'vote',
+      target: 's2',
+      text: 'because',
+    });
   });
 });
 
