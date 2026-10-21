@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActionRequest, GameView } from '@gametable/engine';
 import {
   LlmController,
+  OpenRouterError,
   actionSchema,
   buildSystemPrompt,
   escapeTableTalk,
@@ -85,6 +86,11 @@ describe('prompt construction', () => {
     expect(JSON.stringify(schema)).toContain('"const":"s2"');
   });
 
+  it('emits strict-mode-valid schemas (every property required)', () => {
+    const schema = actionSchema([{ type: 'vote', target: 's1' }]);
+    expect(schema?.schema.required).toEqual(['action', 'notes']);
+  });
+
   it('treats empty strings as free text', () => {
     const schema = actionSchema([{ type: 'speak', text: '' }]);
     expect(JSON.stringify(schema)).toContain('"type":"string"');
@@ -150,6 +156,26 @@ describe('LlmController', () => {
     });
     await expect(controller.act(request())).rejects.toThrow(/did not produce a legal action/);
     expect(controller.usage().invalidActions).toBe(1);
+  });
+
+  it('records a failed call with the provider message', async () => {
+    const body = JSON.stringify({
+      error: { message: "Invalid schema for response_format 'game_action'" },
+    });
+    const client = {
+      complete: async () => {
+        throw new OpenRouterError('boom', 400, false, body);
+      },
+    };
+    const controller = new LlmController({
+      client,
+      gameName: 'Mines',
+      config: { model: 'x/y' },
+    });
+    await expect(controller.act(request())).rejects.toThrow();
+    expect(controller.usage().errors).toBe(1);
+    expect(controller.usage().lastError).toContain('Invalid schema');
+    expect(controller.errorMessage).toContain('Invalid schema');
   });
 
   it('strips extra fields a model invents', async () => {

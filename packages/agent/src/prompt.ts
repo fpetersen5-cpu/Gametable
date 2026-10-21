@@ -105,7 +105,9 @@ export function actionSchema(legalActions: GameAction[]): JsonSchemaSpec | undef
         action: { anyOf: variants },
         notes: { type: 'string' },
       },
-      required: ['action'],
+      // Strict structured outputs require *every* property in `required`.
+      // `notes` may be an empty string; the parser treats it as optional.
+      required: ['action', 'notes'],
       additionalProperties: false,
     },
   };

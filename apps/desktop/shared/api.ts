@@ -32,6 +32,8 @@ export interface DesktopApi {
 export interface AppStatus {
   version: string;
   hasKey: boolean;
+  /** False when a key is stored but OpenRouter rejects it. */
+  keyValid: boolean;
   keyInfo: KeyInfo | null;
   storage: 'portal' | 'file';
 }
@@ -111,11 +113,20 @@ export interface TableSnapshot {
   godView: GameView | null;
   humanSeatId: string | null;
   awaitingHuman: boolean;
+  /** Per-seat transport failures, shown as a banner instead of failing silently. */
+  seatIssues: SeatIssue[];
   costUsd: number;
   eventCount: number;
   paused: boolean;
   speed: number;
   budgetUsd: number;
+}
+
+export interface SeatIssue {
+  seatId: string;
+  name: string;
+  message: string;
+  count: number;
 }
 
 export interface SeatSummary {
@@ -128,6 +139,7 @@ export interface SeatSummary {
   tokensIn: number;
   tokensOut: number;
   invalidActions: number;
+  errors?: number;
   metrics?: Record<string, number>;
 }
 

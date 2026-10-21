@@ -84,6 +84,19 @@ export function MatchScreen(props: Props) {
       </header>
 
       {props.error && <div className="banner error-banner">{props.error}</div>}
+      {snapshot.seatIssues.length > 0 && (
+        <div className="banner error-banner">
+          <strong>Model calls are failing — moves are being skipped.</strong>
+          <ul className="issue-list">
+            {snapshot.seatIssues.map((issue) => (
+              <li key={issue.seatId}>
+                <span>{issue.name}</span>: {issue.message}{' '}
+                <span className="muted">({issue.count}×)</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {snapshot.status === 'aborted' && (
         <div className="banner warn-banner">Match aborted.</div>
       )}
@@ -167,6 +180,7 @@ function PostGame(props: {
             <th>Tokens</th>
             <th>EV loss / decision</th>
             <th>Invalid</th>
+            <th>Failed calls</th>
           </tr>
         </thead>
         <tbody>
@@ -185,6 +199,7 @@ function PostGame(props: {
                   : '—'}
               </td>
               <td>{seat.invalidActions}</td>
+              <td className={seat.errors ? 'cell-bad' : ''}>{seat.errors ?? 0}</td>
             </tr>
           ))}
         </tbody>

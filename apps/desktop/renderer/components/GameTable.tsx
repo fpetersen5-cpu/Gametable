@@ -3,7 +3,7 @@ import { buckshotData, mafiaData } from '../game-data';
 import { ActionPanel } from './ActionPanel';
 import { BuckshotPanel } from './BuckshotPanel';
 import { ChatLog } from './ChatLog';
-import { MafiaPanel } from './MafiaPanel';
+import { MafiaLog, MafiaPanel } from './MafiaPanel';
 import { SeatRing } from './SeatRing';
 
 interface Props {
@@ -44,6 +44,7 @@ export function GameTable({ view, godView, humanSeatId, spectator, awaiting, onA
             <pre className="raw-state">{JSON.stringify(shown.data, null, 2)}</pre>
           )}
           {shown.chat.length > 0 && <ChatLog chat={shown.chat} seats={shown.seats} />}
+          {mafia && <MafiaLog data={mafia} />}
         </div>
 
         {showActions && (

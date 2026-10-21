@@ -55,7 +55,9 @@ export class LlmController implements Controller {
     latencyMs: 0,
     invalidActions: 0,
     fallbacks: 0,
+    errors: 0,
   };
+  private lastError: string | null = null;
 
   constructor(private readonly deps: LlmControllerDeps) {}
 
@@ -121,7 +123,14 @@ export class LlmController implements Controller {
       costUsd: Number(this.counters.costUsd.toFixed(6)),
       latencyMs: this.counters.latencyMs,
       invalidActions: this.counters.invalidActions,
+      errors: this.counters.errors,
+      ...(this.lastError ? { lastError: this.lastError } : {}),
     };
+  }
+
+  /** The most recent transport/API failure, for the table banner. */
+  get errorMessage(): string | null {
+    return this.lastError;
   }
 
   get privateNotes(): string {
@@ -135,19 +144,26 @@ export class LlmController implements Controller {
   ): Promise<CompletionResult> {
     const { client, config } = this.deps;
     this.counters.calls += 1;
-    const result = await client.complete({
-      model: config.model,
-      messages,
-      temperature: config.temperature ?? 0.8,
-      maxTokens: config.maxTokens ?? 600,
-      jsonSchema: schema,
-      provider: {
-        requireParameters: true,
-        allowFallbacks: true,
-        ...config.provider,
-      },
-      signal: AbortSignal.timeout(Math.max(1_000, req.timeoutMs)),
-    });
+    let result: CompletionResult;
+    try {
+      result = await client.complete({
+        model: config.model,
+        messages,
+        temperature: config.temperature ?? 0.8,
+        maxTokens: config.maxTokens ?? 600,
+        jsonSchema: schema,
+        provider: {
+          requireParameters: true,
+          allowFallbacks: true,
+          ...config.provider,
+        },
+        signal: AbortSignal.timeout(Math.max(1_000, req.timeoutMs)),
+      });
+    } catch (error) {
+      this.counters.errors += 1;
+      this.lastError = describeError(error);
+      throw error;
+    }
     this.counters.tokensIn += result.usage.promptTokens;
     this.counters.tokensOut += result.usage.completionTokens;
     this.counters.costUsd += result.usage.costUsd;
@@ -172,4 +188,28 @@ export function createLlmControllers(
     controllers.set(seat.id, new LlmController({ client, gameName, config, semaphore }));
   }
   return controllers;
+}
+
+/** Turn an OpenRouter failure into one human sentence for the UI. */
+export function describeError(error: unknown): string {
+  if (error instanceof Error && 'status' in error) {
+    const status = (error as { status?: number }).status;
+    const body = (error as { body?: string }).body;
+    if (body) {
+      try {
+        const parsed = JSON.parse(body) as {
+          error?: { message?: string } | string;
+          metadata?: { raw?: string };
+        };
+        const message =
+          typeof parsed.error === 'string' ? parsed.error : parsed.error?.message;
+        if (message) return message.slice(0, 300);
+        if (parsed.metadata?.raw) return parsed.metadata.raw.slice(0, 300);
+      } catch {
+        return body.slice(0, 300);
+      }
+    }
+    return `HTTP ${status ?? '?'} from OpenRouter`;
+  }
+  return error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
 }

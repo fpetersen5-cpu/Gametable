@@ -148,7 +148,8 @@ export function App() {
         </RailButton>
 
         <div className="rail-foot">
-          <span className="dot" /> OpenRouter connected
+          <span className={`dot${status.keyValid ? '' : ' bad'}`} />{' '}
+          {status.keyValid ? 'OpenRouter connected' : 'Key rejected'}
           <small>{status.keyInfo?.label ?? 'personal key'}</small>
         </div>
       </nav>

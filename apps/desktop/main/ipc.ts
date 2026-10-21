@@ -51,6 +51,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       return {
         version: process.env.npm_package_version ?? '0.1.0',
         hasKey: true,
+        keyValid: true,
         keyInfo: { label: 'demo key', usage: 0.42, limit: 5, isFreeTier: false },
         storage: 'file',
       };
@@ -58,6 +59,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return {
       version: process.env.npm_package_version ?? '0.1.0',
       hasKey: key !== null,
+      keyValid: keyInfo !== null,
       keyInfo,
       storage: 'file',
     };
@@ -147,6 +149,52 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     const key = demo ? 'demo' : await secrets.getKey();
     const needsModel = request.seats.some((seat) => seat.kind === 'llm');
     if (needsModel && !key) return { ok: false, error: 'Add an OpenRouter key first' };
+
+    // Refuse to start a match that can only produce fallback moves.
+    if (needsModel && !demo && key) {
+      try {
+        await new OpenRouterClient({ apiKey: key }).checkKey();
+      } catch (error) {
+        return { ok: false, error: `OpenRouter rejected the saved key: ${describe(error)}` };
+      }
+      const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
+      if (catalogue) {
+        const known = new Set(catalogue.models.map((model) => model.id));
+        const missing = [
+          ...new Set(
+            request.seats
+              .filter((seat) => seat.kind === 'llm' && seat.modelId && !known.has(seat.modelId))
+              .map((seat) => seat.modelId as string),
+          ),
+        ];
+        if (missing.length > 0) {
+          return { ok: false, error: `Unknown model id: ${missing.join(', ')}` };
+        }
+        const unstructured = [
+          ...new Set(
+            request.seats
+              .filter((seat) => {
+                if (seat.kind !== 'llm' || !seat.modelId) return false;
+                const model = catalogue.models.find((entry) => entry.id === seat.modelId);
+                if (!model) return false;
+                return (
+                  !model.supportedParameters.includes('structured_outputs') &&
+                  !model.supportedParameters.includes('response_format')
+                );
+              })
+              .map((seat) => seat.modelId as string),
+          ),
+        ];
+        if (unstructured.length > 0) {
+          return {
+            ok: false,
+            error:
+              `These models cannot return structured JSON, so they cannot play: ` +
+              `${unstructured.join(', ')}`,
+          };
+        }
+      }
+    }
 
     current?.abortMatch();
     const window = getWindow();

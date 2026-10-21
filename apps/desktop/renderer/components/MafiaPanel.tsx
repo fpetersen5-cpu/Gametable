@@ -32,15 +32,6 @@ export function MafiaPanel({ data, seats }: { data: MafiaRole; seats: SeatInfo[]
         </div>
       )}
 
-      <div className="log-panel">
-        <h4>What happened</h4>
-        <ul>
-          {data.log.map((line, index) => (
-            <li key={`${index}-${line.slice(0, 12)}`}>{line}</li>
-          ))}
-        </ul>
-      </div>
-
       {(data.votes.length > 0 || data.runoff.length > 0) && (
         <div className="vote-panel">
           <h4>Votes {data.runoff.length > 0 && <span className="pill warn">runoff</span>}</h4>
@@ -84,5 +75,18 @@ export function MafiaPanel({ data, seats }: { data: MafiaRole; seats: SeatInfo[]
         </div>
       )}
     </div>
+  );
+}
+
+export function MafiaLog({ data }: { data: MafiaRole }) {
+  return (
+    <div className="log-panel compact">
+        <h4>What happened</h4>
+        <ul>
+          {data.log.map((line, index) => (
+            <li key={`${index}-${line.slice(0, 12)}`}>{line}</li>
+          ))}
+        </ul>
+      </div>
   );
 }

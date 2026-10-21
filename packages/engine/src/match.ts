@@ -26,6 +26,9 @@ export interface SeatUsage {
   tokensOut: number;
   costUsd: number;
   latencyMs: number;
+  /** Failed transport/API calls (auth, schema, network), not invalid moves. */
+  errors?: number;
+  lastError?: string;
 }
 
 export interface Controller {
@@ -87,6 +90,7 @@ function emptyUsage(): SeatUsage {
     tokensOut: 0,
     costUsd: 0,
     latencyMs: 0,
+    errors: 0,
   };
 }
 

@@ -1755,3 +1755,22 @@ select {
   align-items: center;
   gap: 4px;
 }
+
+.dot.bad {
+  background: var(--danger);
+  box-shadow: 0 0 10px var(--danger);
+}
+
+.issue-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.cell-bad {
+  color: var(--danger);
+  font-weight: 600;
+}

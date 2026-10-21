@@ -16,6 +16,7 @@ import { ResultsStore, toRecord } from '@gametable/stats';
 import type {
   MatchSummary,
   ReplayBundle,
+  SeatIssue,
   StartMatchRequest,
   TableSnapshot,
 } from '../shared/api.js';
@@ -107,6 +108,7 @@ export class MatchSession {
   private status: TableSnapshot['status'] = 'running';
   private paused = false;
   private speed: number;
+  private fatalError: string | null = null;
 
   constructor(private readonly deps: SessionDeps) {
     this.human = deps.seats.find((seat) => seat.kind === 'human') ?? null;
@@ -142,6 +144,7 @@ export class MatchSession {
       if (this.abort.signal.aborted) {
         this.status = 'aborted';
         this.push();
+        if (this.fatalError) this.deps.sendError(this.fatalError);
       } else {
         this.status = 'aborted';
         this.deps.sendError(error instanceof Error ? error.message : String(error));
@@ -224,9 +227,43 @@ export class MatchSession {
     this.events.push(event);
     this.capture(state);
     this.push();
+
     if (this.costUsd > this.deps.request.budgetUsd) {
+      this.fatalError = `Match budget of $${this.deps.request.budgetUsd.toFixed(2)} reached.`;
+      this.abortMatch();
+      return;
+    }
+
+    // If every model seat is failing, a "match" would just be fallback moves.
+    const issues = this.seatIssues();
+    const modelSeats = this.deps.seats.filter((seat) => seat.kind === 'llm').length;
+    if (
+      modelSeats > 0 &&
+      issues.length === modelSeats &&
+      issues.every((issue) => issue.count >= 1)
+    ) {
+      this.fatalError =
+        `Every model seat is failing, so the match was stopped. ` +
+        `${issues[0]?.name}: ${issues[0]?.message}`;
       this.abortMatch();
     }
+  }
+
+  private seatIssues(): SeatIssue[] {
+    const issues: SeatIssue[] = [];
+    for (const seat of this.deps.seats) {
+      if (seat.kind !== 'llm') continue;
+      const usage = this.controllers.get(seat.id)?.usage?.();
+      if (usage?.errors) {
+        issues.push({
+          seatId: seat.id,
+          name: seat.name,
+          message: usage.lastError ?? 'model call failed',
+          count: usage.errors,
+        });
+      }
+    }
+    return issues;
   }
 
   private capture(state: unknown): void {
@@ -261,6 +298,7 @@ export class MatchSession {
       godView: this.latest.god,
       humanSeatId: this.human?.id ?? null,
       awaitingHuman: this.pendingHuman !== null,
+      seatIssues: this.seatIssues(),
       costUsd: Number(this.costUsd.toFixed(6)),
       eventCount: this.events.length,
       paused: this.paused,
@@ -316,6 +354,7 @@ export class MatchSession {
         tokensIn: seat.usage.tokensIn,
         tokensOut: seat.usage.tokensOut,
         invalidActions: seat.usage.invalidActions,
+        errors: seat.usage.errors ?? 0,
         metrics: seat.metrics,
       })),
       totalCostUsd: result.seats.reduce((sum, seat) => sum + seat.usage.costUsd, 0),
