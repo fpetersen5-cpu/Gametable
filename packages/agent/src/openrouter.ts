@@ -160,7 +160,7 @@ export class OpenRouterClient {
         json_schema: { name: req.jsonSchema.name, strict: true, schema: req.jsonSchema.schema },
       };
     }
-    if (req.provider) payload.provider = req.provider;
+    if (req.provider) payload.provider = providerPayload(req.provider);
 
     const body = await this.request<RawCompletion>('POST', '/chat/completions', payload, req.signal);
     const text = body.choices?.[0]?.message?.content ?? '';
@@ -229,6 +229,23 @@ export class OpenRouterClient {
 
 function backoff(attempt: number): number {
   return Math.min(500 * 2 ** attempt, 8_000);
+}
+
+/**
+ * OpenRouter's provider preferences are snake_case. Sending camelCase makes
+ * the API reject the whole request with "Unrecognized keys", so translate at
+ * the HTTP boundary and keep the public option names TypeScript-idiomatic.
+ */
+export function providerPayload(preferences: ProviderPreferences): Record<string, unknown> {
+  return {
+    ...(preferences.order ? { order: preferences.order } : {}),
+    ...(preferences.allowFallbacks !== undefined
+      ? { allow_fallbacks: preferences.allowFallbacks }
+      : {}),
+    ...(preferences.requireParameters !== undefined
+      ? { require_parameters: preferences.requireParameters }
+      : {}),
+  };
 }
 
 interface RawModel {
