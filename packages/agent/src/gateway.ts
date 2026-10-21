@@ -58,6 +58,9 @@ export class LlmController implements Controller {
     errors: 0,
   };
   private lastError: string | null = null;
+  /** Some models do not accept response_format / temperature at all. */
+  private schemaSupported = true;
+  private temperatureSupported = true;
 
   constructor(private readonly deps: LlmControllerDeps) {}
 
@@ -81,7 +84,9 @@ export class LlmController implements Controller {
 
     const schema = actionSchema(legal);
     const call = (msgs: typeof messages) =>
-      (semaphore ? semaphore.run(() => this.complete(msgs, schema, req)) : this.complete(msgs, schema, req));
+      semaphore
+        ? semaphore.run(() => this.callWithFallbacks(msgs, schema, req))
+        : this.callWithFallbacks(msgs, schema, req);
 
     let result = await call(messages);
     let reply = parseJsonReply(result.text);
@@ -137,6 +142,42 @@ export class LlmController implements Controller {
     return this.notes;
   }
 
+  /**
+   * Models differ in which request parameters they accept, and
+   * `require_parameters` turns that into a hard routing failure ("No endpoints
+   * found"). We therefore never require parameters, and if a provider still
+   * rejects the schema or the temperature, we retry once without it for the
+   * rest of the match.
+   */
+  private async callWithFallbacks(
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    schema: ReturnType<typeof actionSchema>,
+    req: ActionRequest,
+  ): Promise<CompletionResult> {
+    const attempt = () =>
+      this.complete(messages, this.schemaSupported ? schema : undefined, req);
+
+    try {
+      return await attempt();
+    } catch (error) {
+      const message = describeError(error).toLowerCase();
+      let degraded = false;
+      if (this.schemaSupported && /response_format|json_schema|structured|invalid schema|schema/.test(message)) {
+        this.schemaSupported = false;
+        degraded = true;
+      }
+      if (this.temperatureSupported && /temperature|no endpoints found/.test(message)) {
+        this.temperatureSupported = false;
+        degraded = true;
+      }
+      if (!degraded) throw error;
+      // The failed probe was a capability mismatch, not a seat failure.
+      this.counters.errors = Math.max(0, this.counters.errors - 1);
+      this.lastError = null;
+      return attempt();
+    }
+  }
+
   private async complete(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     schema: ReturnType<typeof actionSchema>,
@@ -144,16 +185,16 @@ export class LlmController implements Controller {
   ): Promise<CompletionResult> {
     const { client, config } = this.deps;
     this.counters.calls += 1;
+    const temperature = this.temperatureSupported ? (config.temperature ?? 0.8) : undefined;
     let result: CompletionResult;
     try {
       result = await client.complete({
         model: config.model,
         messages,
-        temperature: config.temperature ?? 0.8,
+        ...(temperature === undefined ? {} : { temperature }),
         maxTokens: config.maxTokens ?? 600,
-        jsonSchema: schema,
+        ...(schema ? { jsonSchema: schema } : {}),
         provider: {
-          requireParameters: true,
           allowFallbacks: true,
           ...config.provider,
         },

@@ -116,7 +116,61 @@ describe('prompt construction', () => {
   });
 });
 
+class RejectingClient implements CompletionClient {
+  readonly calls: CompletionRequest[] = [];
+
+  constructor(private readonly reject: (req: CompletionRequest) => string | null) {}
+
+  async complete(req: CompletionRequest) {
+    this.calls.push(req);
+    const message = this.reject(req);
+    if (message) {
+      throw new OpenRouterError(message, 404, false, JSON.stringify({ error: { message } }));
+    }
+    return {
+      text: '{"action":{"type":"probe","target":"s2"},"notes":""}',
+      model: req.model,
+      usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.0001 },
+      latencyMs: 1,
+    };
+  }
+}
+
 describe('LlmController', () => {
+  it('drops temperature for models whose endpoints reject it', async () => {
+    const client = new RejectingClient((req) =>
+      req.temperature === undefined ? null : 'No endpoints found that can handle the requested parameters.',
+    );
+    const controller = new LlmController({
+      client,
+      gameName: 'Mines',
+      config: { model: 'anthropic/claude-opus-5.5', temperature: 0.85 },
+    });
+    const action = await controller.act(request());
+    expect(action).toEqual({ type: 'probe', target: 's2' });
+    expect(client.calls).toHaveLength(2);
+    expect(client.calls[0]?.temperature).toBe(0.85);
+    expect(client.calls[1]?.temperature).toBeUndefined();
+    expect(controller.usage().errors).toBe(0);
+  });
+
+  it('drops the JSON schema for models that reject response_format', async () => {
+    const client = new RejectingClient((req) =>
+      req.jsonSchema ? "Invalid schema for response_format 'game_action'" : null,
+    );
+    const controller = new LlmController({
+      client,
+      gameName: 'Mines',
+      config: { model: 'x/y' },
+    });
+    const action = await controller.act(request());
+    expect(action).toEqual({ type: 'probe', target: 's2' });
+    expect(client.calls).toHaveLength(2);
+    expect(client.calls[0]?.jsonSchema).toBeDefined();
+    expect(client.calls[1]?.jsonSchema).toBeUndefined();
+    expect(controller.usage().errors).toBe(0);
+  });
+
   it('returns an action the engine offered', async () => {
     const client = new FakeClient(['{"action":{"type":"probe","target":"s3"},"notes":"watch s2"}']);
     const controller = new LlmController({
