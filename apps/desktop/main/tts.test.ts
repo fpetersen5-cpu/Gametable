@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { voiceFor } from './tts.js';
+import { speakable, voiceFor } from './tts.js';
 
 describe('seat voices', () => {
   it('gives the same seat the same voice every time', () => {
@@ -16,6 +16,17 @@ describe('seat voices', () => {
       Array.from({ length: 10 }, (_, index) => voiceFor(`s${index + 1}`).speaker),
     );
     expect(speakers.size).toBe(10);
+  });
+
+  it('reads long speeches as a sentence-aligned excerpt', () => {
+    const short = speakable('Seat three is lying.');
+    expect(short).toBe('Seat three is lying.');
+
+    const long = `${'A'.repeat(150)}. ${'B'.repeat(150)} and more text.`;
+    const excerpt = speakable(long, 200);
+    expect(excerpt.length).toBeLessThan(220);
+    expect(excerpt.endsWith('…')).toBe(true);
+    expect(excerpt).toContain('.');
   });
 
   it('stays inside the model speaker range for many seats', () => {

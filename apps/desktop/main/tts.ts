@@ -26,7 +26,7 @@ export interface VoiceProfile {
 export function voiceFor(seatId: string): VoiceProfile {
   const digest = createHash('sha1').update(seatId).digest();
   const speaker = (((digest[0] ?? 0) << 8) | (digest[1] ?? 0)) % NUM_SPEAKERS;
-  const lengthScale = 0.92 + ((digest[2] ?? 0) % 5) * 0.045;
+  const lengthScale = 0.88 + ((digest[2] ?? 0) % 4) * 0.04;
   return { speaker, lengthScale: Number(lengthScale.toFixed(3)) };
 }
 
@@ -35,11 +35,7 @@ const CACHE_LIMIT = 80;
 
 /** Returns base64 WAV, or null when there is nothing to say. */
 export async function synthesize(text: string, seatId: string): Promise<string | null> {
-  const clean = text
-    .replace(/[\u0000-\u001f]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 700);
+  const clean = speakable(text);
   if (!clean) return null;
 
   const profile = voiceFor(seatId);
@@ -62,6 +58,26 @@ export async function synthesize(text: string, seatId: string): Promise<string |
   } finally {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/**
+ * Long speeches would make the audio lag the table, so read the opening of
+ * each message, cut at a sentence boundary.
+ */
+export function speakable(text: string, limit = 240): string {
+  const clean = text
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (clean.length <= limit) return clean;
+  const clipped = clean.slice(0, limit);
+  const boundary = Math.max(
+    clipped.lastIndexOf('. '),
+    clipped.lastIndexOf('? '),
+    clipped.lastIndexOf('! '),
+  );
+  const cut = boundary > limit * 0.5 ? clipped.slice(0, boundary + 1) : clipped;
+  return `${cut.trim()} …`;
 }
 
 function runPiper(text: string, profile: VoiceProfile, output: string): Promise<void> {
