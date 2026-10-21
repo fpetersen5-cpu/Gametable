@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { GameAction, GameView } from '../../shared/api';
 import { ITEM_LABEL, ROLE_GLYPH, actionTargetName } from '../game-data';
+import { useRecorder } from '../recorder';
 
 interface Props {
   view: GameView;
@@ -12,6 +13,9 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
   const [text, setText] = useState('');
   const [sayTo, setSayTo] = useState('');
   const [voteText, setVoteText] = useState('');
+  const [transcribing, setTranscribing] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const recorder = useRecorder();
   const actions = view.legalActions;
   const actor = view.phase.actors[0];
   const actorName = view.seats.find((seat) => seat.id === actor)?.name;
@@ -49,6 +53,23 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
   );
   const votes = targetActions.filter((action) => action.type === 'vote');
   const hands = actions.filter((action) => action.type === 'raise' || action.type === 'quiet');
+
+  const stopTalking = async () => {
+    const wav = await recorder.stop();
+    if (!wav) return;
+    setTranscribing(true);
+    setMicError(null);
+    try {
+      const result = await window.gametable.transcribe(wav);
+      if (result.text) {
+        setText((previous) => (previous ? `${previous} ${result.text}` : (result.text as string)));
+      } else if (result.error) {
+        setMicError(result.error);
+      }
+    } finally {
+      setTranscribing(false);
+    }
+  };
 
   const submitText = () => {
     const value = text.trim();
@@ -95,9 +116,31 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
               }
             }}
           />
-          <button className="primary" disabled={!text.trim()} onClick={submitText}>
-            Speak
-          </button>
+          <div className="say-actions">
+            <button
+              type="button"
+              className={`mic${recorder.recording ? ' recording' : ''}`}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                void recorder.start();
+              }}
+              onPointerUp={() => void stopTalking()}
+              onPointerLeave={() => {
+                if (recorder.recording) void stopTalking();
+              }}
+              disabled={transcribing}
+            >
+              {transcribing
+                ? 'Transcribing…'
+                : recorder.recording
+                  ? '● Listening — release to use'
+                  : '🎤 Hold to talk'}
+            </button>
+            <button className="primary" disabled={!text.trim()} onClick={submitText}>
+              Speak
+            </button>
+          </div>
+          {(micError || recorder.error) && <p className="error">{micError ?? recorder.error}</p>}
         </div>
       )}
 

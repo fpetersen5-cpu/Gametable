@@ -27,9 +27,13 @@ export interface KeyInfo {
   isFreeTier: boolean;
 }
 
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'input_audio'; input_audio: { data: string; format: 'wav' | 'mp3' } };
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ContentPart[];
 }
 
 export interface JsonSchemaSpec {

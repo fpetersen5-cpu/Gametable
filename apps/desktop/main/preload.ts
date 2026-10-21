@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopApi, TableSnapshot, MatchSummary, Debrief } from '../shared/api.js';
+import type { DesktopApi, TableSnapshot, MatchSummary, Debrief, ArenaProgress } from '../shared/api.js';
 
 function subscribe<T>(channel: string, handler: (payload: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, payload: T) => handler(payload);
@@ -35,6 +35,13 @@ const api: DesktopApi = {
   exportTranscript: (matchId) => ipcRenderer.invoke('matches:export', matchId),
   leaderboard: () => ipcRenderer.invoke('leaderboard'),
   speak: (text, seatId) => ipcRenderer.invoke('tts:speak', { text, seatId }),
+  transcribe: (wavBase64) => ipcRenderer.invoke('stt:transcribe', { audio: wavBase64 }),
+  arenaStart: (config) => ipcRenderer.invoke('arena:start', config),
+  arenaPause: (paused) => ipcRenderer.invoke('arena:pause', paused),
+  arenaCancel: () => ipcRenderer.invoke('arena:cancel'),
+  arenaState: () => ipcRenderer.invoke('arena:state'),
+  onArena: (handler) => subscribe<ArenaProgress>('arena:progress', handler),
+
   openDataFolder: () => ipcRenderer.invoke('app:open-data'),
 };
 

@@ -8,6 +8,7 @@ import {
   type SeatUsage,
 } from '@gametable/engine';
 import {
+  type ChatMessage,
   type CompletionRequest,
   type CompletionResult,
   type ProviderPreferences,
@@ -162,7 +163,7 @@ export class LlmController implements Controller {
    * rest of the match.
    */
   private async callWithFallbacks(
-    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    messages: ChatMessage[],
     schema: ReturnType<typeof actionSchema>,
     req: ActionRequest,
   ): Promise<CompletionResult> {
@@ -191,7 +192,7 @@ export class LlmController implements Controller {
   }
 
   private async complete(
-    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    messages: ChatMessage[],
     schema: ReturnType<typeof actionSchema>,
     req: ActionRequest,
   ): Promise<CompletionResult> {

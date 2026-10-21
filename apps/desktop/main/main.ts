@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, session, shell } from 'electron';
 import { registerIpc } from './ipc.js';
 
 const isDev = process.env.GAMETABLE_DEV === '1';
@@ -43,6 +43,14 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Push-to-talk needs the microphone; nothing else is granted.
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
+    callback(permission === 'media');
+  });
+  session.defaultSession.setPermissionCheckHandler(
+    (_contents, permission) => permission === 'media',
+  );
+
   registerIpc(app.getPath('userData'), () => mainWindow);
   createWindow();
 

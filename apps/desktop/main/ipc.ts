@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { dialog, ipcMain, shell, type BrowserWindow } from 'electron';
-import { OpenRouterClient } from '@gametable/agent';
+import { OpenRouterClient, type CompletionClient } from '@gametable/agent';
 import type { GameDef, MatchEvent, Seat } from '@gametable/engine';
 import { buckshot } from '@gametable/games-buckshot';
 import { mafia } from '@gametable/games-mafia';
@@ -9,13 +9,16 @@ import { ResultsStore, bradleyTerry } from '@gametable/stats';
 import { SecretStore } from './secrets.js';
 import { ModelCatalogCache } from './catalog.js';
 import { MatchSession } from './session.js';
+import { ArenaRunner } from './arena.js';
 import { DEMO_MODELS, DemoClient } from './demo.js';
 import { buildTranscript } from './transcript.js';
 import { synthesize } from './tts.js';
+import { transcribe } from './stt.js';
 import {
   DEFAULT_CONFIG,
   type AppConfig,
   type AppStatus,
+  type ArenaConfig,
   type GameInfo,
   type KeyResult,
   type LeaderboardRow,
@@ -38,6 +41,25 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   const liveDir = join(userDataDir, 'live');
 
   let current: MatchSession | null = null;
+  let arenaClient: CompletionClient | null = null;
+  const arena = new ArenaRunner({
+    games,
+    client: {
+      complete: (request) => {
+        if (!arenaClient) return Promise.reject(new Error('No OpenRouter key is configured.'));
+        return arenaClient.complete(request);
+      },
+    },
+    store: results,
+    saveBundle: async (bundle) => {
+      await mkdir(matchesDir, { recursive: true });
+      await writeFile(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle), {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+    },
+    emit: (progress) => getWindow()?.webContents.send('arena:progress', progress),
+  });
 
   ipcMain.handle('app:status', async (): Promise<AppStatus> => {
     const key = await secrets.getKey();
@@ -290,6 +312,27 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     if (typeof seatId === 'string') current?.release(seatId);
   });
 
+  ipcMain.handle('arena:start', async (_event, raw: unknown) => {
+    const config = raw as ArenaConfig;
+    if (!config || !Array.isArray(config.seats)) return { ok: false, error: 'invalid arena config' };
+    const key = demo ? 'demo' : await secrets.getKey();
+    if (!key) return { ok: false, error: 'Add an OpenRouter key first' };
+    arenaClient = demo
+      ? new DemoClient()
+      : new OpenRouterClient({ apiKey: key, appName: 'GameTable Arena' });
+    return arena.start(config);
+  });
+
+  ipcMain.handle('arena:pause', async (_event, paused: unknown) => {
+    arena.pause(paused === true);
+  });
+
+  ipcMain.handle('arena:cancel', async () => {
+    arena.cancel();
+  });
+
+  ipcMain.handle('arena:state', async () => arena.state());
+
   ipcMain.handle('matches:resumable', async () => {
     let entries: string[];
     try {
@@ -483,6 +526,24 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     try {
       const audio = await synthesize(text, seatId);
       return audio ? { audio } : { error: 'nothing to say' };
+    } catch (error) {
+      return { error: describe(error) };
+    }
+  });
+
+  ipcMain.handle('stt:transcribe', async (_event, payload: unknown) => {
+    const { audio } = (payload ?? {}) as { audio?: unknown };
+    if (typeof audio !== 'string' || audio.length < 100) {
+      return { error: 'That recording was too short.' };
+    }
+    const key = demo ? 'demo' : await secrets.getKey();
+    if (!key) return { error: 'Add an OpenRouter key first' };
+    const client = demo
+      ? new DemoClient()
+      : new OpenRouterClient({ apiKey: key, appName: 'GameTable STT' });
+    try {
+      const text = await transcribe(client, audio);
+      return { text };
     } catch (error) {
       return { error: describe(error) };
     }

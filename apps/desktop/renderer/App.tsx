@@ -16,8 +16,9 @@ import { MatchScreen } from './screens/MatchScreen';
 import { ReplayScreen } from './screens/ReplayScreen';
 import { LeaderboardScreen } from './screens/LeaderboardScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { ArenaScreen } from './screens/ArenaScreen';
 
-type Screen = 'table' | 'match' | 'replays' | 'leaderboard' | 'settings';
+type Screen = 'table' | 'match' | 'arena' | 'replays' | 'leaderboard' | 'settings';
 
 export function App() {
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -141,6 +142,9 @@ export function App() {
         >
           Match{live ? ' •' : ''}
         </RailButton>
+        <RailButton active={screen === 'arena'} onClick={() => setScreen('arena')} icon="⚔">
+          Arena
+        </RailButton>
         <RailButton
           active={screen === 'replays'}
           onClick={() => setScreen('replays')}
@@ -227,6 +231,15 @@ export function App() {
           ) : (
             <Splash label="Dealing the table…" />
           ))}
+
+        {screen === 'arena' && (
+          <ArenaScreen
+            games={games}
+            config={config}
+            models={models}
+            onLeaderboard={() => setScreen('leaderboard')}
+          />
+        )}
 
         {screen === 'replays' && <ReplayScreen initialMatchId={replayMatchId} />}
 

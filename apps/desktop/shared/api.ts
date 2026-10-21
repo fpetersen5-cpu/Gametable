@@ -31,7 +31,13 @@ export interface DesktopApi {
   loadReplay(matchId: string): Promise<ReplayBundle | null>;
   exportTranscript(matchId: string): Promise<ExportResult>;
   leaderboard(): Promise<LeaderboardRow[]>;
+  arenaStart(config: ArenaConfig): Promise<{ ok: boolean; error?: string }>;
+  arenaPause(paused: boolean): Promise<void>;
+  arenaCancel(): Promise<void>;
+  arenaState(): Promise<ArenaProgress>;
+  onArena(handler: (progress: ArenaProgress) => void): () => void;
   speak(text: string, seatId: string): Promise<{ audio?: string; error?: string }>;
+  transcribe(wavBase64: string): Promise<{ text?: string; error?: string }>;
   openDataFolder(): Promise<void>;
 }
 
@@ -186,6 +192,44 @@ export interface MatchSummary {
   eventCount: number;
   metrics: Record<string, number>;
   aborted?: boolean;
+}
+
+export interface ArenaSeatConfig {
+  modelId: string;
+  name: string;
+}
+
+export interface ArenaConfig {
+  gameId: string;
+  seats: ArenaSeatConfig[];
+  matches: number;
+  seedBase: number;
+  budgetPerMatch: number;
+  totalBudgetUsd: number;
+}
+
+export interface ArenaResult {
+  matchId: string;
+  gameName: string;
+  winnerNames: string[];
+  costUsd: number;
+  eventCount: number;
+  seats: Array<{ name: string; modelId?: string; role?: string }>;
+}
+
+export interface ArenaProgress {
+  running: boolean;
+  paused: boolean;
+  index: number;
+  total: number;
+  currentGame?: string;
+  currentSeats?: string[];
+  currentPhase?: string;
+  costUsd: number;
+  totalBudgetUsd: number;
+  results: ArenaResult[];
+  error?: string;
+  finishedAt?: number;
 }
 
 export interface Debrief {
