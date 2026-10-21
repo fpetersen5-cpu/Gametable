@@ -26,15 +26,16 @@ modules:
   # speech-dispatcher, which Flatpak does not expose, so the app ships its own
   # tiny TTS engine and gives every seat a distinct voice variant.
   - name: espeak-ng
-    buildsystem: cmake
+    # Autotools, not CMake: espeak-ng's CMake always clones libsonic from git
+    # even with USE_LIBSONIC=OFF, which an offline build cannot do.
+    buildsystem: autotools
     config-opts:
-      - -DCMAKE_BUILD_TYPE=Release
-      - -DBUILD_SHARED_LIBS=OFF
-      - -DUSE_ASYNC=OFF
-      - -DUSE_LIBSONIC=OFF
-      - -DUSE_LIBPCAUDIO=OFF
-      - -DUSE_MBROLA=OFF
-      - -DUSE_SPEECHPLAYER=OFF
+      - --disable-shared
+      - --without-sonic
+      - --without-pcaudiolib
+      - --without-async
+      - --without-mbrola
+      - --without-speechplayer
     cleanup:
       - /include
       - /lib/pkgconfig
