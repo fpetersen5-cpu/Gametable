@@ -246,6 +246,9 @@ describe('privacy', () => {
 
     const ids = ['s1', 's2', 's3', 's4', 's5'];
     expect(findLeaks(mafia, state, ids)).toEqual([]);
+    // Raised hands are mafia-only knowledge.
+    expect(JSON.stringify(mafia.view(state, 's3'))).not.toContain('mafiaHands');
+    expect(JSON.stringify(mafia.view(state, speaker))).toContain('mafiaHands');
     expect(JSON.stringify(mafia.view(state, 's3'))).not.toContain('Kill s3 tonight');
     expect(JSON.stringify(mafia.view(state, speaker))).toContain('Kill s3 tonight');
   });
