@@ -254,7 +254,9 @@ export class MatchSession {
     for (const seat of this.deps.seats) {
       if (seat.kind !== 'llm') continue;
       const usage = this.controllers.get(seat.id)?.usage?.();
-      if (usage?.errors) {
+      // A seat that recovered from a transient hiccup should not keep a
+      // permanent red banner on the table.
+      if (usage?.errors && !usage.recovered) {
         issues.push({
           seatId: seat.id,
           name: seat.name,

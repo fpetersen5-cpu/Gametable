@@ -101,7 +101,7 @@ export class OpenRouterClient {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-    this.maxRetries = options.maxRetries ?? 4;
+    this.maxRetries = options.maxRetries ?? 5;
   }
 
   private headers(): Record<string, string> {
@@ -210,6 +210,7 @@ export class OpenRouterClient {
           : backoff(attempt);
         await this.sleep(delay + Math.floor(Math.random() * 250));
       } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') throw error;
         if (error instanceof OpenRouterError) {
           lastError = error;
           if (!error.retryable) throw error;
@@ -228,7 +229,7 @@ export class OpenRouterClient {
 }
 
 function backoff(attempt: number): number {
-  return Math.min(500 * 2 ** attempt, 8_000);
+  return Math.min(600 * 2 ** attempt, 10_000);
 }
 
 /**

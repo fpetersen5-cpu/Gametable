@@ -29,6 +29,8 @@ export interface SeatUsage {
   /** Failed transport/API calls (auth, schema, network), not invalid moves. */
   errors?: number;
   lastError?: string;
+  /** The seat succeeded after its most recent failure. */
+  recovered?: boolean;
 }
 
 export interface Controller {

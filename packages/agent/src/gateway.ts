@@ -61,6 +61,8 @@ export class LlmController implements Controller {
   /** Some models do not accept response_format / temperature at all. */
   private schemaSupported = true;
   private temperatureSupported = true;
+  private lastOkCall = -1;
+  private lastErrorCall = -1;
 
   constructor(private readonly deps: LlmControllerDeps) {}
 
@@ -130,6 +132,7 @@ export class LlmController implements Controller {
       invalidActions: this.counters.invalidActions,
       errors: this.counters.errors,
       ...(this.lastError ? { lastError: this.lastError } : {}),
+      recovered: this.lastOkCall > this.lastErrorCall,
     };
   }
 
@@ -203,8 +206,10 @@ export class LlmController implements Controller {
     } catch (error) {
       this.counters.errors += 1;
       this.lastError = describeError(error);
+      this.lastErrorCall = this.counters.calls;
       throw error;
     }
+    this.lastOkCall = this.counters.calls;
     this.counters.tokensIn += result.usage.promptTokens;
     this.counters.tokensOut += result.usage.completionTokens;
     this.counters.costUsd += result.usage.costUsd;
@@ -231,7 +236,7 @@ export function createLlmControllers(
   return controllers;
 }
 
-/** Turn an OpenRouter failure into one human sentence for the UI. */
+/** Turn a failure into one human sentence, including the underlying cause. */
 export function describeError(error: unknown): string {
   if (error instanceof Error && 'status' in error) {
     const status = (error as { status?: number }).status;
@@ -252,5 +257,11 @@ export function describeError(error: unknown): string {
     }
     return `HTTP ${status ?? '?'} from OpenRouter`;
   }
-  return error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+  if (error instanceof Error) {
+    const cause = error.cause as { code?: string; message?: string } | undefined;
+    const detail = cause?.code ?? cause?.message;
+    const base = error.message || 'request failed';
+    return (detail ? `${base} (${detail})` : base).slice(0, 300);
+  }
+  return String(error).slice(0, 300);
 }

@@ -212,6 +212,49 @@ describe('LlmController', () => {
     expect(controller.usage().invalidActions).toBe(1);
   });
 
+  it('reports the underlying cause of a network failure', async () => {
+    const error = Object.assign(new TypeError('fetch failed'), {
+      cause: { code: 'ECONNRESET' },
+    });
+    const client = { complete: async () => { throw error; } };
+    const controller = new LlmController({
+      client,
+      gameName: 'Mines',
+      config: { model: 'x/y' },
+    });
+    await expect(controller.act(request())).rejects.toThrow();
+    expect(controller.usage().lastError).toBe('fetch failed (ECONNRESET)');
+    expect(controller.usage().recovered).toBe(false);
+  });
+
+  it('marks a seat recovered once it succeeds again', async () => {
+    let fail = true;
+    const client = {
+      complete: async (req: CompletionRequest) => {
+        if (fail) throw new TypeError('fetch failed');
+        return {
+          text: '{"action":{"type":"probe","target":"s2"},"notes":""}',
+          model: req.model,
+          usage: { promptTokens: 5, completionTokens: 5, costUsd: 0 },
+          latencyMs: 1,
+        };
+      },
+    };
+    const controller = new LlmController({
+      client,
+      gameName: 'Mines',
+      config: { model: 'x/y' },
+    });
+    await expect(controller.act(request())).rejects.toThrow();
+    expect(controller.usage().errors).toBe(1);
+    expect(controller.usage().recovered).toBe(false);
+
+    fail = false;
+    await controller.act(request());
+    expect(controller.usage().errors).toBe(1);
+    expect(controller.usage().recovered).toBe(true);
+  });
+
   it('records a failed call with the provider message', async () => {
     const body = JSON.stringify({
       error: { message: "Invalid schema for response_format 'game_action'" },
