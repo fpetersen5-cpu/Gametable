@@ -43,6 +43,7 @@ modules:
       - type: archive
         url: https://codeload.github.com/espeak-ng/espeak-ng/tar.gz/refs/tags/1.52.0
         sha256: bb4338102ff3b49a81423da8a1a158b420124b055b60fa76cfb4b18677130a23
+        dest-filename: espeak-ng-1.52.0.tar.gz
 
   - name: gametable
     buildsystem: simple
