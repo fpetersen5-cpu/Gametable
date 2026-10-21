@@ -11,9 +11,22 @@ interface Props {
   yourRole: string | null;
   /** False in replays: nobody is thinking. */
   thinking?: boolean;
+  controlledSeats?: string[];
+  onTakeover?: (seatId: string) => void;
+  onRelease?: (seatId: string) => void;
 }
 
-export function SeatRing({ seats, phase, humanSeatId, roles, yourRole, thinking }: Props) {
+export function SeatRing({
+  seats,
+  phase,
+  humanSeatId,
+  roles,
+  yourRole,
+  thinking,
+  controlledSeats = [],
+  onTakeover,
+  onRelease,
+}: Props) {
   return (
     <div className="seat-ring">
       {seats.map((seat) => {
@@ -47,6 +60,23 @@ export function SeatRing({ seats, phase, humanSeatId, roles, yourRole, thinking 
                 <span className="ring-role muted-role">unknown</span>
               )}
               {dead && <span className="ring-dead">dead</span>}
+              {seat.kind !== 'human' && !dead && (onTakeover || onRelease) && (
+                <button
+                  className="seat-act"
+                  title={
+                    controlledSeats.includes(seat.id)
+                      ? 'Give this seat back to its model'
+                      : 'Play this seat yourself'
+                  }
+                  onClick={() =>
+                    controlledSeats.includes(seat.id)
+                      ? onRelease?.(seat.id)
+                      : onTakeover?.(seat.id)
+                  }
+                >
+                  {controlledSeats.includes(seat.id) ? 'release' : 'cover'}
+                </button>
+              )}
             </div>
             {acting && thinking !== false && (
               <span className="ring-thinking">

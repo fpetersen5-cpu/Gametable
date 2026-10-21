@@ -1,8 +1,8 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { dialog, ipcMain, shell, type BrowserWindow } from 'electron';
 import { OpenRouterClient } from '@gametable/agent';
-import type { GameDef, Seat } from '@gametable/engine';
+import type { GameDef, MatchEvent, Seat } from '@gametable/engine';
 import { buckshot } from '@gametable/games-buckshot';
 import { mafia } from '@gametable/games-mafia';
 import { ResultsStore, bradleyTerry } from '@gametable/stats';
@@ -35,6 +35,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   const configFile = join(userDataDir, 'config.json');
   const results = new ResultsStore(join(userDataDir, 'results.jsonl'));
   const matchesDir = join(userDataDir, 'matches');
+  const liveDir = join(userDataDir, 'live');
 
   let current: MatchSession | null = null;
 
@@ -205,7 +206,20 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       kind: seat.kind,
       ...(seat.modelId ? { modelId: seat.modelId } : {}),
       ...(seat.persona ? { persona: seat.persona } : {}),
+      ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
     }));
+
+    const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
+    const seatModels = new Set(
+      request.seats.filter((seat) => seat.kind === 'llm' && seat.modelId).map((seat) => seat.modelId as string),
+    );
+    const cheapest = (catalogue?.models ?? [])
+      .filter((model) => seatModels.has(model.id))
+      .sort(
+        (a, b) =>
+          a.promptPrice + a.completionPrice - (b.promptPrice + b.completionPrice),
+      )[0];
+    const debriefModel = cheapest?.id ?? [...seatModels][0] ?? null;
 
     const session = new MatchSession({
       def,
@@ -223,6 +237,29 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       send: (snapshot) => window?.webContents.send('match:table', snapshot),
       sendFinished: (summary) => window?.webContents.send('match:finished', summary),
       sendError: (message) => window?.webContents.send('match:error', message),
+      sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
+      debriefModel,
+      saveLive: async (snapshot) => {
+        await mkdir(liveDir, { recursive: true });
+        await writeFile(
+          join(liveDir, `${snapshot.matchId}.json`),
+          JSON.stringify({ ...snapshot, updatedAt: Date.now() }),
+          { encoding: 'utf8', mode: 0o600 },
+        );
+      },
+      clearLive: async (matchId) => {
+        await rm(join(liveDir, `${matchId}.json`), { force: true });
+      },
+      saveDebrief: async (matchId, debrief) => {
+        const file = join(matchesDir, `${matchId}.json`);
+        try {
+          const bundle = JSON.parse(await readFile(file, 'utf8')) as ReplayBundle;
+          bundle.debrief = debrief;
+          await writeFile(file, JSON.stringify(bundle), { encoding: 'utf8', mode: 0o600 });
+        } catch {
+          // The debrief is a bonus; a missing bundle is not worth failing.
+        }
+      },
     });
     current = session;
     void session.start();
@@ -243,6 +280,135 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
 
   ipcMain.handle('match:abort', async () => {
     current?.abortMatch();
+  });
+
+  ipcMain.handle('match:takeover', async (_event, seatId: unknown) => {
+    if (typeof seatId === 'string') current?.takeover(seatId);
+  });
+
+  ipcMain.handle('match:release', async (_event, seatId: unknown) => {
+    if (typeof seatId === 'string') current?.release(seatId);
+  });
+
+  ipcMain.handle('matches:resumable', async () => {
+    let entries: string[];
+    try {
+      entries = await readdir(liveDir);
+    } catch {
+      return [];
+    }
+    const out: Array<{
+      matchId: string;
+      gameId: string;
+      gameName: string;
+      eventCount: number;
+      updatedAt: number;
+      seats: Array<{ name: string; modelId?: string }>;
+    }> = [];
+    for (const entry of entries) {
+      if (!entry.endsWith('.json')) continue;
+      try {
+        const saved = JSON.parse(await readFile(join(liveDir, entry), 'utf8')) as {
+          matchId: string;
+          gameId: string;
+          gameName: string;
+          events?: unknown[];
+          updatedAt?: number;
+          request?: { seats?: Array<{ name: string; modelId?: string }> };
+        };
+        if (!saved.matchId) continue;
+        out.push({
+          matchId: saved.matchId,
+          gameId: saved.gameId,
+          gameName: saved.gameName,
+          eventCount: saved.events?.length ?? 0,
+          updatedAt: saved.updatedAt ?? 0,
+          seats: (saved.request?.seats ?? []).map((seat) => ({
+            name: seat.name,
+            ...(seat.modelId ? { modelId: seat.modelId } : {}),
+          })),
+        });
+      } catch {
+        // ignore unreadable live files
+      }
+    }
+    return out.sort((a, b) => b.updatedAt - a.updatedAt);
+  });
+
+  ipcMain.handle('match:resume', async (_event, matchId: unknown): Promise<StartMatchResult> => {
+    if (typeof matchId !== 'string') return { ok: false, error: 'invalid match' };
+    let saved: {
+      matchId: string;
+      gameId: string;
+      request: StartMatchRequest;
+      seats: Seat[];
+      seed: number;
+      state: unknown;
+      events: MatchEvent[];
+    };
+    try {
+      saved = JSON.parse(await readFile(join(liveDir, `${matchId}.json`), 'utf8')) as typeof saved;
+    } catch {
+      return { ok: false, error: 'That match is no longer resumable.' };
+    }
+    const def = games.find((game) => game.id === saved.gameId);
+    if (!def) return { ok: false, error: `unknown game: ${saved.gameId}` };
+
+    const key = demo ? 'demo' : await secrets.getKey();
+    if (saved.request.seats.some((seat) => seat.kind === 'llm') && !key) {
+      return { ok: false, error: 'Add an OpenRouter key first' };
+    }
+    current?.abortMatch();
+    const window = getWindow();
+    const session = new MatchSession({
+      def,
+      seats: saved.seats,
+      request: saved.request,
+      client: demo
+        ? new DemoClient()
+        : key
+          ? new OpenRouterClient({ apiKey: key, appName: 'GameTable' })
+          : null,
+      store: results,
+      matchId: saved.matchId,
+      resume: { state: saved.state, events: saved.events },
+      saveBundle: async (bundle) => {
+        await mkdir(matchesDir, { recursive: true });
+        await writeFile(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle), {
+          encoding: 'utf8',
+          mode: 0o600,
+        });
+      },
+      send: (snapshot) => window?.webContents.send('match:table', snapshot),
+      sendFinished: (summary) => window?.webContents.send('match:finished', summary),
+      sendError: (message) => window?.webContents.send('match:error', message),
+      sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
+      debriefModel: saved.seats.find((seat) => seat.kind === 'llm')?.modelId ?? null,
+      saveLive: async (snapshot) => {
+        await mkdir(liveDir, { recursive: true });
+        await writeFile(
+          join(liveDir, `${snapshot.matchId}.json`),
+          JSON.stringify({ ...snapshot, updatedAt: Date.now() }),
+          { encoding: 'utf8', mode: 0o600 },
+        );
+      },
+      clearLive: async (id) => {
+        await rm(join(liveDir, `${id}.json`), { force: true });
+      },
+      saveDebrief: async (id, debrief) => {
+        try {
+          const file = join(matchesDir, `${id}.json`);
+          const bundle = JSON.parse(await readFile(file, 'utf8')) as ReplayBundle;
+          bundle.debrief = debrief;
+          await writeFile(file, JSON.stringify(bundle), { encoding: 'utf8', mode: 0o600 });
+        } catch {
+          // ignore
+        }
+      },
+    });
+    current = session;
+    void session.start();
+    return { ok: true, matchId: session.matchId };
   });
 
   ipcMain.handle('matches:list', async (): Promise<MatchSummary[]> => {

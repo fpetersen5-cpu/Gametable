@@ -49,6 +49,7 @@ export interface MafiaState {
   steps: StepId[];
   votes: Record<SeatId, SeatId>;
   talkQueue: SeatId[];
+  voteQueue: SeatId[];
   passesInRow: number;
   speechesToday: number;
   discussionRounds: number;
@@ -118,8 +119,10 @@ function actorsFor(state: MafiaState): SeatId[] {
       return speaker && state.alive.includes(speaker) ? [speaker] : [];
     }
     case 'day-vote':
-    case 'runoff':
-      return [...state.alive];
+    case 'runoff': {
+      const voter = state.voteQueue[0];
+      return voter && state.alive.includes(voter) ? [voter] : [];
+    }
     default:
       return [];
   }
@@ -156,11 +159,13 @@ export function legalActionsFor(state: MafiaState, seatId: SeatId): GameAction[]
         .filter((id) => id !== seatId)
         .map((id) => ({ type: 'investigate', target: id }));
     case 'day-vote':
-      return state.alive.filter((id) => id !== seatId).map((id) => ({ type: 'vote', target: id }));
+      return state.alive
+        .filter((id) => id !== seatId)
+        .map((id) => ({ type: 'vote', target: id, text: '' }));
     case 'runoff':
       return state.runoff
         .filter((id) => id !== seatId)
-        .map((id) => ({ type: 'vote', target: id }));
+        .map((id) => ({ type: 'vote', target: id, text: '' }));
     default:
       return [];
   }
@@ -233,6 +238,7 @@ function shiftStep(state: MafiaState): void {
   state.steps.shift();
   state.votes = {};
   state.talkQueue = [];
+  state.voteQueue = [];
   state.passesInRow = 0;
   state.speechesToday = 0;
 }
@@ -244,6 +250,10 @@ function settle(state: MafiaState): void {
     if (state.steps.length === 0) state.steps = buildCycleSteps(state);
     const step = state.steps[0];
     if (!step) break;
+    if ((step === 'day-vote' || step === 'runoff') && state.voteQueue.length === 0) {
+      state.voteQueue = shuffleAlive(state);
+      state.votes = {};
+    }
     if (
       (step === 'day-talk' || step === 'mafia-talk') &&
       state.talkQueue.length === 0
@@ -296,6 +306,7 @@ function resolveVotes(state: MafiaState): void {
     }
     state.runoff = top;
     state.votes = {};
+    state.voteQueue = shuffleAlive(state);
     pushLog(
       state,
       `The vote is tied between ${top.map((id) => nameOf(state, id)).join(' and ')}. Runoff.`,
@@ -317,6 +328,14 @@ function resolveVotes(state: MafiaState): void {
     if (target) eliminate(state, target, 'vote');
     settle(state);
   }
+}
+
+/** Shuffle the living seats for a vote, using the game's seeded RNG. */
+function shuffleAlive(state: MafiaState): SeatId[] {
+  const rng = Rng.fromSeed(state.rngState);
+  const order = rng.shuffle([...state.alive]);
+  state.rngState = rng.snapshot();
+  return order;
 }
 
 function dealRoles(state: MafiaState, rng: Rng): void {
@@ -372,6 +391,7 @@ export const mafia: GameDef<MafiaState> = {
       steps: [],
       votes: {},
       talkQueue: [],
+      voteQueue: [],
       passesInRow: 0,
       speechesToday: 0,
       discussionRounds:
@@ -401,10 +421,7 @@ export const mafia: GameDef<MafiaState> = {
     return {
       id: step,
       label: STEP_LABEL[step] ?? step,
-      kind:
-        step === 'night-kill' || step === 'day-vote' || step === 'runoff'
-          ? 'simultaneous'
-          : 'sequential',
+      kind: step === 'night-kill' ? 'simultaneous' : 'sequential',
       actor: actors[0] ?? null,
       actors,
       round: state.day,
@@ -562,11 +579,31 @@ export const mafia: GameDef<MafiaState> = {
       return next;
     }
 
-    if (step === 'night-kill' || step === 'day-vote' || step === 'runoff') {
+    if (step === 'night-kill') {
       next.votes[seatId] = String(chosen.target);
       next.stats.votes += 1;
-      const expected = actorsFor(state);
-      if (Object.keys(next.votes).length >= expected.length) resolveVotes(next);
+      if (Object.keys(next.votes).length >= actorsFor(state).length) resolveVotes(next);
+      return next;
+    }
+
+    if (step === 'day-vote' || step === 'runoff') {
+      const target = String(chosen.target);
+      // Every voter gets a line at the table, which means every voter gets a
+      // voice message even when the model returns an empty rationale.
+      const spoken = String(action.text ?? '').trim().slice(0, 240);
+      const rationale = spoken || `I vote for ${nameOf(next, target)}.`;
+      next.chat.push({
+        id: `c${next.chat.length + 1}`,
+        seatId,
+        channel: 'public',
+        text: rationale,
+        phaseId: step,
+        round: next.day,
+      });
+      next.votes[seatId] = target;
+      next.stats.votes += 1;
+      next.voteQueue = next.voteQueue.filter((id) => id !== seatId);
+      if (Object.keys(next.votes).length >= next.alive.length) resolveVotes(next);
       return next;
     }
 

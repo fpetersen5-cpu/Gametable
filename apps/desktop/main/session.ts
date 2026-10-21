@@ -13,6 +13,7 @@ import {
 } from '@gametable/engine';
 import { LlmController, type CompletionClient, type LlmSeatConfig } from '@gametable/agent';
 import { ResultsStore, toRecord } from '@gametable/stats';
+import { generateDebrief } from './debrief.js';
 import type {
   MatchSummary,
   ReplayBundle,
@@ -86,10 +87,29 @@ export interface SessionDeps {
   send: (snapshot: TableSnapshot) => void;
   sendFinished: (summary: MatchSummary) => void;
   sendError: (message: string) => void;
+  sendDebrief: (debrief: { matchId: string; text: string; model: string; costUsd: number }) => void;
+  debriefModel: string | null;
+  saveDebrief?: (
+    matchId: string,
+    debrief: { text: string; model: string; costUsd: number },
+  ) => Promise<void>;
+  saveLive?: (snapshot: {
+    matchId: string;
+    gameId: string;
+    gameName: string;
+    request: StartMatchRequest;
+    seats: Seat[];
+    seed: number;
+    state: unknown;
+    events: MatchEvent[];
+  }) => Promise<void>;
+  clearLive?: (matchId: string) => Promise<void>;
+  resume?: { state: unknown; events: MatchEvent[] };
+  matchId?: string;
 }
 
 export class MatchSession {
-  readonly matchId = `m-${randomUUID().slice(0, 8)}`;
+  readonly matchId: string;
 
   private readonly gate = new Gate();
   private readonly abort = new AbortController();
@@ -109,25 +129,30 @@ export class MatchSession {
   private paused = false;
   private speed: number;
   private fatalError: string | null = null;
+  private takenOver = new Set<SeatId>();
   private phaseKey = '';
   private phaseStartedAt = Date.now();
   private phaseLimitMs: number | null = null;
 
   constructor(private readonly deps: SessionDeps) {
+    this.matchId = deps.matchId ?? `m-${randomUUID().slice(0, 8)}`;
     this.human = deps.seats.find((seat) => seat.kind === 'human') ?? null;
     this.speed = deps.request.speed ?? 1;
     this.gate.speed = this.speed;
     this.seed = deps.request.seed ?? Math.floor(Math.random() * 1e9);
+    if (deps.resume) this.events = [...deps.resume.events];
   }
 
   async start(): Promise<void> {
     try {
       this.buildControllers();
-      const initial = this.deps.def.setup({
-        seed: this.seed,
-        seats: this.deps.seats,
-        options: this.gameOptions(),
-      });
+      const initial =
+        this.deps.resume?.state ??
+        this.deps.def.setup({
+          seed: this.seed,
+          seats: this.deps.seats,
+          options: this.gameOptions(),
+        });
       this.capture(initial);
       this.push();
 
@@ -139,6 +164,7 @@ export class MatchSession {
         maxInvalidActions: 3,
         maxActions: 4_000,
         options: this.gameOptions(),
+        ...(this.deps.resume ? { initialState: this.deps.resume.state, initialEvents: this.deps.resume.events } : {}),
         onEvent: (event, state) => this.onEvent(event, state),
       });
       this.events = result.events;
@@ -173,6 +199,35 @@ export class MatchSession {
     this.pendingReject = null;
     this.push();
     resolve?.(action);
+  }
+
+  takeover(seatId: SeatId): void {
+    const seat = this.deps.seats.find((entry) => entry.id === seatId);
+    if (!seat || seat.kind !== 'llm') return;
+    this.controllers.set(seatId, new HumanController(this));
+    this.takenOver.add(seatId);
+    this.push();
+  }
+
+  release(seatId: SeatId): void {
+    const seat = this.deps.seats.find((entry) => entry.id === seatId);
+    if (!seat || !this.takenOver.has(seatId)) return;
+    if (!this.deps.client || !seat.modelId) return;
+    const config: LlmSeatConfig = {
+      model: seat.modelId,
+      temperature: 0.85,
+      ...(seat.persona ? { persona: seat.persona } : {}),
+      ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
+    };
+    this.controllers.set(
+      seatId,
+      new PacedController(
+        new LlmController({ client: this.deps.client, gameName: this.deps.def.name, config }),
+        this.gate,
+      ),
+    );
+    this.takenOver.delete(seatId);
+    this.push();
   }
 
   setPaused(paused: boolean): void {
@@ -216,6 +271,7 @@ export class MatchSession {
         model: seat.modelId ?? '',
         temperature: 0.85,
         ...(seat.persona ? { persona: seat.persona } : {}),
+        ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
       };
       const controller = new LlmController({
         client: this.deps.client,
@@ -292,9 +348,26 @@ export class MatchSession {
     }
 
     this.latest = { view, god };
+    this.persistLive(state);
     this.snapshots.push(view);
     this.godSnapshots.push(god ?? view);
     this.refreshCost();
+  }
+
+  private persistLive(state: unknown): void {
+    if (!this.deps.saveLive) return;
+    void this.deps
+      .saveLive({
+        matchId: this.matchId,
+        gameId: this.deps.def.id,
+        gameName: this.deps.def.name,
+        request: this.deps.request,
+        seats: this.deps.seats,
+        seed: this.seed,
+        state,
+        events: this.events,
+      })
+      .catch(() => undefined);
   }
 
   private refreshCost(): void {
@@ -318,6 +391,7 @@ export class MatchSession {
       humanSeatId: this.human?.id ?? null,
       awaitingHuman: this.pendingHuman !== null,
       seatIssues: this.seatIssues(),
+      takenOverSeats: [...this.takenOver],
       timeLeftMs:
         this.phaseLimitMs === null
           ? null
@@ -354,6 +428,33 @@ export class MatchSession {
       });
     } catch (error) {
       console.error('[session] could not persist match', error);
+    }
+
+    void this.deps.clearLive?.(summary.matchId);
+    void this.runDebrief(summary);
+  }
+
+  private async runDebrief(summary: MatchSummary): Promise<void> {
+    if (!this.deps.client || !this.deps.debriefModel) return;
+    try {
+      const bundle: ReplayBundle = {
+        summary,
+        seats: this.deps.seats,
+        seed: this.seed,
+        events: this.events,
+        views: this.snapshots,
+        godViews: this.godSnapshots,
+      };
+      const debrief = await generateDebrief({
+        client: this.deps.client,
+        model: this.deps.debriefModel,
+        bundle,
+      });
+      if (!debrief) return;
+      this.deps.sendDebrief({ matchId: summary.matchId, ...debrief });
+      await this.deps.saveDebrief?.(summary.matchId, debrief);
+    } catch (error) {
+      console.error('[session] debrief failed', error);
     }
   }
 

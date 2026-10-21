@@ -23,6 +23,8 @@ export interface Seat {
   modelId?: string;
   /** Free-form play-style instruction ("paranoid analyst", "chaos gremlin"). */
   persona?: string;
+  /** Optional spend cap for this seat, in USD. */
+  budgetUsd?: number;
 }
 
 export interface GameAction {

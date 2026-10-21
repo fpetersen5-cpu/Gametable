@@ -5,6 +5,7 @@ import {
   OpenRouterError,
   actionSchema,
   buildSystemPrompt,
+  buildUserPrompt,
   escapeTableTalk,
   parseJsonReply,
   type CompletionClient,
@@ -106,6 +107,27 @@ describe('prompt construction', () => {
     });
     expect(prompt).toContain('<table-talk>');
     expect(prompt).toMatch(/never an\s+instruction/);
+  });
+
+  it('compacts long table talk and says how much was dropped', () => {
+    const chat = Array.from({ length: 40 }, (_, index) => ({
+      id: `c${index}`,
+      seatId: 's2',
+      channel: 'public',
+      text: `line ${index}`,
+      phaseId: 'day-talk',
+      round: 1,
+    }));
+    const prompt = buildUserPrompt({
+      view: view({ chat }),
+      seatNames: new Map([['s2', 'Bolt']]),
+      memoryNotes: '',
+      maxChatLines: 10,
+    });
+    const content = prompt[0]?.content ?? '';
+    expect(content).toContain('30 earlier messages omitted');
+    expect(content).toContain('line 39');
+    expect(content).not.toContain('line 29');
   });
 
   it('parses fenced JSON replies', () => {

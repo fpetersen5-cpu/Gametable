@@ -26,6 +26,10 @@ export interface LlmSeatConfig {
   maxTokens?: number;
   persona?: string;
   provider?: ProviderPreferences;
+  /** Hard cap for this seat; once reached it stops acting. */
+  budgetUsd?: number;
+  /** How much recent table talk to include verbatim. */
+  maxChatLines?: number;
 }
 
 export interface LlmControllerDeps {
@@ -81,7 +85,12 @@ export class LlmController implements Controller {
     });
     const messages = [
       { role: 'system' as const, content: system },
-      ...buildUserPrompt({ view: req.view, seatNames, memoryNotes: this.notes }),
+      ...buildUserPrompt({
+        view: req.view,
+        seatNames,
+        memoryNotes: this.notes,
+        maxChatLines: config.maxChatLines ?? 18,
+      }),
     ];
 
     const schema = actionSchema(legal);
@@ -187,6 +196,11 @@ export class LlmController implements Controller {
     req: ActionRequest,
   ): Promise<CompletionResult> {
     const { client, config } = this.deps;
+    if (config.budgetUsd !== undefined && this.counters.costUsd >= config.budgetUsd) {
+      throw new Error(
+        `Seat budget of $${config.budgetUsd.toFixed(2)} reached (spent $${this.counters.costUsd.toFixed(3)}).`,
+      );
+    }
     this.counters.calls += 1;
     const temperature = this.temperatureSupported ? (config.temperature ?? 0.8) : undefined;
     let result: CompletionResult;

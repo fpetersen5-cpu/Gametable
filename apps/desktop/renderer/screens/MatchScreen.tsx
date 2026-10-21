@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { GameAction, MatchSummary, TableSnapshot } from '../../shared/api';
+import type { Debrief, GameAction, MatchSummary, TableSnapshot } from '../../shared/api';
 import { formatUsd } from '../game-data';
 import { GameTable } from '../components/GameTable';
 import { useSeatVoices } from '../voice';
@@ -9,9 +9,12 @@ interface Props {
   summary: MatchSummary | null;
   error: string | null;
   exportNote: string | null;
+  debrief: Debrief | null;
   voiceEnabled: boolean;
   onVoiceChange: (enabled: boolean) => void;
   onAction: (action: GameAction) => void;
+  onTakeover: (seatId: string) => void;
+  onRelease: (seatId: string) => void;
   onPause: (paused: boolean) => void;
   onSpeed: (speed: number) => void;
   onAbort: () => void;
@@ -47,6 +50,11 @@ export function MatchScreen(props: Props) {
           <div className="phase-line">
             <span className="phase-chip">{phase.label}</span>
             {typeof phase.round === 'number' && <span className="chip">round {phase.round}</span>}
+            {snapshot.takenOverSeats.includes(phase.actors[0] ?? '') && (
+              <span className="chip warn">
+                covering {snapshot.view.seats.find((seat) => seat.id === phase.actors[0])?.name ?? 'seat'}
+              </span>
+            )}
             {snapshot.timeLeftMs !== null && (
               <span className={`chip${snapshot.timeLeftMs < 60_000 ? ' warn' : ''}`}>
                 {formatClock(snapshot.timeLeftMs)} left
@@ -130,6 +138,12 @@ export function MatchScreen(props: Props) {
         spectator={snapshot.spectator}
         awaiting={snapshot.awaitingHuman}
         onAction={props.onAction}
+        controlledSeats={[
+          ...(snapshot.humanSeatId ? [snapshot.humanSeatId] : []),
+          ...snapshot.takenOverSeats,
+        ]}
+        onTakeover={finished ? undefined : props.onTakeover}
+        onRelease={finished ? undefined : props.onRelease}
       />
 
       {summary && showSummary && (
@@ -137,6 +151,7 @@ export function MatchScreen(props: Props) {
           <div className="postgame" onClick={(event) => event.stopPropagation()}>
             <PostGame
               summary={summary}
+              debrief={props.debrief}
               exportNote={props.exportNote}
               onExit={props.onExit}
               onReplay={props.onReplay}
@@ -152,6 +167,7 @@ export function MatchScreen(props: Props) {
 
 function PostGame(props: {
   summary: MatchSummary;
+  debrief: Debrief | null;
   exportNote: string | null;
   onExit: () => void;
   onReplay: () => void;
@@ -226,6 +242,20 @@ function PostGame(props: {
           ))}
         </tbody>
       </table>
+
+      <div className="debrief">
+        <h3>Debrief</h3>
+        {props.debrief ? (
+          <p>{props.debrief.text}</p>
+        ) : (
+          <p className="muted">Analysing the match…</p>
+        )}
+        {props.debrief && (
+          <small className="muted">
+            by {props.debrief.model.replace(/^[^/]+\//, '')} · ${props.debrief.costUsd.toFixed(4)}
+          </small>
+        )}
+      </div>
 
       {Object.keys(summary.metrics).length > 0 && (
         <div className="metric-chips">

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { AppConfig, GameInfo, ModelInfo, SeatConfig, StartMatchRequest } from '../../shared/api';
+import type { AppConfig, GameInfo, ModelInfo, ResumableMatch, SeatConfig, StartMatchRequest } from '../../shared/api';
 import { shortModel } from '../game-data';
 
 interface Props {
@@ -10,6 +10,8 @@ interface Props {
   onChange: (config: AppConfig) => Promise<void>;
   onRefreshModels: (refresh: boolean) => Promise<void>;
   onStart: (request: StartMatchRequest) => Promise<{ ok: boolean; error?: string }>;
+  resumable: ResumableMatch[];
+  onResume: (matchId: string) => Promise<void>;
 }
 
 export function TableSetup(props: Props) {
@@ -35,6 +37,13 @@ export function TableSetup(props: Props) {
   const seatName = (seat: SeatConfig) =>
     models.find((model) => model.id === seat.modelId)?.name ?? shortModel(seat.modelId);
 
+  const estimate = config.seats.reduce((sum, seat) => {
+    const model = models.find((entry) => entry.id === seat.modelId);
+    if (!model) return sum;
+    // Rough: ~16 calls per seat, 1.6k prompt + 220 completion tokens each.
+    return sum + 16 * (model.promptPrice * 1600 + model.completionPrice * 220);
+  }, 0);
+
   const start = async () => {
     if (!game) return;
     setError(null);
@@ -46,6 +55,7 @@ export function TableSetup(props: Props) {
         kind: 'llm',
         modelId: seat.modelId,
         ...(seat.persona ? { persona: seat.persona } : {}),
+        ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
       });
     }
     if (seats.length < game.minSeats || seats.length > game.maxSeats) {
@@ -84,6 +94,21 @@ export function TableSetup(props: Props) {
           </button>
         </div>
       </header>
+
+      {props.resumable.length > 0 && (
+        <section className="resume-card">
+          <div>
+            <strong>Unfinished match</strong>
+            <p className="muted">
+              {props.resumable[0]?.gameName} · {props.resumable[0]?.eventCount} actions ·{' '}
+              {new Date(props.resumable[0]?.updatedAt ?? 0).toLocaleString()}
+            </p>
+          </div>
+          <button className="primary" onClick={() => void props.onResume(props.resumable[0]?.matchId ?? '')}>
+            Resume
+          </button>
+        </section>
+      )}
 
       <section className="game-picker">
         {games.map((entry) => (
@@ -157,6 +182,22 @@ export function TableSetup(props: Props) {
                 setSeats(seats);
               }}
             />
+            <input
+              className="cap-input"
+              type="number"
+              min={0}
+              step={0.05}
+              placeholder="cap $ (optional)"
+              value={seat.budgetUsd ?? ''}
+              onChange={(event) => {
+                const seats = [...config.seats];
+                seats[index] = {
+                  ...seat,
+                  budgetUsd: event.target.value === '' ? undefined : Number(event.target.value),
+                };
+                setSeats(seats);
+              }}
+            />
           </div>
         ))}
 
@@ -178,7 +219,11 @@ export function TableSetup(props: Props) {
             {spectator
               ? 'Spectator mode: every role, hand and chamber is visible.'
               : `${config.seats.length} model${config.seats.length === 1 ? '' : 's'} at the table.`}{' '}
-            Budget ${config.budgetUsd.toFixed(2)} for this match.
+            Budget ${config.budgetUsd.toFixed(2)} for this match · estimated ≈ $
+            {estimate.toFixed(2)}.
+            {estimate > config.budgetUsd && (
+              <strong className="estimate-warn"> That estimate exceeds your budget — the match will stop early.</strong>
+            )}
           </p>
           {error && <p className="error">{error}</p>}
           {!error && seatIssue && <p className="error">{seatIssue}</p>}

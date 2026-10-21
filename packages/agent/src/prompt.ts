@@ -58,8 +58,13 @@ export function buildUserPrompt(args: {
   view: GameView;
   seatNames: Map<string, string>;
   memoryNotes: string;
+  /** Keep the prompt small: only the most recent table talk is verbatim. */
+  maxChatLines?: number;
 }): ChatMessage[] {
   const { view, seatNames, memoryNotes } = args;
+  const limit = Math.max(4, args.maxChatLines ?? 18);
+  const recent = view.chat.slice(-limit);
+  const omitted = view.chat.length - recent.length;
   const visibleSeats = view.seats.map((s) => ({
     seatId: s.id,
     name: s.name,
@@ -67,7 +72,8 @@ export function buildUserPrompt(args: {
   }));
   const content = [
     '<table-talk>',
-    renderChat(view.chat, seatNames),
+    ...(omitted > 0 ? [`(${omitted} earlier messages omitted; your notes carry the rest)`] : []),
+    renderChat(recent, seatNames),
     '</table-talk>',
     '',
     `<game-state phase="${escapeTableTalk(view.phase.label)}" round="${view.phase.round ?? 0}">`,

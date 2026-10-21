@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopApi, TableSnapshot, MatchSummary } from '../shared/api.js';
+import type { DesktopApi, TableSnapshot, MatchSummary, Debrief } from '../shared/api.js';
 
 function subscribe<T>(channel: string, handler: (payload: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, payload: T) => handler(payload);
@@ -21,11 +21,16 @@ const api: DesktopApi = {
   setPaused: (paused) => ipcRenderer.invoke('match:pause', paused),
   setSpeed: (speed) => ipcRenderer.invoke('match:speed', speed),
   abortMatch: () => ipcRenderer.invoke('match:abort'),
+  takeoverSeat: (seatId) => ipcRenderer.invoke('match:takeover', seatId),
+  releaseSeat: (seatId) => ipcRenderer.invoke('match:release', seatId),
   onTable: (handler) => subscribe<TableSnapshot>('match:table', handler),
   onFinished: (handler) => subscribe<MatchSummary>('match:finished', handler),
   onMatchError: (handler) => subscribe<string>('match:error', handler),
+  onDebrief: (handler) => subscribe<Debrief>('match:debrief', handler),
 
   listMatches: () => ipcRenderer.invoke('matches:list'),
+  listResumable: () => ipcRenderer.invoke('matches:resumable'),
+  resumeMatch: (matchId) => ipcRenderer.invoke('match:resume', matchId),
   loadReplay: (matchId) => ipcRenderer.invoke('matches:replay', matchId),
   exportTranscript: (matchId) => ipcRenderer.invoke('matches:export', matchId),
   leaderboard: () => ipcRenderer.invoke('leaderboard'),

@@ -18,11 +18,16 @@ export interface DesktopApi {
   setPaused(paused: boolean): Promise<void>;
   setSpeed(speed: number): Promise<void>;
   abortMatch(): Promise<void>;
+  takeoverSeat(seatId: string): Promise<void>;
+  releaseSeat(seatId: string): Promise<void>;
   onTable(handler: (snapshot: TableSnapshot) => void): () => void;
   onFinished(handler: (summary: MatchSummary) => void): () => void;
   onMatchError(handler: (message: string) => void): () => void;
+  onDebrief(handler: (debrief: Debrief) => void): () => void;
 
   listMatches(): Promise<MatchSummary[]>;
+  listResumable(): Promise<ResumableMatch[]>;
+  resumeMatch(matchId: string): Promise<StartMatchResult>;
   loadReplay(matchId: string): Promise<ReplayBundle | null>;
   exportTranscript(matchId: string): Promise<ExportResult>;
   leaderboard(): Promise<LeaderboardRow[]>;
@@ -55,6 +60,8 @@ export interface SeatConfig {
   modelId: string;
   persona?: string;
   temperature?: number;
+  /** Optional per-seat spend cap in USD. */
+  budgetUsd?: number;
 }
 
 export interface AppConfig {
@@ -93,7 +100,13 @@ export interface GameInfo {
 
 export interface StartMatchRequest {
   gameId: string;
-  seats: Array<{ name: string; kind: 'human' | 'llm'; modelId?: string; persona?: string }>;
+  seats: Array<{
+    name: string;
+    kind: 'human' | 'llm';
+    modelId?: string;
+    persona?: string;
+    budgetUsd?: number;
+  }>;
   seed?: number;
   budgetUsd: number;
   speed: number;
@@ -119,6 +132,8 @@ export interface TableSnapshot {
   awaitingHuman: boolean;
   /** Per-seat transport failures, shown as a banner instead of failing silently. */
   seatIssues: SeatIssue[];
+  /** Seats the human has taken over from a model. */
+  takenOverSeats: string[];
   /** ms left in the current phase's deadline, or null when it has none. */
   timeLeftMs: number | null;
   costUsd: number;
@@ -149,6 +164,15 @@ export interface SeatSummary {
   metrics?: Record<string, number>;
 }
 
+export interface ResumableMatch {
+  matchId: string;
+  gameId: string;
+  gameName: string;
+  eventCount: number;
+  updatedAt: number;
+  seats: Array<{ name: string; modelId?: string }>;
+}
+
 export interface MatchSummary {
   matchId: string;
   gameId: string;
@@ -164,8 +188,16 @@ export interface MatchSummary {
   aborted?: boolean;
 }
 
+export interface Debrief {
+  matchId: string;
+  text: string;
+  model: string;
+  costUsd: number;
+}
+
 export interface ReplayBundle {
   summary: MatchSummary;
+  debrief?: { text: string; model: string; costUsd: number };
   seats: Seat[];
   seed: number;
   events: MatchEvent[];

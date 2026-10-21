@@ -13,13 +13,26 @@ interface Props {
   spectator: boolean;
   awaiting: boolean;
   onAction?: (action: GameAction) => void;
+  controlledSeats?: string[];
+  onTakeover?: (seatId: string) => void;
+  onRelease?: (seatId: string) => void;
 }
 
 /**
  * Generic table. Game-specific panels are chosen by the *shape* of the view
  * data and declared capabilities, never by a hard-coded game id.
  */
-export function GameTable({ view, godView, humanSeatId, spectator, awaiting, onAction }: Props) {
+export function GameTable({
+  view,
+  godView,
+  humanSeatId,
+  spectator,
+  awaiting,
+  onAction,
+  controlledSeats,
+  onTakeover,
+  onRelease,
+}: Props) {
   const shown = spectator && godView ? godView : view;
   const mafia = mafiaData(shown);
   const buck = buckshotData(shown);
@@ -34,6 +47,9 @@ export function GameTable({ view, godView, humanSeatId, spectator, awaiting, onA
         roles={mafia?.god?.roles ?? buck?.publicRoles ?? null}
         yourRole={mafia?.yourRole ?? null}
         thinking={awaiting}
+        controlledSeats={controlledSeats}
+        onTakeover={onTakeover}
+        onRelease={onRelease}
       />
 
       <div className={`table-body${showActions ? '' : ' solo'}`}>

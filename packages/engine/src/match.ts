@@ -75,6 +75,10 @@ export interface RunOptions<S = unknown> {
   /** Hard guard against a game that never terminates. */
   maxActions?: number;
   options?: Record<string, unknown>;
+  /** Resume: continue from this state instead of calling setup(). */
+  initialState?: S;
+  /** Resume: events already played, kept in the result log. */
+  initialEvents?: MatchEvent[];
   onEvent?: (event: MatchEvent, state: S) => void;
   /** Cooperative abort, checked between actions. */
   signal?: AbortSignal;
@@ -215,8 +219,9 @@ export async function runMatch<S>(
   }
 
   const startedAt = now();
-  let state = def.setup({ seed: options.seed, seats, options: options.options ?? {} });
-  const events: MatchEvent[] = [];
+  let state =
+    options.initialState ?? def.setup({ seed: options.seed, seats, options: options.options ?? {} });
+  const events: MatchEvent[] = options.initialEvents ? [...options.initialEvents] : [];
   const usage = new Map<SeatId, SeatUsage>(seats.map((s) => [s.id, emptyUsage()]));
 
   let guard = 0;

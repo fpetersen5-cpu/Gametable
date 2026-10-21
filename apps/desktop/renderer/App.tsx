@@ -4,7 +4,9 @@ import type {
   AppConfig,
   AppStatus,
   GameInfo,
+  Debrief,
   MatchSummary,
+  ResumableMatch,
   ModelInfo,
   StartMatchRequest,
   TableSnapshot,
@@ -29,6 +31,8 @@ export function App() {
   const [summary, setSummary] = useState<MatchSummary | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [debrief, setDebrief] = useState<Debrief | null>(null);
+  const [resumable, setResumable] = useState<ResumableMatch[]>([]);
   const [replayMatchId, setReplayMatchId] = useState<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
@@ -52,12 +56,19 @@ export function App() {
     const offTable = window.gametable.onTable((next) => setSnapshot(next));
     const offFinished = window.gametable.onFinished((next) => setSummary(next));
     const offError = window.gametable.onMatchError((message) => setMatchError(message));
+    const offDebrief = window.gametable.onDebrief((next) => setDebrief(next));
     return () => {
       offTable();
       offFinished();
       offError();
+      offDebrief();
     };
   }, []);
+
+  useEffect(() => {
+    if (screen !== 'table') return;
+    void window.gametable.listResumable().then(setResumable).catch(() => setResumable([]));
+  }, [screen]);
 
   useEffect(() => {
     if (!status?.hasKey) return;
@@ -88,6 +99,7 @@ export function App() {
     setSummary(null);
     setMatchError(null);
     setExportNote(null);
+    setDebrief(null);
     const result = await window.gametable.startMatch(request);
     if (result.ok) setScreen('match');
     return result;
@@ -163,6 +175,16 @@ export function App() {
             games={games}
             onChange={updateConfig}
             onStart={startMatch}
+            resumable={resumable}
+            onResume={async (matchId) => {
+              setSummary(null);
+              setSnapshot(null);
+              setDebrief(null);
+              setMatchError(null);
+              const result = await window.gametable.resumeMatch(matchId);
+              if (result.ok) setScreen('match');
+              else setMatchError(result.error ?? 'Could not resume that match');
+            }}
             onRefreshModels={async (refresh) => {
               const result = await window.gametable.listModels(refresh);
               setModels(result.models);
@@ -178,9 +200,12 @@ export function App() {
               summary={summary}
               error={matchError}
               exportNote={exportNote}
+              debrief={debrief}
               voiceEnabled={config.voice}
               onVoiceChange={(voice) => void updateConfig({ ...config, voice })}
               onAction={(action) => void window.gametable.submitAction(action)}
+              onTakeover={(seatId) => void window.gametable.takeoverSeat(seatId)}
+              onRelease={(seatId) => void window.gametable.releaseSeat(seatId)}
               onPause={(paused) => void window.gametable.setPaused(paused)}
               onSpeed={(speed) => void window.gametable.setSpeed(speed)}
               onAbort={() => void window.gametable.abortMatch()}

@@ -11,6 +11,7 @@ interface Props {
 export function ActionPanel({ view, awaiting, onAction }: Props) {
   const [text, setText] = useState('');
   const [sayTo, setSayTo] = useState('');
+  const [voteText, setVoteText] = useState('');
   const actions = view.legalActions;
   const actor = view.phase.actors[0];
   const actorName = view.seats.find((seat) => seat.id === actor)?.name;
@@ -18,6 +19,7 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
   useEffect(() => {
     setText('');
     setSayTo('');
+    setVoteText('');
   }, [view.phase.id, view.phase.actor, view.phase.round]);
 
   if (!awaiting || actions.length === 0) {
@@ -45,6 +47,7 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
   const targetActions = actions.filter((action) =>
     ['vote', 'kill', 'investigate', 'save', 'probe'].includes(action.type),
   );
+  const votes = targetActions.filter((action) => action.type === 'vote');
 
   const submitText = () => {
     const value = text.trim();
@@ -97,6 +100,18 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
         </div>
       )}
 
+      {votes.length > 0 && (
+        <div className="action-block">
+          <label className="action-label">Your reason (read aloud)</label>
+          <textarea
+            value={voteText}
+            maxLength={240}
+            placeholder="Why this vote? Leave it blank for a plain statement."
+            onChange={(event) => setVoteText(event.target.value)}
+          />
+        </div>
+      )}
+
       {targetActions.length > 0 && (
         <div className="action-block">
           <label className="action-label">
@@ -115,7 +130,13 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
               <button
                 key={`${action.type}-${String(action.target)}`}
                 className="action-target"
-                onClick={() => onAction(action)}
+                onClick={() =>
+                  onAction(
+                    action.type === 'vote'
+                      ? { ...action, text: voteText.trim() }
+                      : action,
+                  )
+                }
               >
                 {actionTargetName(action, view.seats)}
               </button>

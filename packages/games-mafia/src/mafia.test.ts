@@ -26,8 +26,24 @@ function position(roles: Record<string, Role>, steps: StepId[], n = Object.keys(
       : steps[0] === 'mafia-talk'
         ? state.alive.filter((id) => state.roles[id] === 'mafia')
         : [];
+  state.voteQueue =
+    steps[0] === 'day-vote' || steps[0] === 'runoff' ? [...state.alive] : [];
   state.over = null;
   return state;
+}
+
+/** Votes happen one seat at a time in a shuffled order; drive it to the end. */
+function voteAll(state: MafiaState, choose: (actor: string) => string): MafiaState {
+  let current = state;
+  let guard = 0;
+  while ((current.steps[0] === 'day-vote' || current.steps[0] === 'runoff') && guard++ < 30) {
+    const actor = mafia.phase(current).actor;
+    if (!actor) break;
+    const options = mafia.view(current, actor).legalActions;
+    const target = choose(actor) || String(options[0]?.target ?? '');
+    current = mafia.apply(current, actor, { type: 'vote', target, text: '' });
+  }
+  return current;
 }
 
 const five: Record<string, Role> = {
@@ -155,62 +171,48 @@ describe('day', () => {
     expect(state.chat.filter((line) => line.seatId === 's1')).toHaveLength(2);
   });
 
-  it('a majority vote eliminates a seat and reveals its role', () => {
-    let state = position(five, ['day-vote']);
-    for (const seat of ['s1', 's2', 's3', 's4']) {
-      state = mafia.apply(state, seat, { type: 'vote', target: 's5' });
-    }
-    state = mafia.apply(state, 's5', { type: 'vote', target: 's1' });
+  it('eliminates the majority target and every voter gets a spoken line', () => {
+    const start = position(five, ['day-vote']);
+    expect([...start.voteQueue].sort()).toEqual(['s1', 's2', 's3', 's4', 's5']);
+
+    const state = voteAll(start, (actor) => (actor === 's5' ? 's1' : 's5'));
     expect(state.alive).not.toContain('s5');
     expect(state.log.join(' ')).toMatch(/Seat 5 was voted out. They were the villager/);
+
+    const votes = state.chat.filter((line) => line.phaseId === 'day-vote');
+    expect(votes).toHaveLength(5);
+    expect(votes.every((line) => line.text.trim().length > 0)).toBe(true);
+    expect(votes.some((line) => line.text.includes('I vote for Seat 5'))).toBe(true);
   });
 
   it('a tie goes to a runoff, and a tied runoff kills nobody', () => {
     const start = position(five, ['day-vote']);
     start.alive = ['s1', 's2', 's3', 's4'];
 
-    let tied = start;
-    for (const [seat, target] of [
-      ['s1', 's3'],
-      ['s2', 's3'],
-      ['s3', 's1'],
-      ['s4', 's1'],
-    ] as const) {
-      tied = mafia.apply(tied, seat, { type: 'vote', target });
-    }
-    expect(tied.steps[0]).toBe('runoff');
-    expect(tied.alive).toHaveLength(4);
-
-    for (const [seat, target] of [
-      ['s1', 's3'],
-      ['s2', 's3'],
-      ['s3', 's1'],
-      ['s4', 's1'],
-    ] as const) {
-      tied = mafia.apply(tied, seat, { type: 'vote', target });
-    }
+    const tied = voteAll(start, (actor) =>
+      actor === 's1' || actor === 's2' ? 's3' : 's1',
+    );
     expect(tied.alive).toHaveLength(4);
     expect(tied.log.join(' ')).toMatch(/Nobody is eliminated/);
+    expect(tied.chat.filter((line) => line.phaseId === 'runoff')).toHaveLength(4);
   });
 });
 
 describe('win conditions', () => {
   it('town wins when the last mafia is voted out', () => {
     const roles: Record<string, Role> = { s1: 'mafia', s2: 'villager', s3: 'villager' };
-    let state = position(roles, ['day-vote'], 3);
-    state = mafia.apply(state, 's2', { type: 'vote', target: 's1' });
-    state = mafia.apply(state, 's3', { type: 'vote', target: 's1' });
-    state = mafia.apply(state, 's1', { type: 'vote', target: 's2' });
+    const state = voteAll(position(roles, ['day-vote'], 3), (actor) =>
+      actor === 's1' ? 's2' : 's1',
+    );
     expect(state.over).toBe('town');
     expect(mafia.scoring(state).winners.sort()).toEqual(['s2', 's3']);
   });
 
   it('mafia wins when it equals the town', () => {
     const roles: Record<string, Role> = { s1: 'mafia', s2: 'villager', s3: 'villager' };
-    let state = position(roles, ['day-vote'], 3);
-    state = mafia.apply(state, 's1', { type: 'vote', target: 's2' });
-    state = mafia.apply(state, 's2', { type: 'vote', target: 's3' });
-    state = mafia.apply(state, 's3', { type: 'vote', target: 's2' });
+    const state = voteAll(position(roles, ['day-vote'], 3), (actor) =>
+      actor === 's1' ? 's2' : actor === 's2' ? 's3' : 's2',
+    );
     expect(state.alive).not.toContain('s2');
     expect(state.over).toBe('mafia');
   });
@@ -223,11 +225,9 @@ describe('win conditions', () => {
       s4: 'jester',
       s5: 'villager',
     };
-    let state = position(roles, ['day-vote']);
-    for (const seat of ['s1', 's2', 's3', 's5']) {
-      state = mafia.apply(state, seat, { type: 'vote', target: 's4' });
-    }
-    state = mafia.apply(state, 's4', { type: 'vote', target: 's1' });
+    const state = voteAll(position(roles, ['day-vote']), (actor) =>
+      actor === 's4' ? 's1' : 's4',
+    );
     expect(state.over).toBe('jester');
     expect(mafia.scoring(state).winners).toEqual(['s4']);
   });
