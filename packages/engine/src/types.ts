@@ -48,6 +48,8 @@ export interface ChatLine {
   /** 'public', or a private channel such as 'mafia'. */
   channel: string;
   text: string;
+  /** Seat this line was addressed to, if any. */
+  to?: SeatId;
   phaseId: string;
   round: number;
 }
@@ -140,4 +142,12 @@ export interface GameDef<S = unknown> {
   secrets(state: S, seatId: SeatId): string[];
   /** The seat's role or faction label, for the results record. */
   roleOf?(state: S, seatId: SeatId): string | undefined;
+  /**
+   * Wall-clock limit for the current phase, in ms, or null for no limit.
+   * When it expires the runner applies `timeoutAction` and records it as a
+   * normal event, so replays stay exact.
+   */
+  phaseTimeoutMs?(state: S): number | null;
+  /** The action the runner submits when a phase deadline expires. */
+  timeoutAction?(state: S): GameAction | null;
 }

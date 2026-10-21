@@ -1774,3 +1774,10 @@ select {
   color: var(--danger);
   font-weight: 600;
 }
+
+.chat-to {
+  font-size: 11px;
+  color: var(--gold);
+  align-self: center;
+  white-space: nowrap;
+}

@@ -49,6 +49,11 @@ export function ChatLog({ chat, seats }: { chat: ChatLine[]; seats: SeatInfo[] }
                 {seat?.name ?? line.seatId}
               </span>
               {line.channel !== 'public' && <span className="chat-channel">{line.channel}</span>}
+              {line.to && (
+                <span className="chat-to">
+                  → {seats.find((entry) => entry.id === line.to)?.name ?? line.to}
+                </span>
+              )}
               <span className="chat-text">{line.text}</span>
             </div>
           );

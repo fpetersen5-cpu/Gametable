@@ -10,12 +10,14 @@ interface Props {
 
 export function ActionPanel({ view, awaiting, onAction }: Props) {
   const [text, setText] = useState('');
+  const [sayTo, setSayTo] = useState('');
   const actions = view.legalActions;
   const actor = view.phase.actors[0];
   const actorName = view.seats.find((seat) => seat.id === actor)?.name;
 
   useEffect(() => {
     setText('');
+    setSayTo('');
   }, [view.phase.id, view.phase.actor, view.phase.round]);
 
   if (!awaiting || actions.length === 0) {
@@ -33,7 +35,9 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
     );
   }
 
-  const say = actions.find((action) => action.type === 'say');
+  const says = actions.filter((action) => action.type === 'say');
+  const addressed = says.filter((action) => typeof action.to === 'string');
+  const passes = actions.filter((action) => action.type === 'pass');
   const shoots = actions.filter((action) => action.type === 'shoot');
   const items = actions.filter((action) => action.type === 'use');
   const steals = actions.filter((action) => action.type === 'steal');
@@ -45,7 +49,11 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
   const submitText = () => {
     const value = text.trim();
     if (!value) return;
-    onAction({ type: 'say', text: value.slice(0, 600) });
+    onAction({
+      type: 'say',
+      text: value.slice(0, 600),
+      ...(sayTo ? { to: sayTo } : {}),
+    });
     setText('');
   };
 
@@ -53,9 +61,23 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
     <div className="action-panel">
       <h3>Your move</h3>
 
-      {say && (
+      {says.length > 0 && (
         <div className="action-block">
           <label className="action-label">Say something</label>
+          {addressed.length > 0 && (
+            <select
+              className="say-to"
+              value={sayTo}
+              onChange={(event) => setSayTo(event.target.value)}
+            >
+              <option value="">to everyone</option>
+              {addressed.map((action) => (
+                <option key={String(action.to)} value={String(action.to)}>
+                  to {view.seats.find((seat) => seat.id === action.to)?.name ?? String(action.to)}
+                </option>
+              ))}
+            </select>
+          )}
           <textarea
             autoFocus
             value={text}
@@ -176,6 +198,15 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
           </div>
         </div>
       )}
+
+      {passes.map((action) => (
+        <div key="pass" className="action-block">
+          <label className="action-label">Nothing to add?</label>
+          <button className="ghost" onClick={() => onAction(action)}>
+            Pass — let the others speak
+          </button>
+        </div>
+      ))}
 
       {skips.length > 0 && (
         <div className="action-block">

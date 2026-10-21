@@ -109,6 +109,9 @@ export class MatchSession {
   private paused = false;
   private speed: number;
   private fatalError: string | null = null;
+  private phaseKey = '';
+  private phaseStartedAt = Date.now();
+  private phaseLimitMs: number | null = null;
 
   constructor(private readonly deps: SessionDeps) {
     this.human = deps.seats.find((seat) => seat.kind === 'human') ?? null;
@@ -274,6 +277,20 @@ export class MatchSession {
       : (this.deps.def.godView?.(state) ??
         this.deps.def.view(state, this.deps.seats[0]?.id as SeatId));
     const god = this.deps.def.godView ? this.deps.def.godView(state) : null;
+
+    const key = `${view.phase.id}:${view.phase.round ?? 0}`;
+    if (key !== this.phaseKey) {
+      this.phaseKey = key;
+      this.phaseStartedAt = Date.now();
+      this.phaseLimitMs = this.deps.def.phaseTimeoutMs?.(state) ?? null;
+    }
+    // If the phase moved on (for example a deadline fired), the human is no
+    // longer being waited on.
+    if (this.pendingHuman && view.legalActions.length === 0) {
+      this.pendingHuman = null;
+      this.pendingReject = null;
+    }
+
     this.latest = { view, god };
     this.snapshots.push(view);
     this.godSnapshots.push(god ?? view);
@@ -301,6 +318,10 @@ export class MatchSession {
       humanSeatId: this.human?.id ?? null,
       awaitingHuman: this.pendingHuman !== null,
       seatIssues: this.seatIssues(),
+      timeLeftMs:
+        this.phaseLimitMs === null
+          ? null
+          : Math.max(0, this.phaseLimitMs - (Date.now() - this.phaseStartedAt)),
       costUsd: Number(this.costUsd.toFixed(6)),
       eventCount: this.events.length,
       paused: this.paused,

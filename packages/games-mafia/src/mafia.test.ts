@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IllegalAction, RandomBot, findLeaks, runMatch, type Seat } from '@gametable/engine';
+import { IllegalAction, RandomBot, findLeaks, runMatch, type ActionRequest, type GameDef, type Seat } from '@gametable/engine';
 import { runGatewayRoundTrip } from '@gametable/sdk-conformance';
 import { mafia, type MafiaState, type Role, type StepId } from './index.js';
 
@@ -18,8 +18,14 @@ function position(roles: Record<string, Role>, steps: StepId[], n = Object.keys(
   state.alive = Object.keys(roles);
   state.steps = steps;
   state.votes = {};
-  state.talkIndex = 0;
-  state.talkRound = 0;
+  state.passesInRow = 0;
+  state.speechesToday = 0;
+  state.talkQueue =
+    steps[0] === 'day-talk'
+      ? [...state.alive]
+      : steps[0] === 'mafia-talk'
+        ? state.alive.filter((id) => state.roles[id] === 'mafia')
+        : [];
   state.over = null;
   return state;
 }
@@ -119,17 +125,34 @@ describe('night', () => {
 });
 
 describe('day', () => {
-  it('everyone speaks in order, then votes', () => {
+  it('seats take multiple turns and the day ends when everyone passes', () => {
     let state = position(five, ['day-talk', 'day-vote']);
-    state = mafia.apply(state, 's1', { type: 'say', text: 'I suspect s3.' });
-    expect(state.steps[0]).toBe('day-talk');
-    state = mafia.apply(state, 's2', { type: 'say', text: 'I am the doctor.' });
-    state = mafia.apply(state, 's3', { type: 'say', text: 'No you are not.' });
-    state = mafia.apply(state, 's4', { type: 'say', text: 'Lynch s1.' });
-    state = mafia.apply(state, 's5', { type: 'say', text: 'Agreed.' });
+
+    state = mafia.apply(state, 's1', { type: 'say', text: 's3, explain yourself.', to: 's3' });
+    expect(state.chat[0]?.to).toBe('s3');
+    expect(mafia.phase(state).actor).toBe('s3');
+
+    state = mafia.apply(state, 's3', { type: 'say', text: 'Nothing to explain.' });
+    // s1 is requeued and can speak again later.
+    expect(state.talkQueue).toContain('s1');
+
+    for (const seat of state.talkQueue) {
+      state = mafia.apply(state, seat, { type: 'pass' });
+    }
     expect(state.steps[0]).toBe('day-vote');
-    expect(state.chat).toHaveLength(5);
+    expect(state.chat).toHaveLength(2);
     expect(state.chat.every((line) => line.channel === 'public')).toBe(true);
+  });
+
+  it('a seat can speak again after others have spoken', () => {
+    let state = position(five, ['day-talk', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'say', text: 'First thought.' });
+    for (const seat of ['s2', 's3', 's4', 's5']) {
+      state = mafia.apply(state, seat, { type: 'say', text: 'Noted.' });
+    }
+    expect(mafia.phase(state).actor).toBe('s1');
+    state = mafia.apply(state, 's1', { type: 'say', text: 'Second thought.' });
+    expect(state.chat.filter((line) => line.seatId === 's1')).toHaveLength(2);
   });
 
   it('a majority vote eliminates a seat and reveals its role', () => {
@@ -224,6 +247,31 @@ describe('privacy', () => {
   it('rejects an action from a seat that is not acting', () => {
     const state = position(five, ['night-kill']);
     expect(() => mafia.apply(state, 's2', { type: 'kill', target: 's3' })).toThrow(IllegalAction);
+  });
+});
+
+describe('discussion deadline', () => {
+  it('closes the discussion when the phase runs out of time', async () => {
+    const timed: GameDef<MafiaState> = {
+      ...mafia,
+      phaseTimeoutMs: (state) => (state.steps[0] === 'day-talk' ? 30 : null),
+    };
+    const seats = roster(5);
+    const slow = {
+      kind: 'bot' as const,
+      async act(req: ActionRequest) {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return req.view.legalActions[0] as never;
+      },
+    };
+    const controllers = new Map(seats.map((seat) => [seat.id, slow]));
+    const result = await runMatch(timed, seats, controllers, {
+      seed: 3,
+      maxActions: 300,
+      options: { discussionRounds: 1 },
+    });
+    expect(result.events.some((event) => event.action.type === 'close')).toBe(true);
+    expect(result.metrics.speeches).toBeLessThan(seats.length);
   });
 });
 

@@ -115,6 +115,8 @@ export interface TableSnapshot {
   awaitingHuman: boolean;
   /** Per-seat transport failures, shown as a banner instead of failing silently. */
   seatIssues: SeatIssue[];
+  /** ms left in the current phase's deadline, or null when it has none. */
+  timeLeftMs: number | null;
   costUsd: number;
   eventCount: number;
   paused: boolean;

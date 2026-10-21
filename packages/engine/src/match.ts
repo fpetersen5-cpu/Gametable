@@ -220,6 +220,8 @@ export async function runMatch<S>(
   const usage = new Map<SeatId, SeatUsage>(seats.map((s) => [s.id, emptyUsage()]));
 
   let guard = 0;
+  let phaseKey = '';
+  let phaseStartedAt = now();
   while (!def.terminal(state)) {
     if (options.signal?.aborted) throw new Error('match aborted');
     if (guard++ >= maxActions) {
@@ -230,6 +232,33 @@ export async function runMatch<S>(
     if (actors.length === 0) {
       throw new Error(`phase ${phase.id} of ${def.id} has no actors`);
     }
+
+    const key = `${phase.id}:${phase.round ?? ''}`;
+    if (key !== phaseKey) {
+      phaseKey = key;
+      phaseStartedAt = now();
+    }
+    const limit = def.phaseTimeoutMs?.(state) ?? null;
+    const remaining = limit === null ? null : limit - (now() - phaseStartedAt);
+
+    const applyTimeout = (): boolean => {
+      const timeoutAction = def.timeoutAction?.(state);
+      if (!timeoutAction) return false;
+      state = def.apply(state, actors[0] as SeatId, timeoutAction);
+      const event: MatchEvent = {
+        seq: events.length,
+        phaseId: phase.id,
+        round: phase.round,
+        seatId: actors[0] as SeatId,
+        action: timeoutAction,
+        at: now(),
+      };
+      events.push(event);
+      options.onEvent?.(event, state);
+      return true;
+    };
+
+    if (remaining !== null && remaining <= 0 && applyTimeout()) continue;
 
     const requests = actors.map(async (seatId) => {
       const seat = seats.find((s) => s.id === seatId);
@@ -248,8 +277,19 @@ export async function runMatch<S>(
       return { seatId, ...result };
     });
 
-    const results = await Promise.all(requests);
-    for (const result of results) {
+    const results =
+      remaining === null
+        ? await Promise.all(requests)
+        : await Promise.race([
+            Promise.all(requests),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.max(0, remaining))),
+          ]);
+
+    if (results === null) {
+      if (applyTimeout()) continue;
+    }
+
+    for (const result of results ?? []) {
       state = def.apply(state, result.seatId, result.action);
       const event: MatchEvent = {
         seq: events.length,

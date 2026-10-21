@@ -37,6 +37,11 @@ export function MatchScreen(props: Props) {
           <div className="phase-line">
             <span className="phase-chip">{phase.label}</span>
             {typeof phase.round === 'number' && <span className="chip">round {phase.round}</span>}
+            {snapshot.timeLeftMs !== null && (
+              <span className={`chip${snapshot.timeLeftMs < 60_000 ? ' warn' : ''}`}>
+                {formatClock(snapshot.timeLeftMs)} left
+              </span>
+            )}
             {snapshot.spectator && <span className="chip spectator">spectating</span>}
             {snapshot.paused && <span className="chip warn">paused</span>}
           </div>
@@ -216,4 +221,11 @@ function PostGame(props: {
       )}
     </section>
   );
+}
+
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
