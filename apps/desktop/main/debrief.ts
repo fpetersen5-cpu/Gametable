@@ -11,11 +11,7 @@ export async function generateDebrief(args: {
   bundle: ReplayBundle;
 }): Promise<{ text: string; model: string; costUsd: number } | null> {
   const transcript = buildTranscript(args.bundle);
-  const result = await args.client.complete({
-    model: args.model,
-    temperature: 0.4,
-    maxTokens: 500,
-    messages: [
+  const messages = [
       {
         role: 'system',
         content:
@@ -23,13 +19,24 @@ export async function generateDebrief(args: {
           'Write a debrief in under 180 words: who lied convincingly, who was believed, the turning point, ' +
           'and one best and one worst decision. Be specific about seat names. No preamble, no headings.',
       },
-      { role: 'user', content: transcript },
-    ],
-  });
+    { role: 'user', content: transcript },
+  ] as const;
 
-  const text = result.text.trim();
-  if (!text) return null;
-  return { text, model: result.model, costUsd: result.usage.costUsd };
+  // Reasoning models spend the completion budget thinking before they write,
+  // so a small cap yields empty content. Retry once with room to think.
+  let costUsd = 0;
+  for (const maxTokens of [1800, 3200]) {
+    const result = await args.client.complete({
+      model: args.model,
+      temperature: 0.4,
+      maxTokens,
+      messages: [...messages],
+    });
+    costUsd += result.usage.costUsd;
+    const text = result.text.trim();
+    if (text) return { text, model: result.model, costUsd };
+  }
+  return null;
 }
 
 function buildTranscript(bundle: ReplayBundle): string {
