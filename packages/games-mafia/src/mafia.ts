@@ -50,6 +50,11 @@ export interface MafiaState {
   votes: Record<SeatId, SeatId>;
   talkQueue: SeatId[];
   voteQueue: SeatId[];
+  nightOpen: boolean;
+  nightHands: Record<SeatId, boolean>;
+  nightResponded: SeatId[];
+  nightSpeaker: SeatId | null;
+  nightSpeeches: number;
   passesInRow: number;
   speechesToday: number;
   discussionRounds: number;
@@ -99,8 +104,12 @@ function actorsFor(state: MafiaState): SeatId[] {
   if (!step || state.over) return [];
   switch (step) {
     case 'mafia-talk': {
-      const talker = state.talkQueue[0];
-      return talker && state.roles[talker] === 'mafia' ? [talker] : [];
+      // Phase one: everyone living on the mafia side raises (or lowers) a hand.
+      // Phase two: the chosen speaker has the floor.
+      if (state.nightSpeaker) {
+        return state.roles[state.nightSpeaker] === 'mafia' ? [state.nightSpeaker] : [];
+      }
+      return aliveWithRole(state, 'mafia');
     }
     case 'night-kill':
       return aliveWithRole(state, 'mafia');
@@ -134,8 +143,13 @@ export function legalActionsFor(state: MafiaState, seatId: SeatId): GameAction[]
   const step = state.steps[0];
 
   switch (step) {
-    case 'mafia-talk':
-      return [{ type: 'say', text: '' }];
+    case 'mafia-talk': {
+      if (state.nightSpeaker) {
+        return state.nightSpeaker === seatId ? [{ type: 'say', text: '' }] : [];
+      }
+      if (state.nightResponded.includes(seatId)) return [];
+      return [{ type: 'raise' }, { type: 'quiet' }];
+    }
     case 'day-talk': {
       const others = state.alive.filter((id) => id !== seatId);
       return [
@@ -239,6 +253,10 @@ function shiftStep(state: MafiaState): void {
   state.votes = {};
   state.talkQueue = [];
   state.voteQueue = [];
+  state.nightOpen = false;
+  state.nightHands = {};
+  state.nightResponded = [];
+  state.nightSpeaker = null;
   state.passesInRow = 0;
   state.speechesToday = 0;
 }
@@ -254,12 +272,15 @@ function settle(state: MafiaState): void {
       state.voteQueue = shuffleAlive(state);
       state.votes = {};
     }
-    if (
-      (step === 'day-talk' || step === 'mafia-talk') &&
-      state.talkQueue.length === 0
-    ) {
-      state.talkQueue =
-        step === 'day-talk' ? [...state.alive] : aliveWithRole(state, 'mafia');
+    if (step === 'mafia-talk' && !state.nightOpen) {
+      state.nightOpen = true;
+      state.nightHands = {};
+      state.nightResponded = [];
+      state.nightSpeaker = null;
+      state.nightSpeeches = 0;
+    }
+    if (step === 'day-talk' && state.talkQueue.length === 0) {
+      state.talkQueue = [...state.alive];
       state.passesInRow = 0;
       state.speechesToday = 0;
     }
@@ -392,6 +413,11 @@ export const mafia: GameDef<MafiaState> = {
       votes: {},
       talkQueue: [],
       voteQueue: [],
+      nightOpen: false,
+      nightHands: {},
+      nightResponded: [],
+      nightSpeaker: null,
+      nightSpeeches: 0,
       passesInRow: 0,
       speechesToday: 0,
       discussionRounds:
@@ -421,7 +447,10 @@ export const mafia: GameDef<MafiaState> = {
     return {
       id: step,
       label: STEP_LABEL[step] ?? step,
-      kind: step === 'night-kill' ? 'simultaneous' : 'sequential',
+      kind:
+        step === 'night-kill' || (step === 'mafia-talk' && !state.nightSpeaker)
+          ? 'simultaneous'
+          : 'sequential',
       actor: actors[0] ?? null,
       actors,
       round: state.day,
@@ -480,6 +509,14 @@ export const mafia: GameDef<MafiaState> = {
             : [],
         canAct,
         queue: [...state.talkQueue],
+        ...(role === 'mafia'
+          ? {
+              mafiaHands: Object.entries(state.nightHands)
+                .filter(([, raised]) => raised)
+                .map(([id]) => id),
+              mafiaSpeaker: state.nightSpeaker,
+            }
+          : {}),
         speechesToday: state.speechesToday,
         over: state.over,
       },
@@ -508,9 +545,57 @@ export const mafia: GameDef<MafiaState> = {
       return next;
     }
 
-    if (step === 'mafia-talk' || step === 'day-talk') {
+    if (step === 'mafia-talk') {
+      // The runner closes the floor when the two-minute limit expires.
+      if (action.type === 'close-night-talk') {
+        pushLog(next, 'The mafia stop deliberating.');
+        finishStep(next);
+        return next;
+      }
+
+      if (action.type === 'raise' || action.type === 'quiet') {
+        next.nightHands[seatId] = action.type === 'raise';
+        next.nightResponded.push(seatId);
+        const mafia = aliveWithRole(next, 'mafia');
+        if (next.nightResponded.length >= mafia.length) {
+          const raised = mafia.filter((id) => next.nightHands[id]);
+          next.nightHands = {};
+          next.nightResponded = [];
+          if (raised.length === 0) {
+            pushLog(next, 'Nobody raises a hand; the mafia move to the kill.');
+            finishStep(next);
+          } else {
+            const rng = Rng.fromSeed(next.rngState);
+            next.nightSpeaker = rng.pick(raised);
+            next.rngState = rng.snapshot();
+            pushLog(next, `${nameOf(next, next.nightSpeaker)} has the floor.`);
+          }
+        }
+        return next;
+      }
+
+      if (action.type !== 'say') throw new IllegalAction(seatId, action, 'illegal action');
+      const spoken = String(action.text ?? '').trim().slice(0, 600);
+      next.chat.push({
+        id: `c${next.chat.length + 1}`,
+        seatId,
+        channel: 'mafia',
+        text: spoken || '…',
+        phaseId: step,
+        round: next.day,
+      });
+      next.stats.speeches += 1;
+      next.nightSpeaker = null;
+      next.nightSpeeches += 1;
+      if (next.nightSpeeches >= Math.max(6, aliveWithRole(next, 'mafia').length * 3)) {
+        pushLog(next, 'The mafia have said enough.');
+        finishStep(next);
+      }
+      return next;
+    }
+
+    if (step === 'day-talk') {
       if (action.type === 'pass') {
-        if (step !== 'day-talk') throw new IllegalAction(seatId, action, 'you must speak');
         next.talkQueue = [...next.talkQueue.filter((id) => id !== seatId), seatId];
         next.passesInRow += 1;
         if (next.passesInRow >= Math.max(1, next.alive.length)) {
@@ -526,7 +611,7 @@ export const mafia: GameDef<MafiaState> = {
       next.chat.push({
         id: `c${next.chat.length + 1}`,
         seatId,
-        channel: step === 'mafia-talk' ? 'mafia' : 'public',
+        channel: 'public',
         text,
         ...(to ? { to } : {}),
         phaseId: step,
@@ -534,14 +619,8 @@ export const mafia: GameDef<MafiaState> = {
       });
       next.stats.speeches += 1;
 
-      if (step === 'mafia-talk') {
-        next.talkQueue = next.talkQueue.filter((id) => id !== seatId);
-        if (next.talkQueue.length === 0) finishStep(next);
-        return next;
-      }
-
-      // Day discussion: whoever was addressed speaks next; the speaker goes
-      // to the back of the queue and may speak again later.
+      // Whoever was addressed speaks next; the speaker goes to the back of
+      // the queue and may speak again later.
       next.speechesToday += 1;
       const rest = next.talkQueue.filter((id) => id !== seatId);
       if (to) {
@@ -666,7 +745,9 @@ export const mafia: GameDef<MafiaState> = {
         : 'You do not know who the mafia are.',
       '',
       'RULES',
-      '- Night: the mafia kill one townsperson; the doctor may save one; the detective checks one alignment.',
+      '- Night: the mafia have a private two-minute discussion. Raise a hand to speak; when the floor is yours, say your piece.',
+      '- If nobody raises a hand, the mafia go straight to choosing a victim.',
+      '- Then the mafia kill one townsperson; the doctor may save one; the detective checks one alignment.',
       '- Day: discussion runs for up to five minutes. Seats speak in turn and may keep taking turns.',
       '- You can address someone by choosing a "say" action with a `to` target; they speak next.',
       '- Choose "pass" when you have nothing to add. When everyone passes in a row, the vote begins.',
@@ -741,10 +822,14 @@ export const mafia: GameDef<MafiaState> = {
   },
 
   phaseTimeoutMs(state) {
-    return state.steps[0] === 'day-talk' ? 5 * 60 * 1000 : null;
+    if (state.steps[0] === 'mafia-talk') return 2 * 60 * 1000;
+    if (state.steps[0] === 'day-talk') return 5 * 60 * 1000;
+    return null;
   },
 
   timeoutAction(state) {
-    return state.steps[0] === 'day-talk' ? { type: 'close' } : null;
+    if (state.steps[0] === 'mafia-talk') return { type: 'close-night-talk' };
+    if (state.steps[0] === 'day-talk') return { type: 'close' };
+    return null;
   },
 };

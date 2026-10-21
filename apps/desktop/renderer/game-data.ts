@@ -12,6 +12,8 @@ export interface MafiaRole {
   log: string[];
   checks: Array<{ target: string; targetName: string; result: string }>;
   canAct: boolean;
+  mafiaHands?: string[];
+  mafiaSpeaker?: string | null;
   over: string | null;
   god?: {
     roles: Record<string, string>;

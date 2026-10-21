@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IllegalAction, RandomBot, findLeaks, matchAction, runMatch, type ActionRequest, type GameDef, type Seat } from '@gametable/engine';
 import { runGatewayRoundTrip } from '@gametable/sdk-conformance';
-import { mafia, type MafiaState, type Role, type StepId } from './index.js';
+import { legalActionsFor, mafia, type MafiaState, type Role, type StepId } from './index.js';
 
 function roster(n: number): Seat[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -237,11 +237,35 @@ describe('privacy', () => {
   it('no seat sees another seat\'s role or the mafia chat', () => {
     const roles: Record<string, Role> = { s1: 'mafia', s2: 'mafia', s3: 'villager', s4: 'doctor', s5: 'detective' };
     let state = position(roles, ['mafia-talk', 'night-kill']);
-    state = mafia.apply(state, 's1', { type: 'say', text: 'Kill s3 tonight.' });
+
+    // Both mafia raise a hand; the engine picks one speaker.
+    state = mafia.apply(state, 's1', { type: 'raise' });
+    state = mafia.apply(state, 's2', { type: 'raise' });
+    const speaker = mafia.phase(state).actor as string;
+    state = mafia.apply(state, speaker, { type: 'say', text: 'Kill s3 tonight.' });
+
     const ids = ['s1', 's2', 's3', 's4', 's5'];
     expect(findLeaks(mafia, state, ids)).toEqual([]);
     expect(JSON.stringify(mafia.view(state, 's3'))).not.toContain('Kill s3 tonight');
-    expect(JSON.stringify(mafia.view(state, 's1'))).toContain('Kill s3 tonight');
+    expect(JSON.stringify(mafia.view(state, speaker))).toContain('Kill s3 tonight');
+  });
+
+  it('the night floor is raise-hand, two minutes, and ends when nobody raises', () => {
+    const roles: Record<string, Role> = { s1: 'mafia', s2: 'mafia', s3: 'villager', s4: 'villager', s5: 'villager' };
+    let state = position(roles, ['mafia-talk', 'night-kill']);
+    expect(mafia.phaseTimeoutMs?.(state)).toBe(120_000);
+
+    // s1 raises, s2 stays quiet: s1 gets the floor.
+    state = mafia.apply(state, 's1', { type: 'raise' });
+    state = mafia.apply(state, 's2', { type: 'quiet' });
+    expect(mafia.phase(state).actor).toBe('s1');
+    expect(legalActionsFor(state, 's1').map((a) => a.type)).toEqual(['say']);
+
+    state = mafia.apply(state, 's1', { type: 'say', text: 'I think we should hit s3.' });
+    // New hand round: nobody raises, so the kill vote starts.
+    state = mafia.apply(state, 's1', { type: 'quiet' });
+    state = mafia.apply(state, 's2', { type: 'quiet' });
+    expect(state.steps[0]).toBe('night-kill');
   });
 
   it('rejects an action from a seat that is not acting', () => {
@@ -288,6 +312,26 @@ describe('discussion deadline', () => {
     });
     expect(result.events.some((event) => event.action.type === 'close')).toBe(true);
     expect(result.metrics.speeches).toBeLessThan(seats.length);
+  });
+});
+
+describe('night floor deadline', () => {
+  it('closes the mafia discussion when its two minutes run out', async () => {
+    const timed: GameDef<MafiaState> = {
+      ...mafia,
+      phaseTimeoutMs: (state) => (state.steps[0] === 'mafia-talk' ? 30 : null),
+    };
+    const seats = roster(7);
+    const slow = {
+      kind: 'bot' as const,
+      async act(req: ActionRequest) {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return req.view.legalActions[0] as never;
+      },
+    };
+    const controllers = new Map(seats.map((seat) => [seat.id, slow]));
+    const result = await runMatch(timed, seats, controllers, { seed: 5, maxActions: 400 });
+    expect(result.events.some((event) => event.action.type === 'close-night-talk')).toBe(true);
   });
 });
 

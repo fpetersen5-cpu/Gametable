@@ -48,6 +48,7 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
     ['vote', 'kill', 'investigate', 'save', 'probe'].includes(action.type),
   );
   const votes = targetActions.filter((action) => action.type === 'vote');
+  const hands = actions.filter((action) => action.type === 'raise' || action.type === 'quiet');
 
   const submitText = () => {
     const value = text.trim();
@@ -97,6 +98,23 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
           <button className="primary" disabled={!text.trim()} onClick={submitText}>
             Speak
           </button>
+        </div>
+      )}
+
+      {hands.length > 0 && (
+        <div className="action-block">
+          <label className="action-label">The floor is open</label>
+          <div className="action-grid two">
+            {hands.map((action) => (
+              <button
+                key={action.type}
+                className={action.type === 'raise' ? 'primary' : 'ghost'}
+                onClick={() => onAction(action)}
+              >
+                {action.type === 'raise' ? '✋ Raise hand' : 'Stay quiet'}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

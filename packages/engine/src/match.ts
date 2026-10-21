@@ -283,13 +283,17 @@ export async function runMatch<S>(
       return { seatId, ...result };
     });
 
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     const results =
       remaining === null
         ? await Promise.all(requests)
         : await Promise.race([
             Promise.all(requests),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.max(0, remaining))),
+            new Promise<null>((resolve) => {
+              deadlineTimer = setTimeout(() => resolve(null), Math.max(0, remaining));
+            }),
           ]);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
 
     if (results === null) {
       if (applyTimeout()) continue;
