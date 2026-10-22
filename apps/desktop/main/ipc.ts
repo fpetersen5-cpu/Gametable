@@ -14,6 +14,7 @@ import { DEMO_MODELS, DemoClient } from './demo.js';
 import { buildTranscript } from './transcript.js';
 import { synthesize } from './tts.js';
 import { transcribe } from './stt.js';
+import { projectSeatViews } from './replay.js';
 import {
   DEFAULT_CONFIG,
   type AppConfig,
@@ -479,6 +480,22 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     try {
       const raw = await readFile(join(matchesDir, `${matchId}.json`), 'utf8');
       return JSON.parse(raw) as ReplayBundle;
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('replay:seat-views', async (_event, payload: unknown) => {
+    const { matchId, seatId } = (payload ?? {}) as { matchId?: unknown; seatId?: unknown };
+    if (typeof matchId !== 'string' || typeof seatId !== 'string') return null;
+    if (!/^[am]-[a-z0-9-]+$/i.test(matchId)) return null;
+    try {
+      const bundle = JSON.parse(
+        await readFile(join(matchesDir, `${matchId}.json`), 'utf8'),
+      ) as ReplayBundle;
+      const def = games.find((game) => game.id === bundle.summary.gameId);
+      if (!def) return null;
+      return projectSeatViews(def, bundle, seatId);
     } catch {
       return null;
     }

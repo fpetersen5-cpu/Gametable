@@ -214,6 +214,7 @@ export class ArenaRunner {
         await this.deps.store.append(toRecord(result));
         await this.deps.saveBundle({
           summary,
+          options: { trackOptimality: def.capabilities.solver, discussionRounds: 1 },
           seats,
           seed,
           events,

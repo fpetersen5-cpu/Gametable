@@ -1969,3 +1969,12 @@ button.mic:disabled {
   opacity: 0.6;
   cursor: wait;
 }
+
+.replay-perspective {
+  font-size: 12px;
+  padding: 6px 0;
+}
+
+.replay-perspective strong {
+  color: var(--accent);
+}

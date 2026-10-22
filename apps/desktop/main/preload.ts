@@ -32,6 +32,7 @@ const api: DesktopApi = {
   listResumable: () => ipcRenderer.invoke('matches:resumable'),
   resumeMatch: (matchId) => ipcRenderer.invoke('match:resume', matchId),
   loadReplay: (matchId) => ipcRenderer.invoke('matches:replay', matchId),
+  replaySeatViews: (matchId, seatId) => ipcRenderer.invoke('replay:seat-views', { matchId, seatId }),
   exportTranscript: (matchId) => ipcRenderer.invoke('matches:export', matchId),
   leaderboard: () => ipcRenderer.invoke('leaderboard'),
   speak: (text, seatId) => ipcRenderer.invoke('tts:speak', { text, seatId }),

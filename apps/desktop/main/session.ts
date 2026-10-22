@@ -420,6 +420,7 @@ export class MatchSession {
       await this.deps.store.append(toRecord(result, personas));
       await this.deps.saveBundle({
         summary,
+        options: this.gameOptions(),
         seats: this.deps.seats,
         seed: this.seed,
         events: result.events,
@@ -439,6 +440,7 @@ export class MatchSession {
     try {
       const bundle: ReplayBundle = {
         summary,
+        options: this.gameOptions(),
         seats: this.deps.seats,
         seed: this.seed,
         events: this.events,

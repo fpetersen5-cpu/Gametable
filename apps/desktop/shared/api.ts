@@ -29,6 +29,7 @@ export interface DesktopApi {
   listResumable(): Promise<ResumableMatch[]>;
   resumeMatch(matchId: string): Promise<StartMatchResult>;
   loadReplay(matchId: string): Promise<ReplayBundle | null>;
+  replaySeatViews(matchId: string, seatId: string): Promise<GameView[] | null>;
   exportTranscript(matchId: string): Promise<ExportResult>;
   leaderboard(): Promise<LeaderboardRow[]>;
   arenaStart(config: ArenaConfig): Promise<{ ok: boolean; error?: string }>;
@@ -241,6 +242,8 @@ export interface Debrief {
 
 export interface ReplayBundle {
   summary: MatchSummary;
+  /** Setup options used for the match (discussion rounds, solver tracking). */
+  options?: Record<string, unknown>;
   debrief?: { text: string; model: string; costUsd: number };
   seats: Seat[];
   seed: number;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { MatchSummary, ReplayBundle } from '../../shared/api';
+import type { GameView, MatchSummary, ReplayBundle } from '../../shared/api';
 import { formatUsd } from '../game-data';
 import { GameTable } from '../components/GameTable';
 
@@ -9,12 +9,34 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [reveal, setReveal] = useState(true);
+  const [viewAs, setViewAs] = useState<'god' | 'you' | string>('god');
+  const [seatViews, setSeatViews] = useState<Record<string, GameView[]>>({});
+  const [loadingSeat, setLoadingSeat] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     void window.gametable.listMatches().then(setMatches);
   }, []);
+
+  useEffect(() => {
+    const isSeat = viewAs !== 'god' && viewAs !== 'you';
+    if (!bundle || !isSeat || seatViews[viewAs]) return;
+    let cancelled = false;
+    setLoadingSeat(true);
+    void window.gametable
+      .replaySeatViews(bundle.summary.matchId, viewAs)
+      .then((views) => {
+        if (!cancelled && views) {
+          setSeatViews((previous) => ({ ...previous, [viewAs]: views }));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSeat(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bundle, viewAs, seatViews]);
 
   useEffect(() => {
     if (!initialMatchId) return;
@@ -46,6 +68,8 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
     setIndex(0);
     setPlaying(false);
     setNote(null);
+    setViewAs('god');
+    setSeatViews({});
   };
 
   const exportMatch = async (matchId: string) => {
@@ -54,13 +78,17 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
   };
 
   const views = bundle?.views ?? [];
+  const hasHuman = bundle?.summary.seats.some((seat) => seat.kind === 'human') ?? false;
+  const isSeat = viewAs !== 'god' && viewAs !== 'you';
   const display = bundle
-    ? reveal
+    ? viewAs === 'god'
       ? bundle.godViews[index] ?? bundle.views[index]
-      : bundle.views[index]
+      : viewAs === 'you'
+        ? bundle.views[index]
+        : seatViews[viewAs]?.[index] ?? null
     : null;
   const activeEvent = bundle && index > 0 ? bundle.events[index - 1] : null;
-  const canReveal = bundle?.summary.seats.some((seat) => seat.kind === 'human') ?? false;
+  const shownSeat = bundle?.summary.seats.find((seat) => seat.seatId === viewAs);
 
   return (
     <div className="replay-screen">
@@ -130,16 +158,22 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
                     ))}
                   </select>
                 </label>
-                {canReveal && (
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={reveal}
-                      onChange={(event) => setReveal(event.target.checked)}
-                    />
-                    reveal all
-                  </label>
-                )}
+                <label className="check">
+                  view as
+                  <select
+                    value={viewAs}
+                    onChange={(event) => setViewAs(event.target.value)}
+                  >
+                    <option value="god">God (all roles)</option>
+                    {hasHuman && <option value="you">You</option>}
+                    {bundle.seats.map((seat) => (
+                      <option key={seat.id} value={seat.id}>
+                        {seat.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {loadingSeat && <span className="muted">loading…</span>}
                 <button className="ghost" onClick={() => void exportMatch(bundle.summary.matchId)}>
                   Export
                 </button>
@@ -173,11 +207,22 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
               </span>
             </div>
 
+            {isSeat && (
+              <p className="muted replay-perspective">
+                Seeing only what <strong>{shownSeat?.name}</strong> saw
+                {shownSeat?.role ? ` — ${shownSeat.role}` : ''}.
+              </p>
+            )}
+
             <GameTable
               view={display}
-              godView={reveal ? bundle.godViews[index] ?? null : null}
-              humanSeatId={null}
-              spectator={reveal}
+              godView={viewAs === 'god' ? bundle.godViews[index] ?? null : null}
+              humanSeatId={
+                viewAs === 'you'
+                  ? bundle.summary.seats.find((seat) => seat.kind === 'human')?.seatId ?? null
+                  : null
+              }
+              spectator={viewAs === 'god'}
               awaiting={false}
             />
 
