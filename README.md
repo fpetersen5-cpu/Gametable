@@ -280,12 +280,19 @@ the sandbox (results and replay written to
 
 ## Security notes
 
-- The API key lives only in the main process. It is written to a `0600` file in
-  the app's config directory; the portal Secret backend is the intended upgrade
-  (`apps/desktop/main/secrets.ts`).
-- The renderer runs with `contextIsolation`, `sandbox` and no Node integration;
-  the only surface is `window.gametable`.
-- No telemetry. Leaderboard data stays in `results.jsonl` unless you export it.
+The API key lives only in the main process. It is encrypted at rest with
+Electron's `safeStorage` (libsecret/KWallet) when a keyring is available, and
+falls back to a `0600` file only when one is not; the settings screen shows
+which mode is active, and a plaintext key from an older build is migrated on
+first read. Provider errors and log lines are redacted, every IPC call is
+checked against the app's own renderer and validated, writes are atomic
+`0600`/`0700`, and the Flatpak has no home-directory access. The renderer runs
+with `contextIsolation`, `sandbox` and no Node integration; the only surface is
+`window.gametable`. No telemetry. Leaderboard data stays in `results.jsonl`
+unless you export it.
+
+See [SECURITY.md](SECURITY.md) for the full threat model and what is and is not
+covered.
 
 ## Roadmap
 

@@ -6,6 +6,8 @@
  * decide whether an attempt is worth repeating.
  */
 
+import { redact, redactBody } from './redact.js';
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -201,10 +203,10 @@ export class OpenRouterClient {
         const text = await response.text().catch(() => '');
         const retryable = response.status === 429 || response.status >= 500;
         const error = new OpenRouterError(
-          `OpenRouter ${method} ${path} failed: ${response.status}`,
+          redact(`OpenRouter ${method} ${path} failed: ${response.status}`),
           response.status,
           retryable,
-          text.slice(0, 500),
+          redactBody(text),
         );
         if (!retryable || attempt === this.maxRetries) throw error;
 

@@ -20,6 +20,7 @@ import {
   parseJsonReply,
 } from './prompt.js';
 import { Semaphore } from './semaphore.js';
+import { redact } from './redact.js';
 
 export interface LlmSeatConfig {
   model: string;
@@ -268,10 +269,10 @@ export function describeError(error: unknown): string {
         };
         const message =
           typeof parsed.error === 'string' ? parsed.error : parsed.error?.message;
-        if (message) return message.slice(0, 300);
-        if (parsed.metadata?.raw) return parsed.metadata.raw.slice(0, 300);
+        if (message) return redact(message).slice(0, 300);
+        if (parsed.metadata?.raw) return redact(parsed.metadata.raw).slice(0, 300);
       } catch {
-        return body.slice(0, 300);
+        return redact(body).slice(0, 300);
       }
     }
     return `HTTP ${status ?? '?'} from OpenRouter`;
@@ -280,7 +281,7 @@ export function describeError(error: unknown): string {
     const cause = error.cause as { code?: string; message?: string } | undefined;
     const detail = cause?.code ?? cause?.message;
     const base = error.message || 'request failed';
-    return (detail ? `${base} (${detail})` : base).slice(0, 300);
+    return redact(detail ? `${base} (${detail})` : base).slice(0, 300);
   }
-  return String(error).slice(0, 300);
+  return redact(String(error)).slice(0, 300);
 }

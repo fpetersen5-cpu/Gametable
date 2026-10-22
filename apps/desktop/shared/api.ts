@@ -49,7 +49,7 @@ export interface AppStatus {
   /** False when a key is stored but OpenRouter rejects it. */
   keyValid: boolean;
   keyInfo: KeyInfo | null;
-  storage: 'portal' | 'file';
+  storage: 'keyring' | 'file';
 }
 
 export interface KeyResult {

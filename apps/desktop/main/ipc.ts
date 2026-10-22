@@ -1,12 +1,15 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { dialog, ipcMain, shell, type BrowserWindow } from 'electron';
+import { dialog, ipcMain, safeStorage, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import { OpenRouterClient, type CompletionClient } from '@gametable/agent';
 import type { GameDef, MatchEvent, Seat } from '@gametable/engine';
 import { buckshot } from '@gametable/games-buckshot';
 import { mafia } from '@gametable/games-mafia';
 import { ResultsStore, bradleyTerry } from '@gametable/stats';
 import { SecretStore } from './secrets.js';
+import { secureWrite, readJsonFile } from './secure-file.js';
+import { validateArena, validateConfig, validateStartRequest, BadRequest } from './validation.js';
+import { redact } from '@gametable/agent';
 import { ModelCatalogCache } from './catalog.js';
 import { MatchSession } from './session.js';
 import { ArenaRunner } from './arena.js';
@@ -34,12 +37,36 @@ const games: Array<GameDef<any>> = [mafia, buckshot];
 const demo = process.env.GAMETABLE_DEMO === '1';
 
 export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow | null): void {
-  const secrets = new SecretStore(join(userDataDir, 'secrets.json'));
+  const secrets = new SecretStore(
+    join(userDataDir, 'secrets.enc'),
+    join(userDataDir, 'secrets.json'),
+    {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (plain) => safeStorage.encryptString(plain),
+      decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+    },
+  );
   const catalog = new ModelCatalogCache(join(userDataDir, 'models.json'));
   const configFile = join(userDataDir, 'config.json');
   const results = new ResultsStore(join(userDataDir, 'results.jsonl'));
   const matchesDir = join(userDataDir, 'matches');
   const liveDir = join(userDataDir, 'live');
+
+  const trusted = (event: IpcMainInvokeEvent): boolean => {
+    const window = getWindow();
+    return Boolean(window && !window.isDestroyed() && event.sender === window.webContents);
+  };
+
+  /** Every IPC entry point accepts only the app's own renderer. */
+  const handle = (
+    channel: string,
+    listener: (event: IpcMainInvokeEvent, ...args: any[]) => unknown,
+  ): void => {
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!trusted(event)) throw new Error('untrusted IPC sender');
+      return listener(event, ...args);
+    });
+  };
 
   let current: MatchSession | null = null;
   let arenaClient: CompletionClient | null = null;
@@ -53,16 +80,12 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     },
     store: results,
     saveBundle: async (bundle) => {
-      await mkdir(matchesDir, { recursive: true });
-      await writeFile(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle), {
-        encoding: 'utf8',
-        mode: 0o600,
-      });
+      await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
     },
     emit: (progress) => getWindow()?.webContents.send('arena:progress', progress),
   });
 
-  ipcMain.handle('app:status', async (): Promise<AppStatus> => {
+  handle('app:status', async (): Promise<AppStatus> => {
     const key = await secrets.getKey();
     let keyInfo = null;
     if (key) {
@@ -86,15 +109,18 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       hasKey: key !== null,
       keyValid: keyInfo !== null,
       keyInfo,
-      storage: 'file',
+      storage: await secrets.storageKind(),
     };
   });
 
-  ipcMain.handle('key:set', async (_event, rawKey: unknown): Promise<KeyResult> => {
+  handle('key:set', async (_event, rawKey: unknown): Promise<KeyResult> => {
     if (typeof rawKey !== 'string') return { ok: false, error: 'Key must be a string' };
     const key = rawKey.trim();
     if (!key.startsWith('sk-or-')) {
       return { ok: false, error: 'OpenRouter keys start with sk-or-' };
+    }
+    if (key.length < 20 || key.length > 200) {
+      return { ok: false, error: 'That does not look like an OpenRouter key' };
     }
     try {
       const client = new OpenRouterClient({ apiKey: key });
@@ -106,11 +132,11 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
   });
 
-  ipcMain.handle('key:clear', async () => {
+  handle('key:clear', async () => {
     await secrets.clear();
   });
 
-  ipcMain.handle('models:list', async (_event, refresh: unknown): Promise<ModelCatalogResult> => {
+  handle('models:list', async (_event, refresh: unknown): Promise<ModelCatalogResult> => {
     if (demo) return { models: DEMO_MODELS, fetchedAt: Date.now(), fromCache: false };
     const key = await secrets.getKey();
     const force = refresh === true;
@@ -125,26 +151,17 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return { models, fetchedAt, fromCache: false };
   });
 
-  ipcMain.handle('config:load', async (): Promise<AppConfig> => {
-    try {
-      const parsed = JSON.parse(await readFile(configFile, 'utf8')) as Partial<AppConfig>;
-      return { ...DEFAULT_CONFIG, ...parsed };
-    } catch {
-      return DEFAULT_CONFIG;
-    }
+  handle('config:load', async (): Promise<AppConfig> => {
+    const parsed = await readJsonFile<Partial<AppConfig>>(configFile);
+    return { ...DEFAULT_CONFIG, ...(parsed ?? {}) };
   });
 
-  ipcMain.handle('config:save', async (_event, config: unknown) => {
-    const value = config as AppConfig;
-    if (!value || typeof value !== 'object' || !Array.isArray(value.seats)) {
-      throw new Error('invalid config');
-    }
-    if (value.seats.length > 10) throw new Error('at most 10 AI seats');
-    await mkdir(join(configFile, '..'), { recursive: true });
-    await writeFile(configFile, JSON.stringify(value, null, 2), 'utf8');
+  handle('config:save', async (_event, config: unknown) => {
+    const value = validateConfig(config);
+    await secureWrite(configFile, JSON.stringify(value, null, 2));
   });
 
-  ipcMain.handle('games:list', async (): Promise<GameInfo[]> =>
+  handle('games:list', async (): Promise<GameInfo[]> =>
     games.map((def) => ({
       id: def.id,
       name: def.name,
@@ -154,8 +171,13 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     })),
   );
 
-  ipcMain.handle('match:start', async (_event, raw: unknown): Promise<StartMatchResult> => {
-    const request = raw as StartMatchRequest;
+  handle('match:start', async (_event, raw: unknown): Promise<StartMatchResult> => {
+    let request: StartMatchRequest;
+    try {
+      request = validateStartRequest(raw);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'invalid match request' };
+    }
     const def = games.find((game) => game.id === request.gameId);
     if (!def) return { ok: false, error: `unknown game: ${request.gameId}` };
 
@@ -251,11 +273,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       client: demo ? new DemoClient() : key ? new OpenRouterClient({ apiKey: key, appName: 'GameTable' }) : null,
       store: results,
       saveBundle: async (bundle) => {
-        await mkdir(matchesDir, { recursive: true });
-        await writeFile(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle), {
-          encoding: 'utf8',
-          mode: 0o600,
-        });
+        await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
       send: (snapshot) => window?.webContents.send('match:table', snapshot),
       sendFinished: (summary) => window?.webContents.send('match:finished', summary),
@@ -263,11 +281,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
       debriefModel,
       saveLive: async (snapshot) => {
-        await mkdir(liveDir, { recursive: true });
-        await writeFile(
+        await secureWrite(
           join(liveDir, `${snapshot.matchId}.json`),
           JSON.stringify({ ...snapshot, updatedAt: Date.now() }),
-          { encoding: 'utf8', mode: 0o600 },
         );
       },
       clearLive: async (matchId) => {
@@ -278,7 +294,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         try {
           const bundle = JSON.parse(await readFile(file, 'utf8')) as ReplayBundle;
           bundle.debrief = debrief;
-          await writeFile(file, JSON.stringify(bundle), { encoding: 'utf8', mode: 0o600 });
+          await secureWrite(file, JSON.stringify(bundle));
         } catch {
           // The debrief is a bonus; a missing bundle is not worth failing.
         }
@@ -289,37 +305,47 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return { ok: true, matchId: session.matchId };
   });
 
-  ipcMain.handle('match:action', async (_event, action: unknown) => {
+  handle('match:action', async (_event, action: unknown) => {
+    if (typeof action !== 'object' || action === null) return;
+    const type = (action as { type?: unknown }).type;
+    if (typeof type !== 'string' || type.length > 64) return;
+    if (JSON.stringify(action).length > 4000) return;
     current?.submit(action as never);
   });
 
-  ipcMain.handle('match:pause', async (_event, paused: unknown) => {
+  handle('match:pause', async (_event, paused: unknown) => {
     current?.setPaused(paused === true);
   });
 
-  ipcMain.handle('match:speed', async (_event, speed: unknown) => {
-    current?.setSpeed(Number(speed) || 1);
+  handle('match:speed', async (_event, speed: unknown) => {
+    const value = Number(speed);
+    if (!Number.isFinite(value)) return;
+    current?.setSpeed(Math.min(8, Math.max(0.5, value)));
   });
 
-  ipcMain.handle('match:abort', async () => {
+  handle('match:abort', async () => {
     current?.abortMatch();
   });
 
-  ipcMain.handle('match:rewind', async () => {
+  handle('match:rewind', async () => {
     await current?.rewind(1);
   });
 
-  ipcMain.handle('match:takeover', async (_event, seatId: unknown) => {
-    if (typeof seatId === 'string') current?.takeover(seatId);
+  handle('match:takeover', async (_event, seatId: unknown) => {
+    if (typeof seatId === 'string' && seatId.length <= 64) current?.takeover(seatId);
   });
 
-  ipcMain.handle('match:release', async (_event, seatId: unknown) => {
-    if (typeof seatId === 'string') current?.release(seatId);
+  handle('match:release', async (_event, seatId: unknown) => {
+    if (typeof seatId === 'string' && seatId.length <= 64) current?.release(seatId);
   });
 
-  ipcMain.handle('arena:start', async (_event, raw: unknown) => {
-    const config = raw as ArenaConfig;
-    if (!config || !Array.isArray(config.seats)) return { ok: false, error: 'invalid arena config' };
+  handle('arena:start', async (_event, raw: unknown) => {
+    let config: ArenaConfig;
+    try {
+      config = validateArena(raw);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'invalid arena config' };
+    }
     const key = demo ? 'demo' : await secrets.getKey();
     if (!key) return { ok: false, error: 'Add an OpenRouter key first' };
     arenaClient = demo
@@ -328,17 +354,17 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return arena.start(config);
   });
 
-  ipcMain.handle('arena:pause', async (_event, paused: unknown) => {
+  handle('arena:pause', async (_event, paused: unknown) => {
     arena.pause(paused === true);
   });
 
-  ipcMain.handle('arena:cancel', async () => {
+  handle('arena:cancel', async () => {
     arena.cancel();
   });
 
-  ipcMain.handle('arena:state', async () => arena.state());
+  handle('arena:state', async () => arena.state());
 
-  ipcMain.handle('matches:resumable', async () => {
+  handle('matches:resumable', async () => {
     let entries: string[];
     try {
       entries = await readdir(liveDir);
@@ -383,8 +409,10 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return out.sort((a, b) => b.updatedAt - a.updatedAt);
   });
 
-  ipcMain.handle('match:resume', async (_event, matchId: unknown): Promise<StartMatchResult> => {
-    if (typeof matchId !== 'string') return { ok: false, error: 'invalid match' };
+  handle('match:resume', async (_event, matchId: unknown): Promise<StartMatchResult> => {
+    if (typeof matchId !== 'string' || !/^[am]-[a-z0-9-]+$/i.test(matchId)) {
+      return { ok: false, error: 'invalid match' };
+    }
     let saved: {
       matchId: string;
       gameId: string;
@@ -421,11 +449,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       matchId: saved.matchId,
       resume: { state: saved.state, events: saved.events },
       saveBundle: async (bundle) => {
-        await mkdir(matchesDir, { recursive: true });
-        await writeFile(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle), {
-          encoding: 'utf8',
-          mode: 0o600,
-        });
+        await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
       send: (snapshot) => window?.webContents.send('match:table', snapshot),
       sendFinished: (summary) => window?.webContents.send('match:finished', summary),
@@ -433,11 +457,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
       debriefModel: saved.seats.find((seat) => seat.kind === 'llm')?.modelId ?? null,
       saveLive: async (snapshot) => {
-        await mkdir(liveDir, { recursive: true });
-        await writeFile(
+        await secureWrite(
           join(liveDir, `${snapshot.matchId}.json`),
           JSON.stringify({ ...snapshot, updatedAt: Date.now() }),
-          { encoding: 'utf8', mode: 0o600 },
         );
       },
       clearLive: async (id) => {
@@ -448,7 +470,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
           const file = join(matchesDir, `${id}.json`);
           const bundle = JSON.parse(await readFile(file, 'utf8')) as ReplayBundle;
           bundle.debrief = debrief;
-          await writeFile(file, JSON.stringify(bundle), { encoding: 'utf8', mode: 0o600 });
+          await secureWrite(file, JSON.stringify(bundle));
         } catch {
           // ignore
         }
@@ -459,7 +481,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return { ok: true, matchId: session.matchId };
   });
 
-  ipcMain.handle('matches:list', async (): Promise<MatchSummary[]> => {
+  handle('matches:list', async (): Promise<MatchSummary[]> => {
     let entries: string[];
     try {
       entries = await readdir(matchesDir);
@@ -479,7 +501,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return summaries.sort((a, b) => b.startedAt - a.startedAt);
   });
 
-  ipcMain.handle('matches:replay', async (_event, matchId: unknown): Promise<ReplayBundle | null> => {
+  handle('matches:replay', async (_event, matchId: unknown): Promise<ReplayBundle | null> => {
     if (typeof matchId !== 'string' || !/^[am]-[a-z0-9-]+$/i.test(matchId)) return null;
     try {
       const raw = await readFile(join(matchesDir, `${matchId}.json`), 'utf8');
@@ -489,7 +511,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
   });
 
-  ipcMain.handle('replay:seat-views', async (_event, payload: unknown) => {
+  handle('replay:seat-views', async (_event, payload: unknown) => {
     const { matchId, seatId } = (payload ?? {}) as { matchId?: unknown; seatId?: unknown };
     if (typeof matchId !== 'string' || typeof seatId !== 'string') return null;
     if (!/^[am]-[a-z0-9-]+$/i.test(matchId)) return null;
@@ -505,8 +527,10 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
   });
 
-  ipcMain.handle('matches:export', async (_event, matchId: unknown) => {
-    if (typeof matchId !== 'string') return { ok: false, error: 'invalid match' };
+  handle('matches:export', async (_event, matchId: unknown) => {
+    if (typeof matchId !== 'string' || !/^[am]-[a-z0-9-]+$/i.test(matchId)) {
+      return { ok: false, error: 'invalid match' };
+    }
     let bundle: ReplayBundle;
     try {
       bundle = JSON.parse(await readFile(join(matchesDir, `${matchId}.json`), 'utf8')) as ReplayBundle;
@@ -526,7 +550,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return { ok: true, path: result.filePath };
   });
 
-  ipcMain.handle('leaderboard', async (): Promise<LeaderboardRow[]> => {
+  handle('leaderboard', async (): Promise<LeaderboardRow[]> => {
     const records = await results.all();
     return bradleyTerry(records).map((rating) => ({
       modelId: rating.modelId,
@@ -539,9 +563,14 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }));
   });
 
-  ipcMain.handle('tts:speak', async (_event, payload: unknown) => {
+  handle('tts:speak', async (_event, payload: unknown) => {
     const { text, seatId } = (payload ?? {}) as { text?: unknown; seatId?: unknown };
-    if (typeof text !== 'string' || typeof seatId !== 'string') {
+    if (
+      typeof text !== 'string' ||
+      typeof seatId !== 'string' ||
+      text.length > 700 ||
+      seatId.length > 64
+    ) {
       return { error: 'invalid speech request' };
     }
     try {
@@ -552,10 +581,13 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
   });
 
-  ipcMain.handle('stt:transcribe', async (_event, payload: unknown) => {
+  handle('stt:transcribe', async (_event, payload: unknown) => {
     const { audio } = (payload ?? {}) as { audio?: unknown };
     if (typeof audio !== 'string' || audio.length < 100) {
       return { error: 'That recording was too short.' };
+    }
+    if (audio.length > 16_000_000) {
+      return { error: 'That recording is too large.' };
     }
     const key = demo ? 'demo' : await secrets.getKey();
     if (!key) return { error: 'Add an OpenRouter key first' };
@@ -570,17 +602,18 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
   });
 
-  ipcMain.handle('app:open-data', async () => {
+  handle('app:open-data', async () => {
     await shell.openPath(userDataDir);
   });
 }
 
 function describe(error: unknown): string {
+  if (error instanceof BadRequest) return error.message;
   if (error instanceof Error) {
     if (error.message.includes('401')) return 'OpenRouter rejected that key';
     if (error.message.includes('429')) return 'Rate limited — try again in a moment';
     if (error.message.toLowerCase().includes('fetch')) return 'Could not reach openrouter.ai';
-    return error.message.slice(0, 200);
+    return redact(error.message).slice(0, 200);
   }
   return 'Unknown error';
 }

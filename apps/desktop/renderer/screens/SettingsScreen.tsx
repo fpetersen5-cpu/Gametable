@@ -32,7 +32,9 @@ export function SettingsScreen({ status, config, onChange, onDisconnect }: Props
           </dd>
           <dt>Stored as</dt>
           <dd>
-            {status.storage === 'file' ? '0600 file in the app config dir' : 'portal secret'}
+            {status.storage === 'keyring'
+              ? 'OS keyring (encrypted with safeStorage)'
+              : '0600 file in the app config dir (no keyring available)'}
           </dd>
         </dl>
         <button className="ghost danger" onClick={() => void onDisconnect()}>
