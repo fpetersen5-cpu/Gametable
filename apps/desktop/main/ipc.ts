@@ -476,7 +476,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   });
 
   ipcMain.handle('matches:replay', async (_event, matchId: unknown): Promise<ReplayBundle | null> => {
-    if (typeof matchId !== 'string' || !/^m-[a-z0-9-]+$/i.test(matchId)) return null;
+    if (typeof matchId !== 'string' || !/^[am]-[a-z0-9-]+$/i.test(matchId)) return null;
     try {
       const raw = await readFile(join(matchesDir, `${matchId}.json`), 'utf8');
       return JSON.parse(raw) as ReplayBundle;
