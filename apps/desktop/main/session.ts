@@ -67,6 +67,33 @@ class PacedController implements Controller {
   }
 }
 
+/**
+ * Races a controller against the run's abort signal, so a rewind or abort does
+ * not have to wait for a slow model call to finish.
+ */
+class Abortable implements Controller {
+  constructor(
+    private readonly inner: Controller,
+    private readonly signal: AbortSignal,
+  ) {}
+
+  get kind() {
+    return this.inner.kind;
+  }
+
+  usage() {
+    return this.inner.usage?.() ?? {};
+  }
+
+  act(req: ActionRequest): Promise<GameAction> {
+    if (this.signal.aborted) return Promise.reject(new Error('aborted'));
+    const stopped = new Promise<never>((_, reject) => {
+      this.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    });
+    return Promise.race([this.inner.act(req), stopped]);
+  }
+}
+
 class HumanController implements Controller {
   readonly kind = 'human' as const;
 
@@ -190,7 +217,12 @@ export class MatchSession {
         : this.setupAndCapture();
       this.push();
 
-      const result = await runMatch(this.deps.def, this.deps.seats, this.controllers, {
+      const runtime = new Map<SeatId, Controller>();
+      for (const [id, controller] of this.controllers) {
+        runtime.set(id, new Abortable(controller, this.abort.signal));
+      }
+
+      const result = await runMatch(this.deps.def, this.deps.seats, runtime, {
         matchId: this.matchId,
         seed: this.seed,
         signal: this.abort.signal,
