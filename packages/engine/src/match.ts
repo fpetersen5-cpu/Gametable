@@ -295,6 +295,9 @@ export async function runMatch<S>(
           ]);
     if (deadlineTimer) clearTimeout(deadlineTimer);
 
+    // An aborted run must not apply a fallback action as if the seat had acted.
+    if (options.signal?.aborted) throw new Error('match aborted');
+
     if (results === null) {
       if (applyTimeout()) continue;
     }
