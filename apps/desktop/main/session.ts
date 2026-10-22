@@ -193,6 +193,7 @@ export class MatchSession {
 
     this.events = this.events.slice(0, Math.max(0, this.events.length - steps));
     const state = this.replayAndCapture(this.events);
+    this.persistLive(state);
     this.abort = new AbortController();
     this.status = 'running';
     this.paused = false;
