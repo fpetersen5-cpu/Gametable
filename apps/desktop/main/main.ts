@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, session, shell } from 'electron';
+import { app, BrowserWindow, safeStorage, session, shell } from 'electron';
 import { redact } from '@gametable/agent';
 import { registerIpc } from './ipc.js';
 
@@ -55,7 +56,29 @@ function createWindow(): void {
   }
 }
 
+/**
+ * Electron guesses the keyring backend from the desktop environment. When that
+ * guess is wrong (for example a KDE session whose only secret service is
+ * gnome-keyring), an already-encrypted key would silently become unreadable.
+ * Retry once with libsecret before the window appears.
+ */
+function retryWithLibsecret(): boolean {
+  if (process.platform !== 'linux') return false;
+  if (process.argv.some((arg) => arg.startsWith('--password-store'))) return false;
+  if (!existsSync(path.join(app.getPath('userData'), 'secrets.enc'))) return false;
+  try {
+    if (safeStorage.isEncryptionAvailable()) return false;
+  } catch {
+    return false;
+  }
+  console.info('[main] encrypted key found but the selected keyring is unavailable; retrying');
+  app.relaunch({ args: process.argv.slice(1).concat(['--password-store=gnome-libsecret']) });
+  app.exit(0);
+  return true;
+}
+
 app.whenReady().then(() => {
+  if (retryWithLibsecret()) return;
   // Push-to-talk needs the microphone; nothing else is granted.
   const ownsRequest = (contents: Electron.WebContents | null): boolean =>
     Boolean(mainWindow && contents && contents === mainWindow.webContents);
