@@ -155,16 +155,20 @@ export class ArenaRunner {
         controllers.set(seat.id, new Pausable(inner, this, this.abort.signal));
       }
 
+      const matchSignal = AbortSignal.any([
+        this.abort.signal,
+        AbortSignal.timeout(10 * 60 * 1000),
+      ]);
       const godViews: GameView[] = [];
       const events: MatchEvent[] = [];
       try {
         const result = await runMatch(def, seats, controllers, {
           matchId,
           seed,
-          signal: this.abort.signal,
+          signal: matchSignal,
           maxActions: 4000,
           actionTimeoutMs: 60_000,
-          maxInvalidActions: 3,
+          maxInvalidActions: 2,
           options: {
             trackOptimality: def.capabilities.solver,
             discussionRounds: 1,
@@ -238,6 +242,26 @@ export class ArenaRunner {
         };
         this.deps.emit(this.progress);
       } catch (error) {
+        if (!this.abort.signal.aborted && matchSignal.aborted) {
+          this.progress = {
+            ...this.progress,
+            index: index + 1,
+            results: [
+              ...this.progress.results,
+              {
+                matchId,
+                gameName: def.name,
+                winnerNames: [],
+                costUsd: 0,
+                eventCount: 0,
+                seats: seats.map((seat) => ({ name: seat.name, modelId: seat.modelId })),
+              },
+            ],
+            currentPhase: undefined,
+          };
+          this.deps.emit(this.progress);
+          continue;
+        }
         if (this.abort.signal.aborted) {
           this.progress = { ...this.progress, running: false, paused: false, error: 'Run cancelled.' };
         } else {

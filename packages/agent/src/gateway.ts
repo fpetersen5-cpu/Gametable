@@ -31,6 +31,8 @@ export interface LlmSeatConfig {
   budgetUsd?: number;
   /** How much recent table talk to include verbatim. */
   maxChatLines?: number;
+  /** Hard cap for one model call, regardless of the seat's turn budget. */
+  timeoutMs?: number;
 }
 
 export interface LlmControllerDeps {
@@ -216,7 +218,9 @@ export class LlmController implements Controller {
           allowFallbacks: true,
           ...config.provider,
         },
-        signal: AbortSignal.timeout(Math.max(1_000, req.timeoutMs)),
+        signal: AbortSignal.timeout(
+          Math.max(1_000, Math.min(req.timeoutMs, config.timeoutMs ?? 90_000)),
+        ),
       });
     } catch (error) {
       this.counters.errors += 1;
