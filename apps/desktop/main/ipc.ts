@@ -305,6 +305,10 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     current?.abortMatch();
   });
 
+  ipcMain.handle('match:rewind', async () => {
+    await current?.rewind(1);
+  });
+
   ipcMain.handle('match:takeover', async (_event, seatId: unknown) => {
     if (typeof seatId === 'string') current?.takeover(seatId);
   });

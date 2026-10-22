@@ -18,6 +18,7 @@ export interface DesktopApi {
   setPaused(paused: boolean): Promise<void>;
   setSpeed(speed: number): Promise<void>;
   abortMatch(): Promise<void>;
+  rewindMatch(): Promise<void>;
   takeoverSeat(seatId: string): Promise<void>;
   releaseSeat(seatId: string): Promise<void>;
   onTable(handler: (snapshot: TableSnapshot) => void): () => void;

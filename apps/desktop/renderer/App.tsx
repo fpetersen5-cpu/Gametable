@@ -213,6 +213,7 @@ export function App() {
               onPause={(paused) => void window.gametable.setPaused(paused)}
               onSpeed={(speed) => void window.gametable.setSpeed(speed)}
               onAbort={() => void window.gametable.abortMatch()}
+              onRewind={() => void window.gametable.rewindMatch()}
               onExit={() => {
                 setScreen('table');
                 setSnapshot(null);

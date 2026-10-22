@@ -112,7 +112,7 @@ export class MatchSession {
   readonly matchId: string;
 
   private readonly gate = new Gate();
-  private readonly abort = new AbortController();
+  private abort = new AbortController();
   private readonly controllers = new Map<SeatId, Controller>();
   private readonly human: Seat | null;
   private readonly seed: number;
@@ -129,6 +129,9 @@ export class MatchSession {
   private paused = false;
   private speed: number;
   private fatalError: string | null = null;
+  private running = false;
+  private stopped: Promise<void> = Promise.resolve();
+  private rewinding = false;
   private takenOver = new Set<SeatId>();
   private phaseKey = '';
   private phaseStartedAt = Date.now();
@@ -144,16 +147,47 @@ export class MatchSession {
   }
 
   async start(): Promise<void> {
+    return this.run();
+  }
+
+  /**
+   * Step back one action: stop the loop, drop the last event, rebuild the state
+   * from the seed and log, then continue. The engine is deterministic, so the
+   * rewound match is exactly the one that would have happened.
+   */
+  async rewind(steps = 1): Promise<void> {
+    if (!this.running || this.events.length === 0) return;
+    this.rewinding = true;
+    this.abort.abort();
+    this.pendingReject?.(new Error('rewound'));
+    this.pendingHuman = null;
+    this.pendingReject = null;
+    await this.stopped;
+
+    this.events = this.events.slice(0, Math.max(0, this.events.length - steps));
+    const state = this.replayAndCapture(this.events);
+    this.abort = new AbortController();
+    this.status = 'running';
+    this.paused = false;
+    this.gate.setPaused(false);
+    this.rewinding = false;
+    void this.run({ state, events: this.events });
+  }
+
+  private async run(initial?: { state: unknown; events: MatchEvent[] }): Promise<void> {
+    let resolveStopped: () => void = () => undefined;
+    this.stopped = new Promise<void>((resolve) => {
+      resolveStopped = resolve;
+    });
+    this.running = true;
     try {
-      this.buildControllers();
-      const initial =
-        this.deps.resume?.state ??
-        this.deps.def.setup({
-          seed: this.seed,
-          seats: this.deps.seats,
-          options: this.gameOptions(),
-        });
-      this.capture(initial);
+      if (this.controllers.size === 0) this.buildControllers();
+      const resumed = initial ?? (this.deps.resume
+        ? { state: this.deps.resume.state, events: this.deps.resume.events }
+        : undefined);
+      const state0 = resumed
+        ? this.replayAndCapture(resumed.events)
+        : this.setupAndCapture();
       this.push();
 
       const result = await runMatch(this.deps.def, this.deps.seats, this.controllers, {
@@ -164,22 +198,54 @@ export class MatchSession {
         maxInvalidActions: 3,
         maxActions: 4_000,
         options: this.gameOptions(),
-        ...(this.deps.resume ? { initialState: this.deps.resume.state, initialEvents: this.deps.resume.events } : {}),
+        ...(resumed ? { initialState: state0, initialEvents: resumed.events } : {}),
         onEvent: (event, state) => this.onEvent(event, state),
       });
       this.events = result.events;
       await this.finish(result);
     } catch (error) {
       if (this.abort.signal.aborted) {
-        this.status = 'aborted';
-        this.push();
-        if (this.fatalError) this.deps.sendError(this.fatalError);
+        if (!this.rewinding) {
+          this.status = 'aborted';
+          this.push();
+          if (this.fatalError) this.deps.sendError(this.fatalError);
+        }
       } else {
         this.status = 'aborted';
         this.deps.sendError(error instanceof Error ? error.message : String(error));
         this.push();
       }
+    } finally {
+      this.running = false;
+      resolveStopped();
     }
+  }
+
+  private setupAndCapture(): unknown {
+    const state = this.deps.def.setup({
+      seed: this.seed,
+      seats: this.deps.seats,
+      options: this.gameOptions(),
+    });
+    this.capture(state);
+    return state;
+  }
+
+  /** Rebuild every view for a given event log (used by resume and rewind). */
+  private replayAndCapture(events: MatchEvent[]): unknown {
+    let state = this.deps.def.setup({
+      seed: this.seed,
+      seats: this.deps.seats,
+      options: this.gameOptions(),
+    });
+    this.snapshots = [];
+    this.godSnapshots = [];
+    this.capture(state, true);
+    for (const event of events) {
+      state = this.deps.def.apply(state, event.seatId, event.action);
+      this.capture(state, true);
+    }
+    return state;
   }
 
   askHuman(req: ActionRequest): Promise<GameAction> {
@@ -327,7 +393,7 @@ export class MatchSession {
     return issues;
   }
 
-  private capture(state: unknown): void {
+  private capture(state: unknown, silent = false): void {
     const view: GameView = this.human
       ? this.deps.def.view(state, this.human.id)
       : (this.deps.def.godView?.(state) ??
@@ -348,7 +414,7 @@ export class MatchSession {
     }
 
     this.latest = { view, god };
-    this.persistLive(state);
+    if (!silent) this.persistLive(state);
     this.snapshots.push(view);
     this.godSnapshots.push(god ?? view);
     this.refreshCost();

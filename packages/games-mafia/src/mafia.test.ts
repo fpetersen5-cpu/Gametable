@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IllegalAction, RandomBot, findLeaks, matchAction, runMatch, type ActionRequest, type GameDef, type Seat } from '@gametable/engine';
+import { IllegalAction, RandomBot, findLeaks, matchAction, replay, runMatch, type ActionRequest, type GameDef, type Seat } from '@gametable/engine';
 import { runGatewayRoundTrip } from '@gametable/sdk-conformance';
 import { legalActionsFor, mafia, type MafiaState, type Role, type StepId } from './index.js';
 
@@ -315,6 +315,26 @@ describe('discussion deadline', () => {
     });
     expect(result.events.some((event) => event.action.type === 'close')).toBe(true);
     expect(result.metrics.speeches).toBeLessThan(seats.length);
+  });
+});
+
+describe('one-turn rewind', () => {
+  it('drops one event and puts the same seat back on turn', async () => {
+    const seats = roster(7);
+    const bots = new Map(seats.map((seat, index) => [seat.id, new RandomBot(index + 1)]));
+    const result = await runMatch(mafia, seats, bots, { seed: 9, maxActions: 400 });
+    const cut = Math.min(result.events.length, 30);
+    expect(cut).toBeGreaterThan(2);
+    const removed = result.events[cut - 1] as (typeof result.events)[number];
+
+    const prefix = result.events.slice(0, cut - 1);
+    const rewound = replay(mafia, result.seed, seats, prefix, {});
+    expect(mafia.phase(rewound).actors).toContain(removed.seatId);
+
+    // Re-applying the dropped action reproduces the original position exactly.
+    const reapplied = mafia.apply(rewound, removed.seatId, removed.action);
+    const full = replay(mafia, result.seed, seats, result.events.slice(0, cut), {});
+    expect(JSON.stringify(reapplied)).toBe(JSON.stringify(full));
   });
 });
 

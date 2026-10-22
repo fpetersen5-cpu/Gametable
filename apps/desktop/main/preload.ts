@@ -21,6 +21,7 @@ const api: DesktopApi = {
   setPaused: (paused) => ipcRenderer.invoke('match:pause', paused),
   setSpeed: (speed) => ipcRenderer.invoke('match:speed', speed),
   abortMatch: () => ipcRenderer.invoke('match:abort'),
+  rewindMatch: () => ipcRenderer.invoke('match:rewind'),
   takeoverSeat: (seatId) => ipcRenderer.invoke('match:takeover', seatId),
   releaseSeat: (seatId) => ipcRenderer.invoke('match:release', seatId),
   onTable: (handler) => subscribe<TableSnapshot>('match:table', handler),

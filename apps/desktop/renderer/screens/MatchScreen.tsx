@@ -18,6 +18,7 @@ interface Props {
   onPause: (paused: boolean) => void;
   onSpeed: (speed: number) => void;
   onAbort: () => void;
+  onRewind: () => void;
   onExit: () => void;
   onReplay: () => void;
   onExport: () => void;
@@ -50,6 +51,7 @@ export function MatchScreen(props: Props) {
           <div className="phase-line">
             <span className="phase-chip">{phase.label}</span>
             {typeof phase.round === 'number' && <span className="chip">round {phase.round}</span>}
+            <span className="chip">{snapshot.eventCount} actions</span>
             {snapshot.takenOverSeats.includes(phase.actors[0] ?? '') && (
               <span className="chip warn">
                 covering {snapshot.view.seats.find((seat) => seat.id === phase.actors[0])?.name ?? 'seat'}
@@ -102,6 +104,15 @@ export function MatchScreen(props: Props) {
               ))}
             </select>
           </label>
+          {!finished && snapshot.eventCount > 0 && (
+            <button
+              className="ghost"
+              onClick={props.onRewind}
+              title="Undo the last action and replay from the previous turn"
+            >
+              ↶ Rewind
+            </button>
+          )}
           {!finished && (
             <button className="ghost danger" onClick={props.onAbort}>
               Abort
