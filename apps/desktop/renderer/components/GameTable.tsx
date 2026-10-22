@@ -55,7 +55,15 @@ export function GameTable({
       <div className={`table-body${showActions ? '' : ' solo'}`}>
         <div className="table-main">
           {mafia && <MafiaPanel data={mafia} seats={shown.seats} />}
-          {buck && <BuckshotPanel data={buck} spectator={spectator} seats={shown.seats} />}
+          {buck && (
+            <BuckshotPanel
+              data={buck}
+              spectator={spectator}
+              seats={shown.seats}
+              viewSeatId={shown.seatId}
+              humanSeatId={humanSeatId}
+            />
+          )}
           {!mafia && !buck && (
             <pre className="raw-state">{JSON.stringify(shown.data, null, 2)}</pre>
           )}

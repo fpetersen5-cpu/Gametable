@@ -5,11 +5,23 @@ interface Props {
   data: BuckshotData;
   spectator: boolean;
   seats: Array<{ id: string; name: string }>;
+  /** Which seat this projection belongs to ('__all__' for the god view). */
+  viewSeatId?: string;
+  humanSeatId?: string | null;
 }
 
-export function BuckshotPanel({ data, spectator, seats }: Props) {
-  const you = spectator ? seats[0]?.name ?? 'Player 1' : 'You';
-  const them = spectator ? seats[1]?.name ?? 'Player 2' : seats[1]?.name ?? 'Dealer';
+export function BuckshotPanel({ data, spectator, seats, viewSeatId, humanSeatId }: Props) {
+  const viewSeat = seats.find((seat) => seat.id === viewSeatId);
+  const youSeat = viewSeat ?? seats[0];
+  const themSeat = seats.find((seat) => seat.id !== youSeat?.id) ?? seats[1];
+  const you = spectator
+    ? seats[0]?.name ?? 'Player 1'
+    : viewSeatId === humanSeatId
+      ? 'You'
+      : youSeat?.name ?? 'You';
+  const them = spectator
+    ? seats[1]?.name ?? 'Player 2'
+    : themSeat?.name ?? 'Opponent';
   const [yourHp, theirHp] = data.god?.hp ?? [data.yourHp, data.theirHp];
   const [yourItems, theirItems] = data.god?.items ?? [data.yourItems, []];
   const maxHp = data.maxHp || 1;
