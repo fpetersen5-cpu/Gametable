@@ -26,6 +26,13 @@ host has no running secret service, `safeStorage.isEncryptionAvailable()`
 returns false and the app falls back instead of failing to start. The settings
 screen shows which mode is active.
 
+Electron picks the keyring backend from the desktop environment. If that guess
+is wrong for your session (for example a KDE desktop whose only secret service
+is gnome-keyring), set `GAMETABLE_PASSWORD_STORE` to `gnome-libsecret` or
+`kwallet` to force it. On KDE desktops without any running secret service the
+app falls back to the `0600` file, and the settings screen says "no keyring
+available".
+
 `apps/desktop/main/secrets.ts` owns this logic. It takes an injectable
 `CryptoBackend`, so the fallback, migration, and keyring-loss paths are unit
 tested without a desktop session.
