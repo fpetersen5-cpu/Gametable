@@ -83,8 +83,19 @@ export class DemoClient implements CompletionClient {
       else action[key] = null;
     }
 
+    const text = JSON.stringify({ action, notes: 'demo' });
+    // Simulate token streaming so the live chat preview can be exercised
+    // without spending real tokens.
+    if (req.onText) {
+      const steps = 8;
+      for (let step = 1; step <= steps; step += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        req.onText(text.slice(0, Math.ceil((text.length * step) / steps)));
+      }
+    }
+
     return {
-      text: JSON.stringify({ action, notes: 'demo' }),
+      text,
       model: req.model,
       usage: {
         promptTokens: 900 + ((this.calls * 137) % 600),

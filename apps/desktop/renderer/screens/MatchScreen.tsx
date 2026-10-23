@@ -10,6 +10,7 @@ interface Props {
   error: string | null;
   exportNote: string | null;
   debrief: Debrief | null;
+  previews: Record<string, string>;
   voiceEnabled: boolean;
   onVoiceChange: (enabled: boolean) => void;
   onAction: (action: GameAction) => void;
@@ -148,6 +149,7 @@ export function MatchScreen(props: Props) {
         humanSeatId={snapshot.humanSeatId}
         spectator={snapshot.spectator}
         awaiting={snapshot.awaitingHuman}
+        previews={props.previews}
         onAction={props.onAction}
         controlledSeats={[
           ...(snapshot.humanSeatId ? [snapshot.humanSeatId] : []),

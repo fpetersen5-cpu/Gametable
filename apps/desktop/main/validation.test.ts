@@ -16,6 +16,18 @@ describe('IPC validation', () => {
     expect(request.seats).toHaveLength(2);
   });
 
+  it('passes a valid voice through and rejects impossible speakers', () => {
+    const valid = validateStartRequest({
+      gameId: 'mafia',
+      seats: [{ ...seat, voice: 318 }],
+      budgetUsd: 1,
+    });
+    expect(valid.seats[0]?.voice).toBe(318);
+    expect(() =>
+      validateStartRequest({ gameId: 'mafia', seats: [{ ...seat, voice: 9999 }], budgetUsd: 1 }),
+    ).toThrow(/voice/);
+  });
+
   it('rejects unknown seat kinds and AI seats without a model', () => {
     expect(() =>
       validateStartRequest({ gameId: 'mafia', seats: [{ name: 'x', kind: 'robot' }], budgetUsd: 1 }),

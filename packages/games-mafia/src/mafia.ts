@@ -457,6 +457,16 @@ export const mafia: GameDef<MafiaState> = {
     };
   },
 
+  /**
+   * Day chatter and votes are public. Mafia night talk is not, so it stays
+   * hidden until the action lands (and the view filters it per role).
+   */
+  previewIsPublic(view, actionType): boolean {
+    if (actionType === 'vote') return true;
+    if (actionType === 'say') return view.phase.id !== 'mafia-talk';
+    return false;
+  },
+
   view(state, seatId): GameView {
     const role = roleOf(state, seatId);
     const step = state.steps[0] ?? 'dawn';

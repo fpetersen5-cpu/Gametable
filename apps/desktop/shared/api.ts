@@ -22,6 +22,7 @@ export interface DesktopApi {
   takeoverSeat(seatId: string): Promise<void>;
   releaseSeat(seatId: string): Promise<void>;
   onTable(handler: (snapshot: TableSnapshot) => void): () => void;
+  onPreview(handler: (preview: SeatPreview) => void): () => void;
   onFinished(handler: (summary: MatchSummary) => void): () => void;
   onMatchError(handler: (message: string) => void): () => void;
   onDebrief(handler: (debrief: Debrief) => void): () => void;
@@ -38,7 +39,8 @@ export interface DesktopApi {
   arenaCancel(): Promise<void>;
   arenaState(): Promise<ArenaProgress>;
   onArena(handler: (progress: ArenaProgress) => void): () => void;
-  speak(text: string, seatId: string): Promise<{ audio?: string; error?: string }>;
+  listVoices(): Promise<VoicePreset[]>;
+  speak(text: string, seatId: string, voice?: number): Promise<{ audio?: string; error?: string }>;
   transcribe(wavBase64: string): Promise<{ text?: string; error?: string }>;
   openDataFolder(): Promise<void>;
 }
@@ -64,9 +66,25 @@ export interface ModelCatalogResult {
   fromCache: boolean;
 }
 
+export interface VoicePreset {
+  id: string;
+  name: string;
+  /** Speaker index in the Piper model (0–903). */
+  speaker: number;
+  lengthScale: number;
+}
+
+export interface SeatPreview {
+  seatId: string;
+  /** Partial table talk; an empty string means the seat stopped composing. */
+  text: string;
+}
+
 export interface SeatConfig {
   modelId: string;
   persona?: string;
+  /** Piper speaker index; undefined picks a stable voice from the seat id. */
+  voice?: number;
   temperature?: number;
   /** Optional per-seat spend cap in USD. */
   budgetUsd?: number;
@@ -113,6 +131,7 @@ export interface StartMatchRequest {
     kind: 'human' | 'llm';
     modelId?: string;
     persona?: string;
+    voice?: number;
     budgetUsd?: number;
   }>;
   seed?: number;

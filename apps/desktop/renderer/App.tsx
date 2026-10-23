@@ -8,8 +8,10 @@ import type {
   MatchSummary,
   ResumableMatch,
   ModelInfo,
+  SeatPreview,
   StartMatchRequest,
   TableSnapshot,
+  VoicePreset,
 } from '../shared/api';
 import { TableSetup } from './screens/TableSetup';
 import { MatchScreen } from './screens/MatchScreen';
@@ -35,6 +37,8 @@ export function App() {
   const [debrief, setDebrief] = useState<Debrief | null>(null);
   const [resumable, setResumable] = useState<ResumableMatch[]>([]);
   const [replayMatchId, setReplayMatchId] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [voices, setVoices] = useState<VoicePreset[]>([]);
 
   const refreshStatus = useCallback(async () => {
     setStatus(await window.gametable.status());
@@ -42,14 +46,16 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      const [initialStatus, initialConfig, initialGames] = await Promise.all([
+      const [initialStatus, initialConfig, initialGames, initialVoices] = await Promise.all([
         window.gametable.status(),
         window.gametable.loadConfig(),
         window.gametable.listGames(),
+        window.gametable.listVoices(),
       ]);
       setStatus(initialStatus);
       setConfig(initialConfig);
       setGames(initialGames);
+      setVoices(initialVoices);
     })();
   }, []);
 
@@ -58,11 +64,21 @@ export function App() {
     const offFinished = window.gametable.onFinished((next) => setSummary(next));
     const offError = window.gametable.onMatchError((message) => setMatchError(message));
     const offDebrief = window.gametable.onDebrief((next) => setDebrief(next));
+    const offPreview = window.gametable.onPreview((next: SeatPreview) => {
+      setPreviews((current) => {
+        if (next.text) return { ...current, [next.seatId]: next.text };
+        if (!(next.seatId in current)) return current;
+        const updated = { ...current };
+        delete updated[next.seatId];
+        return updated;
+      });
+    });
     return () => {
       offTable();
       offFinished();
       offError();
       offDebrief();
+      offPreview();
     };
   }, []);
 
@@ -101,6 +117,7 @@ export function App() {
     setMatchError(null);
     setExportNote(null);
     setDebrief(null);
+    setPreviews({});
     const result = await window.gametable.startMatch(request);
     if (result.ok) setScreen('match');
     return result;
@@ -166,7 +183,6 @@ export function App() {
         <div className="rail-foot">
           <span className={`dot${status.keyValid ? '' : ' bad'}`} />{' '}
           {status.keyValid ? 'OpenRouter connected' : 'Key rejected'}
-          <small>{status.keyInfo?.label ?? 'personal key'}</small>
         </div>
       </nav>
 
@@ -180,14 +196,17 @@ export function App() {
             onChange={updateConfig}
             onStart={startMatch}
             resumable={resumable}
+            voices={voices}
             onResume={async (matchId) => {
               setSummary(null);
               setSnapshot(null);
               setDebrief(null);
               setMatchError(null);
               const result = await window.gametable.resumeMatch(matchId);
-              if (result.ok) setScreen('match');
-              else setMatchError(result.error ?? 'Could not resume that match');
+              if (result.ok) {
+                setPreviews({});
+                setScreen('match');
+              } else setMatchError(result.error ?? 'Could not resume that match');
             }}
             onRefreshModels={async (refresh) => {
               const result = await window.gametable.listModels(refresh);
@@ -205,6 +224,7 @@ export function App() {
               error={matchError}
               exportNote={exportNote}
               debrief={debrief}
+              previews={previews}
               voiceEnabled={config.voice}
               onVoiceChange={(voice) => void updateConfig({ ...config, voice })}
               onAction={(action) => void window.gametable.submitAction(action)}
@@ -218,6 +238,7 @@ export function App() {
                 setScreen('table');
                 setSnapshot(null);
                 setSummary(null);
+                setPreviews({});
               }}
               onReplay={() => {
                 setReplayMatchId(summary?.matchId ?? null);

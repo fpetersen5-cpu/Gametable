@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { speakable, voiceFor } from './tts.js';
+import { VOICE_PRESETS, speakable, voiceFor } from './tts.js';
 
 describe('seat voices', () => {
   it('gives the same seat the same voice every time', () => {
@@ -27,6 +27,23 @@ describe('seat voices', () => {
     expect(excerpt.length).toBeLessThan(220);
     expect(excerpt.endsWith('…')).toBe(true);
     expect(excerpt).toContain('.');
+  });
+
+  it('honours an explicitly chosen speaker', () => {
+    expect(voiceFor('s1', 318)).toEqual({ speaker: 318, lengthScale: 0.96 });
+    expect(voiceFor('s1', 12)).toEqual({ speaker: 12, lengthScale: 0.98 });
+  });
+
+  it('offers distinct, valid presets', () => {
+    expect(VOICE_PRESETS.length).toBeGreaterThanOrEqual(10);
+    const speakers = new Set(VOICE_PRESETS.map((preset) => preset.speaker));
+    expect(speakers.size).toBe(VOICE_PRESETS.length);
+    for (const preset of VOICE_PRESETS) {
+      expect(preset.speaker).toBeGreaterThanOrEqual(0);
+      expect(preset.speaker).toBeLessThan(904);
+      expect(preset.lengthScale).toBeGreaterThan(0.85);
+      expect(preset.lengthScale).toBeLessThan(1.15);
+    }
   });
 
   it('stays inside the model speaker range for many seats', () => {

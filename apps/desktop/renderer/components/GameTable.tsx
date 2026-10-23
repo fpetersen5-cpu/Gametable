@@ -12,6 +12,7 @@ interface Props {
   humanSeatId: string | null;
   spectator: boolean;
   awaiting: boolean;
+  previews?: Record<string, string>;
   onAction?: (action: GameAction) => void;
   controlledSeats?: string[];
   onTakeover?: (seatId: string) => void;
@@ -28,6 +29,7 @@ export function GameTable({
   humanSeatId,
   spectator,
   awaiting,
+  previews,
   onAction,
   controlledSeats,
   onTakeover,
@@ -67,7 +69,9 @@ export function GameTable({
           {!mafia && !buck && (
             <pre className="raw-state">{JSON.stringify(shown.data, null, 2)}</pre>
           )}
-          {shown.chat.length > 0 && <ChatLog chat={shown.chat} seats={shown.seats} />}
+          {(shown.chat.length > 0 || Object.keys(previews ?? {}).length > 0) && (
+            <ChatLog chat={shown.chat} seats={shown.seats} previews={previews} />
+          )}
           {mafia && <MafiaLog data={mafia} />}
         </div>
 

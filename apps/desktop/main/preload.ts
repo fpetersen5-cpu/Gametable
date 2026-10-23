@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopApi, TableSnapshot, MatchSummary, Debrief, ArenaProgress } from '../shared/api.js';
+import type {
+  DesktopApi,
+  TableSnapshot,
+  MatchSummary,
+  Debrief,
+  ArenaProgress,
+  SeatPreview,
+} from '../shared/api.js';
 
 function subscribe<T>(channel: string, handler: (payload: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, payload: T) => handler(payload);
@@ -25,6 +32,7 @@ const api: DesktopApi = {
   takeoverSeat: (seatId) => ipcRenderer.invoke('match:takeover', seatId),
   releaseSeat: (seatId) => ipcRenderer.invoke('match:release', seatId),
   onTable: (handler) => subscribe<TableSnapshot>('match:table', handler),
+  onPreview: (handler) => subscribe<SeatPreview>('match:preview', handler),
   onFinished: (handler) => subscribe<MatchSummary>('match:finished', handler),
   onMatchError: (handler) => subscribe<string>('match:error', handler),
   onDebrief: (handler) => subscribe<Debrief>('match:debrief', handler),
@@ -36,7 +44,9 @@ const api: DesktopApi = {
   replaySeatViews: (matchId, seatId) => ipcRenderer.invoke('replay:seat-views', { matchId, seatId }),
   exportTranscript: (matchId) => ipcRenderer.invoke('matches:export', matchId),
   leaderboard: () => ipcRenderer.invoke('leaderboard'),
-  speak: (text, seatId) => ipcRenderer.invoke('tts:speak', { text, seatId }),
+  listVoices: () => ipcRenderer.invoke('tts:voices'),
+  speak: (text, seatId, voice) =>
+    ipcRenderer.invoke('tts:speak', { text, seatId, ...(voice === undefined ? {} : { voice }) }),
   transcribe: (wavBase64) => ipcRenderer.invoke('stt:transcribe', { audio: wavBase64 }),
   arenaStart: (config) => ipcRenderer.invoke('arena:start', config),
   arenaPause: (paused) => ipcRenderer.invoke('arena:pause', paused),

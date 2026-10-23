@@ -23,22 +23,58 @@ export interface VoiceProfile {
   lengthScale: number;
 }
 
-export function voiceFor(seatId: string): VoiceProfile {
+export interface VoicePreset {
+  id: string;
+  name: string;
+  speaker: number;
+  lengthScale: number;
+}
+
+/**
+ * A small palette of distinct speakers from the model, so seats can be given a
+ * voice by hand instead of relying on the automatic hash. Names are neutral:
+ * speaker gender is not labelled in the model metadata.
+ */
+export const VOICE_PRESETS: VoicePreset[] = [
+  { id: 'ash', name: 'Ash', speaker: 21, lengthScale: 0.94 },
+  { id: 'birch', name: 'Birch', speaker: 93, lengthScale: 1.02 },
+  { id: 'cedar', name: 'Cedar', speaker: 167, lengthScale: 0.9 },
+  { id: 'dune', name: 'Dune', speaker: 241, lengthScale: 1.06 },
+  { id: 'ember', name: 'Ember', speaker: 318, lengthScale: 0.96 },
+  { id: 'fern', name: 'Fern', speaker: 402, lengthScale: 1.0 },
+  { id: 'grove', name: 'Grove', speaker: 487, lengthScale: 1.04 },
+  { id: 'harbor', name: 'Harbor', speaker: 571, lengthScale: 0.92 },
+  { id: 'iris', name: 'Iris', speaker: 658, lengthScale: 1.0 },
+  { id: 'juniper', name: 'Juniper', speaker: 742, lengthScale: 0.98 },
+  { id: 'kestrel', name: 'Kestrel', speaker: 826, lengthScale: 1.05 },
+  { id: 'lumen', name: 'Lumen', speaker: 889, lengthScale: 0.94 },
+];
+
+export function voiceFor(seatId: string, speaker?: number): VoiceProfile {
+  if (typeof speaker === 'number') {
+    const preset = VOICE_PRESETS.find((entry) => entry.speaker === speaker);
+    const lengthScale = preset?.lengthScale ?? 0.9 + (speaker % 5) * 0.04;
+    return { speaker, lengthScale: Number(lengthScale.toFixed(3)) };
+  }
   const digest = createHash('sha1').update(seatId).digest();
-  const speaker = (((digest[0] ?? 0) << 8) | (digest[1] ?? 0)) % NUM_SPEAKERS;
+  const speakerId = (((digest[0] ?? 0) << 8) | (digest[1] ?? 0)) % NUM_SPEAKERS;
   const lengthScale = 0.88 + ((digest[2] ?? 0) % 4) * 0.04;
-  return { speaker, lengthScale: Number(lengthScale.toFixed(3)) };
+  return { speaker: speakerId, lengthScale: Number(lengthScale.toFixed(3)) };
 }
 
 const cache = new Map<string, string>();
 const CACHE_LIMIT = 80;
 
 /** Returns base64 WAV, or null when there is nothing to say. */
-export async function synthesize(text: string, seatId: string): Promise<string | null> {
+export async function synthesize(
+  text: string,
+  seatId: string,
+  speaker?: number,
+): Promise<string | null> {
   const clean = speakable(text);
   if (!clean) return null;
 
-  const profile = voiceFor(seatId);
+  const profile = voiceFor(seatId, speaker);
   const key = `${profile.speaker}:${profile.lengthScale}:${clean}`;
   const cached = cache.get(key);
   if (cached) return cached;

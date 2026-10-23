@@ -1,5 +1,13 @@
-import { useMemo, useState } from 'react';
-import type { AppConfig, GameInfo, ModelInfo, ResumableMatch, SeatConfig, StartMatchRequest } from '../../shared/api';
+import { useMemo, useRef, useState } from 'react';
+import type {
+  AppConfig,
+  GameInfo,
+  ModelInfo,
+  ResumableMatch,
+  SeatConfig,
+  StartMatchRequest,
+  VoicePreset,
+} from '../../shared/api';
 import { shortModel } from '../game-data';
 
 interface Props {
@@ -11,6 +19,7 @@ interface Props {
   onRefreshModels: (refresh: boolean) => Promise<void>;
   onStart: (request: StartMatchRequest) => Promise<{ ok: boolean; error?: string }>;
   resumable: ResumableMatch[];
+  voices: VoicePreset[];
   onResume: (matchId: string) => Promise<void>;
 }
 
@@ -21,6 +30,8 @@ export function TableSetup(props: Props) {
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [previewing, setPreviewing] = useState<number | null>(null);
+  const previewAudio = useRef<HTMLAudioElement | null>(null);
 
   const game = games.find((entry) => entry.id === gameId) ?? games[0];
   const totalSeats = (spectator ? 0 : 1) + config.seats.length;
@@ -55,6 +66,7 @@ export function TableSetup(props: Props) {
         kind: 'llm',
         modelId: seat.modelId,
         ...(seat.persona ? { persona: seat.persona } : {}),
+        ...(seat.voice === undefined ? {} : { voice: seat.voice }),
         ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
       });
     }
@@ -78,6 +90,28 @@ export function TableSetup(props: Props) {
   };
 
   const setSeats = (seats: SeatConfig[]) => void onChange({ ...config, seats });
+
+  const previewVoice = async (index: number, seat: SeatConfig) => {
+    previewAudio.current?.pause();
+    setPreviewing(index);
+    try {
+      const result = await window.gametable.speak(
+        `Hi, I'm ${seatName(seat)}. This is my voice at this table.`,
+        `s${index + 1}`,
+        seat.voice,
+      );
+      if (!result.audio) return;
+      const player = new Audio(`data:audio/wav;base64,${result.audio}`);
+      previewAudio.current = player;
+      await new Promise<void>((resolve) => {
+        player.onended = () => resolve();
+        player.onerror = () => resolve();
+        void player.play().catch(() => resolve());
+      });
+    } finally {
+      setPreviewing(null);
+    }
+  };
 
   return (
     <div className="stack">
@@ -182,6 +216,36 @@ export function TableSetup(props: Props) {
                 setSeats(seats);
               }}
             />
+            <div className="seat-voice">
+              <select
+                aria-label={`Voice for AI seat ${index + 1}`}
+                value={seat.voice ?? ''}
+                onChange={(event) => {
+                  const seats = [...config.seats];
+                  seats[index] = {
+                    ...seat,
+                    voice: event.target.value === '' ? undefined : Number(event.target.value),
+                  };
+                  setSeats(seats);
+                }}
+              >
+                <option value="">Auto voice</option>
+                {props.voices.map((voice) => (
+                  <option key={voice.id} value={voice.speaker}>
+                    {voice.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="icon"
+                title="Preview this voice"
+                aria-label={`Preview voice for AI seat ${index + 1}`}
+                disabled={previewing === index}
+                onClick={() => void previewVoice(index, seat)}
+              >
+                {previewing === index ? '…' : '▶'}
+              </button>
+            </div>
             <input
               className="cap-input"
               type="number"

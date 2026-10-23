@@ -41,6 +41,11 @@ export function asBoolean(value: unknown, field: string): boolean {
   return value;
 }
 
+function optionalVoice(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  return Math.round(asNumber(value, 'voice', 0, 903));
+}
+
 function asList(value: unknown, field: string, min: number, max: number): unknown[] {
   if (!Array.isArray(value) || value.length < min || value.length > max) {
     throw new BadRequest(`${field} must contain ${min}–${max} items`);
@@ -66,6 +71,7 @@ export function validateStartRequest(raw: unknown): StartMatchRequest {
       kind: seatKind,
       ...(modelId ? { modelId } : {}),
       ...(optionalText(seat.persona, 'persona') ? { persona: optionalText(seat.persona, 'persona') } : {}),
+      ...(optionalVoice(seat.voice) === undefined ? {} : { voice: optionalVoice(seat.voice) }),
       ...(seat.budgetUsd === undefined
         ? {}
         : { budgetUsd: asNumber(seat.budgetUsd, 'seat budget', 0, 1000) }),
@@ -89,6 +95,7 @@ export function validateConfig(raw: unknown): AppConfig {
     return {
       modelId: asText(seat.modelId, `seat ${index + 1} modelId`),
       ...(optionalText(seat.persona, 'persona') ? { persona: optionalText(seat.persona, 'persona') } : {}),
+      ...(optionalVoice(seat.voice) === undefined ? {} : { voice: optionalVoice(seat.voice) }),
       ...(seat.temperature === undefined
         ? {}
         : { temperature: asNumber(seat.temperature, 'temperature', 0, 2) }),

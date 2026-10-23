@@ -112,6 +112,8 @@ export interface SessionDeps {
   store: ResultsStore;
   saveBundle: (bundle: ReplayBundle) => Promise<void>;
   send: (snapshot: TableSnapshot) => void;
+  /** Live, partial table talk from a seat; an empty string clears it. */
+  sendPreview: (seatId: SeatId, text: string) => void;
   sendFinished: (summary: MatchSummary) => void;
   sendError: (message: string) => void;
   sendDebrief: (debrief: { matchId: string; text: string; model: string; costUsd: number }) => void;
@@ -160,6 +162,7 @@ export class MatchSession {
   private stopped: Promise<void> = Promise.resolve();
   private rewinding = false;
   private takenOver = new Set<SeatId>();
+  private readonly seatVoices = new Map<SeatId, number>();
   private phaseKey = '';
   private phaseStartedAt = Date.now();
   private phaseLimitMs: number | null = null;
@@ -171,6 +174,22 @@ export class MatchSession {
     this.gate.speed = this.speed;
     this.seed = deps.request.seed ?? Math.floor(Math.random() * 1e9);
     if (deps.resume) this.events = [...deps.resume.events];
+    deps.request.seats.forEach((seat, index) => {
+      if (typeof seat.voice === 'number' && deps.seats[index]) {
+        this.seatVoices.set(deps.seats[index].id, seat.voice);
+      }
+    });
+  }
+
+  /** The chosen TTS speaker for a seat, or undefined for the automatic one. */
+  voiceForSeat(seatId: SeatId): number | undefined {
+    return this.seatVoices.get(seatId);
+  }
+
+  private clearPreviews(): void {
+    for (const seat of this.deps.seats) {
+      if (seat.kind === 'llm') this.deps.sendPreview(seat.id, '');
+    }
   }
 
   async start(): Promise<void> {
@@ -185,6 +204,7 @@ export class MatchSession {
   async rewind(steps = 1): Promise<void> {
     if (!this.running || this.events.length === 0) return;
     this.rewinding = true;
+    this.clearPreviews();
     this.abort.abort();
     this.pendingReject?.(new Error('rewound'));
     this.pendingHuman = null;
@@ -321,7 +341,14 @@ export class MatchSession {
     this.controllers.set(
       seatId,
       new PacedController(
-        new LlmController({ client: this.deps.client, gameName: this.deps.def.name, config }),
+        new LlmController({
+          client: this.deps.client,
+          gameName: this.deps.def.name,
+          config,
+          onPreview: (text) => this.deps.sendPreview(seatId, text),
+          isPreviewPublic: (view, type) =>
+            this.deps.def.previewIsPublic?.(view, type) ?? false,
+        }),
         this.gate,
       ),
     );
@@ -343,6 +370,7 @@ export class MatchSession {
 
   abortMatch(): void {
     this.status = 'aborted';
+    this.clearPreviews();
     this.abort.abort();
     this.pendingReject?.(new Error('aborted'));
     this.pendingHuman = null;
@@ -376,6 +404,8 @@ export class MatchSession {
         client: this.deps.client,
         gameName: this.deps.def.name,
         config,
+        onPreview: (text) => this.deps.sendPreview(seat.id, text),
+        isPreviewPublic: (view, type) => this.deps.def.previewIsPublic?.(view, type) ?? false,
       });
       this.controllers.set(seat.id, new PacedController(controller, this.gate));
     }
@@ -504,6 +534,7 @@ export class MatchSession {
   }
 
   private async finish(result: MatchResult): Promise<void> {
+    this.clearPreviews();
     this.status = 'finished';
     this.refreshCost();
     this.push();

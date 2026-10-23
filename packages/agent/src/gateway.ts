@@ -3,6 +3,7 @@ import {
   type ActionRequest,
   type Controller,
   type GameAction,
+  type GameView,
   type Seat,
   type SeatId,
   type SeatUsage,
@@ -21,6 +22,7 @@ import {
 } from './prompt.js';
 import { Semaphore } from './semaphore.js';
 import { redact } from './redact.js';
+import { actionTextPreview, actionTypePreview } from './preview.js';
 
 export interface LlmSeatConfig {
   model: string;
@@ -42,6 +44,17 @@ export interface LlmControllerDeps {
   config: LlmSeatConfig;
   /** Shared across every seat so the key is not hammered. */
   semaphore?: Semaphore;
+  /**
+   * Live preview of a public speech as it is generated. Only called for
+   * actions that are public in every legal variant, so a private whisper can
+   * never flash on the table. An empty string clears the preview.
+   */
+  onPreview?: (text: string) => void;
+  /**
+   * Game rule: does this action type produce public table talk? Live previews
+   * are suppressed for private channels (for example mafia night talk).
+   */
+  isPreviewPublic?: (view: GameView, actionType: string) => boolean;
 }
 
 export interface CompletionClient {
@@ -98,29 +111,63 @@ export class LlmController implements Controller {
     ];
 
     const schema = actionSchema(legal);
+    // A preview is only safe when every spoken variant is public; whispers
+    // carry a `to` field and must never reach another seat's screen early.
+    const spoken = legal.filter((entry) => typeof entry.text === 'string');
+    const canPreview =
+      Boolean(this.deps.onPreview) &&
+      Boolean(this.deps.isPreviewPublic) &&
+      spoken.length > 0;
+    let previewShown = false;
+    const clearPreview = () => {
+      if (!previewShown) return;
+      previewShown = false;
+      this.deps.onPreview?.('');
+    };
+    const onText = canPreview
+      ? (text: string) => {
+          const type = actionTypePreview(text);
+          const isPublic = type !== null && this.deps.isPreviewPublic?.(req.view, type) === true;
+          if (!isPublic) {
+            clearPreview();
+            return;
+          }
+          const value = actionTextPreview(text);
+          if (!value) return;
+          previewShown = true;
+          this.deps.onPreview?.(value);
+        }
+      : undefined;
     const call = (msgs: typeof messages) =>
       semaphore
-        ? semaphore.run(() => this.callWithFallbacks(msgs, schema, req))
-        : this.callWithFallbacks(msgs, schema, req);
+        ? semaphore.run(() => this.callWithFallbacks(msgs, schema, req, onText))
+        : this.callWithFallbacks(msgs, schema, req, onText);
 
-    let result = await call(messages);
-    let reply = parseJsonReply(result.text);
-    let action = reply ? matchAction(legal, reply.action) : null;
-
-    if (!action) {
-      this.counters.invalidActions += 1;
-      messages.push(
-        { role: 'assistant', content: result.text.slice(0, 2_000) },
-        {
-          role: 'user',
-          content:
-            'That reply was not one of the legal actions. Respond again with a single JSON ' +
-            'object whose "action" copies one legal action exactly, including its "type".',
-        },
-      );
+    let result: CompletionResult;
+    let reply: ReturnType<typeof parseJsonReply>;
+    let action: GameAction | null;
+    try {
       result = await call(messages);
       reply = parseJsonReply(result.text);
       action = reply ? matchAction(legal, reply.action) : null;
+
+      if (!action) {
+        this.counters.invalidActions += 1;
+        messages.push(
+          { role: 'assistant', content: result.text.slice(0, 2_000) },
+          {
+            role: 'user',
+            content:
+              'That reply was not one of the legal actions. Respond again with a single JSON ' +
+              'object whose "action" copies one legal action exactly, including its "type".',
+          },
+        );
+        result = await call(messages);
+        reply = parseJsonReply(result.text);
+        action = reply ? matchAction(legal, reply.action) : null;
+      }
+    } finally {
+      clearPreview();
     }
 
     if (!action) {
@@ -169,9 +216,10 @@ export class LlmController implements Controller {
     messages: ChatMessage[],
     schema: ReturnType<typeof actionSchema>,
     req: ActionRequest,
+    onText?: (text: string) => void,
   ): Promise<CompletionResult> {
     const attempt = () =>
-      this.complete(messages, this.schemaSupported ? schema : undefined, req);
+      this.complete(messages, this.schemaSupported ? schema : undefined, req, onText);
 
     try {
       return await attempt();
@@ -198,6 +246,7 @@ export class LlmController implements Controller {
     messages: ChatMessage[],
     schema: ReturnType<typeof actionSchema>,
     req: ActionRequest,
+    onText?: (text: string) => void,
   ): Promise<CompletionResult> {
     const { client, config } = this.deps;
     if (config.budgetUsd !== undefined && this.counters.costUsd >= config.budgetUsd) {
@@ -222,6 +271,7 @@ export class LlmController implements Controller {
         signal: AbortSignal.timeout(
           Math.max(1_000, Math.min(req.timeoutMs, config.timeoutMs ?? 90_000)),
         ),
+        ...(onText ? { onText } : {}),
       });
     } catch (error) {
       this.counters.errors += 1;

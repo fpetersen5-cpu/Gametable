@@ -57,6 +57,11 @@ export interface CompletionRequest {
   jsonSchema?: JsonSchemaSpec;
   provider?: ProviderPreferences;
   signal?: AbortSignal;
+  /**
+   * Ask the provider to stream and report the whole text so far on every
+   * chunk. The final result is identical to a non-streaming call.
+   */
+  onText?: (textSoFar: string) => void;
 }
 
 export interface TokenUsage {
@@ -153,6 +158,25 @@ export class OpenRouterClient {
 
   async complete(req: CompletionRequest): Promise<CompletionResult> {
     const started = Date.now();
+    const payload = this.payload(req);
+
+    if (req.onText) return this.stream(req, payload, started);
+
+    const body = await this.request<RawCompletion>('POST', '/chat/completions', payload, req.signal);
+    const text = body.choices?.[0]?.message?.content ?? '';
+    return {
+      text,
+      model: body.model ?? req.model,
+      usage: {
+        promptTokens: body.usage?.prompt_tokens ?? 0,
+        completionTokens: body.usage?.completion_tokens ?? 0,
+        costUsd: Number(body.usage?.cost ?? 0),
+      },
+      latencyMs: Date.now() - started,
+    };
+  }
+
+  private payload(req: CompletionRequest): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       model: req.model,
       messages: req.messages,
@@ -167,19 +191,148 @@ export class OpenRouterClient {
       };
     }
     if (req.provider) payload.provider = providerPayload(req.provider);
+    return payload;
+  }
 
-    const body = await this.request<RawCompletion>('POST', '/chat/completions', payload, req.signal);
-    const text = body.choices?.[0]?.message?.content ?? '';
-    return {
-      text,
-      model: body.model ?? req.model,
-      usage: {
-        promptTokens: body.usage?.prompt_tokens ?? 0,
-        completionTokens: body.usage?.completion_tokens ?? 0,
-        costUsd: Number(body.usage?.cost ?? 0),
-      },
-      latencyMs: Date.now() - started,
-    };
+  /**
+   * Server-sent events with the same retry policy as buffered calls. A failed
+   * stream is only retried while nothing has been shown; after the first delta
+   * a retry would duplicate text, so the error is reported instead.
+   */
+  private async stream(
+    req: CompletionRequest,
+    payload: Record<string, unknown>,
+    started: number,
+  ): Promise<CompletionResult> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      let textSoFar = '';
+      const report = (value: string) => {
+        textSoFar = value;
+        req.onText?.(value);
+      };
+
+      try {
+        const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: { ...this.headers(), Accept: 'text/event-stream' },
+          body: JSON.stringify({ ...payload, stream: true }),
+          signal: req.signal,
+        });
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          const retryable = response.status === 429 || response.status >= 500;
+          const error = new OpenRouterError(
+            redact(`OpenRouter POST /chat/completions failed: ${response.status}`),
+            response.status,
+            retryable,
+            redactBody(text),
+          );
+          // Some providers reject streaming combined with strict JSON output.
+          // A buffered request still gets the answer, just without previews.
+          if (!retryable) {
+            const { onText: _ignored, ...buffered } = req;
+            return this.complete(buffered);
+          }
+          if (attempt === this.maxRetries) throw error;
+          lastError = error;
+          await this.sleep(this.retryDelay(response, attempt));
+          continue;
+        }
+
+        if (!response.body) {
+          const { onText: _ignored, ...buffered } = req;
+          return this.complete(buffered);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let model = req.model;
+        let usage = { promptTokens: 0, completionTokens: 0, costUsd: 0 };
+        let sawUsage = false;
+        let full = '';
+        let finished = false;
+
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newline = buffer.indexOf('\n');
+          while (newline !== -1) {
+            const line = buffer.slice(0, newline).replace(/\r$/, '');
+            buffer = buffer.slice(newline + 1);
+            newline = buffer.indexOf('\n');
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (data === '[DONE]') {
+              finished = true;
+              break;
+            }
+            if (!data) continue;
+            let chunk: RawStreamChunk;
+            try {
+              chunk = JSON.parse(data) as RawStreamChunk;
+            } catch {
+              continue;
+            }
+            if (chunk.error) {
+              throw new OpenRouterError(
+                redact(chunk.error.message ?? 'stream failed'),
+                chunk.error.code ?? 0,
+                false,
+              );
+            }
+            if (chunk.model) model = chunk.model;
+            const delta = chunk.choices?.[0]?.delta?.content ?? '';
+            if (delta) report(full + delta);
+            full += delta;
+            if (chunk.usage) {
+              sawUsage = true;
+              usage = {
+                promptTokens: chunk.usage.prompt_tokens ?? 0,
+                completionTokens: chunk.usage.completion_tokens ?? 0,
+                costUsd: Number(chunk.usage.cost ?? 0),
+              };
+            }
+          }
+        }
+
+        if (!sawUsage) {
+          usage = {
+            promptTokens: usage.promptTokens,
+            completionTokens: Math.max(usage.completionTokens, Math.ceil(full.length / 4)),
+            costUsd: usage.costUsd,
+          };
+        }
+
+        return {
+          text: full,
+          model,
+          usage,
+          latencyMs: Date.now() - started,
+        };
+      } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') throw error;
+        lastError = error;
+        if (textSoFar !== '' || attempt === this.maxRetries) throw error;
+        if (error instanceof OpenRouterError && !error.retryable) throw error;
+        await this.sleep(backoff(attempt));
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new OpenRouterError('stream failed', 0, true);
+  }
+
+  private retryDelay(response: Response, attempt: number): number {
+    const retryAfter = Number(response.headers.get('retry-after'));
+    return Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : backoff(attempt);
   }
 
   private async request<T>(
@@ -275,4 +428,11 @@ interface RawCompletion {
   model?: string;
   choices?: Array<{ message?: { content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+}
+
+interface RawStreamChunk {
+  model?: string;
+  choices?: Array<{ delta?: { content?: string } }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+  error?: { message?: string; code?: number };
 }

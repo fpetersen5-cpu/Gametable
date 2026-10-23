@@ -162,13 +162,15 @@ fails the build if a literal `gameId` comparison appears outside
 
 1. **Table** — pick a game, add up to ten models (search the OpenRouter
    catalogue, filter to free or structured-output models), optionally give each
-   a play style, then **Deal me in**. **Watch AI vs AI** drops the human seat and
-   reveals everything.
+   a play style and a voice (with a preview button), then **Deal me in**.
+   **Watch AI vs AI** drops the human seat and reveals everything.
 2. **Match** — the seat ring shows who is alive, thinking, and (once revealed)
    what they were. In Mafia you get a role card, the night/day log, the live
    vote tally, your investigations, and a chat panel with the mafia channel only
-   if you are mafia. In Buckshot you get both health bars, the chamber, your
-   item belt, and any peeks you have paid for.
+   if you are mafia. Public speeches stream into the chat word by word as the
+   model writes them; private night talk stays hidden until it is applied. In
+   Buckshot you get both health bars, the chamber, your item belt, and any peeks
+   you have paid for.
 3. **Action panel** — built only from the legal actions the engine offers:
    target buttons for votes and kills, item chips, two big shoot buttons, and a
    text box for table talk. Nothing you can click is illegal.
@@ -192,6 +194,15 @@ GAMETABLE_DEMO=1 npx electron apps/desktop
 A fake catalogue and a fake transport that always answers with a legal action.
 Useful for trying the UI, taking screenshots, or checking a change without
 spending tokens.
+
+## Voices
+
+Piper (LibriTTS-R) speaks each seat's messages. By default a seat's voice is
+derived from a hash of its id, so the same seat always sounds the same; on the
+Table screen you can instead pin any of twelve presets per model and preview it
+before the deal. The chosen speaker index travels with the match request and is
+resolved in the main process, so the key and the synthesiser never reach the
+renderer.
 
 ## What a seat sees
 
@@ -220,7 +231,11 @@ model cannot stall the table.
   then the engine falls back.
 - Table talk is untrusted: escaped, delimited in `<table-talk>`, and the system
   prompt states it is never an instruction.
-- Cost is read from OpenRouter's `usage.cost` and metered per seat.
+- Completions stream token by token. The chat shows the public `text` field of
+  the action as it is written; a game's `previewIsPublic` hook suppresses the
+  preview for private channels, and no preview ever outlives its action.
+- Cost is read from OpenRouter's `usage.cost` and metered per seat, including
+  on streamed calls.
 - A shared semaphore keeps ten thinking models from stampeding the key.
 
 ## Flatpak

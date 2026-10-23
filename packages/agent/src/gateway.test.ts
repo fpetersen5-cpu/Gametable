@@ -310,3 +310,91 @@ describe('LlmController', () => {
     expect(action).toEqual({ type: 'probe', target: 's2' });
   });
 });
+
+describe('streaming previews', () => {
+  function streamingClient(partials: string[], reply: string) {
+    const calls: CompletionRequest[] = [];
+    const client: CompletionClient = {
+      async complete(req) {
+        calls.push(req);
+        for (const partial of partials) req.onText?.(partial);
+        return {
+          text: reply,
+          model: req.model,
+          usage: { promptTokens: 10, completionTokens: 5, costUsd: 0 },
+          latencyMs: 1,
+        };
+      },
+    };
+    return { client, calls };
+  }
+
+  function controller(
+    client: CompletionClient,
+    onPreview: (text: string) => void,
+    isPreviewPublic: (view: GameView, type: string) => boolean = () => true,
+  ) {
+    return new LlmController({
+      client,
+      gameName: 'Mafia',
+      config: { model: 'x/y' },
+      onPreview,
+      isPreviewPublic,
+    });
+  }
+
+  it('streams the public text of an action, then clears the preview', async () => {
+    const { client } = streamingClient(
+      ['{"action":{"type":"say","text":"Hel', '{"action":{"type":"say","text":"Hello"}'],
+      '{"action":{"type":"say","text":"Hello"},"notes":""}',
+    );
+    const previews: string[] = [];
+    const action = await controller(client, (text) => previews.push(text)).act(
+      request({ legalActions: [{ type: 'say', text: '' }] }),
+    );
+
+    expect(action).toEqual({ type: 'say', text: 'Hello' });
+    expect(previews).toEqual([
+      'Hel',
+      'Hello',
+      '',
+    ]);
+  });
+
+  it('never previews an action the game marks private', async () => {
+    const { client, calls } = streamingClient(
+      ['{"action":{"type":"say","text":"psst'],
+      '{"action":{"type":"say","to":"s2","text":"psst"},"notes":""}',
+    );
+    const previews: string[] = [];
+    const action = await controller(
+      client,
+      (text) => previews.push(text),
+      (_view, type) => type !== 'say',
+    ).act(request({ legalActions: [{ type: 'say', to: 's2', text: '' }] }));
+
+    expect(action).toEqual({ type: 'say', to: 's2', text: 'psst' });
+    expect(previews).toEqual([]);
+    expect(calls[0]?.onText).toBeDefined();
+  });
+
+  it('waits for the action type before showing text', async () => {
+    const { client } = streamingClient(
+      ['{"action":{"text":"Hel', '{"action":{"type":"say","text":"Hello"}'],
+      '{"action":{"type":"say","text":"Hello"},"notes":""}',
+    );
+    const previews: string[] = [];
+    await controller(client, (text) => previews.push(text)).act(
+      request({ legalActions: [{ type: 'say', text: '' }] }),
+    );
+    expect(previews).toEqual(['Hello', '']);
+  });
+
+  it('does not preview games with no free text', async () => {
+    const { client, calls } = streamingClient([], '{"action":{"type":"probe","target":"s2"},"notes":""}');
+    const previews: string[] = [];
+    await controller(client, (text) => previews.push(text)).act(request());
+    expect(previews).toEqual([]);
+    expect(calls[0]?.onText).toBeUndefined();
+  });
+});

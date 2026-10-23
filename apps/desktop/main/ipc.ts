@@ -15,7 +15,7 @@ import { MatchSession } from './session.js';
 import { ArenaRunner } from './arena.js';
 import { DEMO_MODELS, DemoClient } from './demo.js';
 import { buildTranscript } from './transcript.js';
-import { synthesize } from './tts.js';
+import { synthesize, VOICE_PRESETS } from './tts.js';
 import { transcribe } from './stt.js';
 import { projectSeatViews } from './replay.js';
 import {
@@ -276,6 +276,8 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
       send: (snapshot) => window?.webContents.send('match:table', snapshot),
+      sendPreview: (seatId, text) =>
+        window?.webContents.send('match:preview', { seatId, text }),
       sendFinished: (summary) => window?.webContents.send('match:finished', summary),
       sendError: (message) => window?.webContents.send('match:error', message),
       sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
@@ -452,6 +454,8 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
       send: (snapshot) => window?.webContents.send('match:table', snapshot),
+      sendPreview: (seatId, text) =>
+        window?.webContents.send('match:preview', { seatId, text }),
       sendFinished: (summary) => window?.webContents.send('match:finished', summary),
       sendError: (message) => window?.webContents.send('match:error', message),
       sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
@@ -563,8 +567,14 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }));
   });
 
+  handle('tts:voices', async () => VOICE_PRESETS);
+
   handle('tts:speak', async (_event, payload: unknown) => {
-    const { text, seatId } = (payload ?? {}) as { text?: unknown; seatId?: unknown };
+    const { text, seatId, voice } = (payload ?? {}) as {
+      text?: unknown;
+      seatId?: unknown;
+      voice?: unknown;
+    };
     if (
       typeof text !== 'string' ||
       typeof seatId !== 'string' ||
@@ -573,8 +583,12 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     ) {
       return { error: 'invalid speech request' };
     }
+    if (voice !== undefined && (typeof voice !== 'number' || voice < 0 || voice > 903)) {
+      return { error: 'invalid speech request' };
+    }
+    const speaker = typeof voice === 'number' ? voice : current?.voiceForSeat(seatId);
     try {
-      const audio = await synthesize(text, seatId);
+      const audio = await synthesize(text, seatId, speaker);
       return audio ? { audio } : { error: 'nothing to say' };
     } catch (error) {
       return { error: describe(error) };

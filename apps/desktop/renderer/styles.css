@@ -1978,3 +1978,64 @@ button.mic:disabled {
 .replay-perspective strong {
   color: var(--accent);
 }
+
+/* live speech preview ------------------------------------------------- */
+.chat-line.draft .chat-text {
+  color: #e6eef7;
+}
+
+.chat-line.draft .chat-channel {
+  background: rgba(94, 234, 212, 0.12);
+  color: #5eead4;
+}
+
+.chat-caret {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+/* per-seat voice picker ------------------------------------------------ */
+.seat-voice {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.seat-voice select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.seat-voice .icon {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  padding: 0 8px;
+}
+
+.seat-voice .icon:hover:not(:disabled) {
+  color: var(--accent);
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.seat-voice .icon:disabled {
+  opacity: 0.5;
+}

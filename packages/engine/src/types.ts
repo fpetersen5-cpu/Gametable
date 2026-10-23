@@ -152,4 +152,11 @@ export interface GameDef<S = unknown> {
   phaseTimeoutMs?(state: S): number | null;
   /** The action the runner submits when a phase deadline expires. */
   timeoutAction?(state: S): GameAction | null;
+  /**
+   * Whether an action of this type produces table talk everyone can see.
+   * Used only to decide if an in-progress speech may be shown live; returning
+   * false (or omitting the hook) keeps the model's words off the table until
+   * the action is applied.
+   */
+  previewIsPublic?(view: GameView, actionType: string): boolean;
 }
