@@ -233,6 +233,9 @@ export class OpenRouterClient {
           // Some providers reject streaming combined with strict JSON output.
           // A buffered request still gets the answer, just without previews.
           if (!retryable) {
+            if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
+              console.info('[stream] buffered fallback', response.status);
+            }
             const { onText: _ignored, ...buffered } = req;
             return this.complete(buffered);
           }
@@ -243,6 +246,9 @@ export class OpenRouterClient {
         }
 
         if (!response.body) {
+          if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
+            console.info('[stream] no body, buffered fallback');
+          }
           const { onText: _ignored, ...buffered } = req;
           return this.complete(buffered);
         }
@@ -308,6 +314,9 @@ export class OpenRouterClient {
           };
         }
 
+        if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
+          console.info('[stream] done', model, full.length, sawUsage ? 'usage' : 'no-usage');
+        }
         return {
           text: full,
           model,

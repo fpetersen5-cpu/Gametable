@@ -276,8 +276,12 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
       send: (snapshot) => window?.webContents.send('match:table', snapshot),
-      sendPreview: (seatId, text) =>
-        window?.webContents.send('match:preview', { seatId, text }),
+      sendPreview: (seatId, text) => {
+        if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
+          console.info('[preview]', seatId, text.length);
+        }
+        window?.webContents.send('match:preview', { seatId, text });
+      },
       sendFinished: (summary) => window?.webContents.send('match:finished', summary),
       sendError: (message) => window?.webContents.send('match:error', message),
       sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
@@ -454,8 +458,12 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
       send: (snapshot) => window?.webContents.send('match:table', snapshot),
-      sendPreview: (seatId, text) =>
-        window?.webContents.send('match:preview', { seatId, text }),
+      sendPreview: (seatId, text) => {
+        if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
+          console.info('[preview]', seatId, text.length);
+        }
+        window?.webContents.send('match:preview', { seatId, text });
+      },
       sendFinished: (summary) => window?.webContents.send('match:finished', summary),
       sendError: (message) => window?.webContents.send('match:error', message),
       sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
