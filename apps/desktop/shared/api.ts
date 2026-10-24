@@ -35,7 +35,8 @@ export interface DesktopApi {
     matchId: string,
     seatId: string,
   ): Promise<{ views: GameView[] | null; error?: string }>;
-  exportTranscript(matchId: string): Promise<ExportResult>;
+  /** Public-only unless the user explicitly selects another perspective. */
+  exportTranscript(matchId: string, perspective?: TranscriptPerspective): Promise<ExportResult>;
   leaderboard(): Promise<LeaderboardRow[]>;
   arenaStart(config: ArenaConfig): Promise<{ ok: boolean; error?: string }>;
   arenaPause(paused: boolean): Promise<void>;
@@ -262,6 +263,11 @@ export interface Debrief {
   model: string;
   costUsd: number;
 }
+
+export type TranscriptPerspective =
+  | { mode: 'public' }
+  | { mode: 'seat'; seatId: string }
+  | { mode: 'omniscient' };
 
 export interface ReplayBundle {
   /** Storage format; bumped when a field's meaning changes. */

@@ -22,6 +22,16 @@ export function projectSeatViews<S>(
   bundle: ReplayBundle,
   seatId: SeatId,
 ): GameView[] {
+  const views: GameView[] = [];
+  visitSeatViews(def, bundle, [seatId], (frame) => views.push(frame[0]!));
+  return views;
+}
+
+/** Rebuild once for several perspectives without retaining N full timelines. */
+export function visitSeatViews<S>(
+  def: GameDef<S>, bundle: ReplayBundle, seatIds: SeatId[],
+  visit: (views: GameView[], step: number) => void,
+): void {
   let state: S;
   try {
     state = def.setup({
@@ -38,7 +48,7 @@ export function projectSeatViews<S>(
     );
   }
 
-  const views: GameView[] = [def.view(state, seatId)];
+  visit(seatIds.map((seatId) => def.view(state, seatId)), 0);
   for (const [index, event] of bundle.events.entries()) {
     try {
       state = def.apply(state, event.seatId, event.action);
@@ -48,7 +58,7 @@ export function projectSeatViews<S>(
           `recorded with different setup options.`,
       );
     }
-    views.push(def.view(state, seatId));
+    visit(seatIds.map((seatId) => def.view(state, seatId)), index + 1);
   }
 
   // The old build stored an omniscient view for every step. Rebuild the final
@@ -65,5 +75,4 @@ export function projectSeatViews<S>(
     }
   }
 
-  return views;
 }

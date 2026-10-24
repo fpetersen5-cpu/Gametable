@@ -202,7 +202,9 @@ fails the build if a literal `gameId` comparison appears outside
 4. **Live controls** — pause, 0.5×–8× speed, abort, and a cost meter against the
    match budget. Reaching the budget aborts the match instead of overspending.
 5. **Post-game** — winners, roles, per-seat cost/tokens/invalid actions, EV loss
-   per decision (Buckshot), and a transcript export through the file dialog.
+   per decision (Buckshot), and public-only transcript export through the file
+   dialog. Replays also offer the selected seat's perspective or an explicitly
+   omniscient export; both private modes require a warning confirmation.
 6. **Replays** — every match is stored with a view for each action. Scrub the
    timeline, play it back at speed, and toggle **reveal all** to see the hidden
    state.

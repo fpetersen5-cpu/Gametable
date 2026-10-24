@@ -590,7 +590,7 @@ export const mafia: GameDef<MafiaState> = {
             const rng = Rng.fromSeed(next.rngState);
             next.nightSpeaker = rng.pick(raised);
             next.rngState = rng.snapshot();
-            pushLog(next, `${nameOf(next, next.nightSpeaker)} has the floor.`);
+            pushLog(next, 'The mafia have the floor.');
           }
         }
         return next;
@@ -675,7 +675,7 @@ export const mafia: GameDef<MafiaState> = {
       const target = String(chosen.target);
       const result = next.roles[target] === 'mafia' ? 'mafia' : 'town';
       next.checks[seatId] = { ...next.checks[seatId], [target]: result };
-      pushLog(next, `The detective has investigated ${nameOf(next, target)}.`);
+      pushLog(next, 'The detective has completed an investigation.');
       finishStep(next);
       return next;
     }

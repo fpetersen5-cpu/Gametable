@@ -96,22 +96,47 @@ and renames it, so a crash cannot leave a half-written secret or replay.
 ## Hidden information
 
 The anti-cheat boundary is the engine's `view()` projection
-(`packages/engine/src/types.ts`). A model's prompt is built only from the view
-for its seat; the full game state is never serialized into an LLM request.
-Replays store the complete event log (including god views for the post-game
-debrief), which is why replay files are local `0600` files and not exported
-verbatim — transcript export contains the seat-perspective transcript you
-choose to save.
+(`packages/engine/src/types.ts`). During play, a model's prompt is built only
+from the view for its seat. Live human-player snapshots omit god views, and
+Mafia views hide private night actors, kill votes and investigation targets.
+Game-specific counterfactual tests vary hidden information while comparing
+the complete view and model request. Synthetic secret labels are only a
+supplementary exact-token check; alone, they cannot detect raw-state leaks.
+
+Replays store the complete event log and god views as local `0600` files.
+Post-game replay and spectator modes deliberately expose full information.
+The post-game model debrief also sends an omniscient match record to the
+selected OpenRouter model; it is not a seat-playing prompt.
+
+### Transcript exports
+
+- **Public is the default**, including for a spectator match. It includes only
+  public chat and record lines visible in every seat projection. It does not
+  export raw actions, seeds, hidden-role summaries, debriefs or god-view data.
+- **Seat exports** are rebuilt through `view(state, seatId)` at every step.
+  They contain that seat's permitted private chat and knowledge, not raw events
+  or another seat's hidden state. They are private files, not safe public shares.
+- **Omniscient export** is a separate explicit choice containing private chat,
+  hidden roles and raw actions. Both private modes require a native warning
+  confirmation (defaulting to Cancel), even for direct IPC requests. Files
+  carry their perspective and sharing warning in the text and filename.
+- If a replay cannot be rebuilt faithfully, public/seat export fails closed.
+  It never silently falls back to the stored omniscient record. Older replays
+  affected by projection fixes may require explicit omniscient export instead.
+- Public export does not censor voluntary disclosures in public speech or
+  role-revealing public game events. Review any transcript before sharing.
 
 ## Threat model
 
 Protected against:
 
-- **A compromised renderer / XSS in chat content.** It can only call the typed
-  IPC surface; it never sees the key or raw state, and its payloads are
-  validated.
-- **Model prompt injection trying to exfiltrate state.** Models only ever
-  receive their own seat's `view()`; they cannot read the key, the filesystem,
+- **A compromised renderer / XSS in chat content.** It can only call the IPC
+  surface; it never sees the key and its payloads are validated. Live player
+  snapshots do not include god views. Post-game replay and spectator APIs
+  intentionally expose game records; they are not secret vaults against a
+  compromised renderer. Private transcript export requires native consent.
+- **Model prompt injection trying to exfiltrate state during play.** Seat models
+  receive only their own `view()`; they cannot read the key, the filesystem,
   or other seats' roles. Model output is treated as game text, parsed with a
   bounded schema, and never executed.
 - **Casual disk inspection.** The key is keyring-encrypted when possible; game

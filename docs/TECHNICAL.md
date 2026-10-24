@@ -6,9 +6,9 @@ Flatpak and talks to OpenRouter with a key the user supplies. The app owns all
 state; each seat — human or model — receives only the projection the rules
 allow it to see.
 
-At the time of writing: version `0.1.0`, 42 commits, ~14.1k lines of source,
-136 tests across 24 files, and a 178 MB signed bundle. Milestones M0–M6 are
-complete; the roadmap below is what remains.
+Application version: `0.1.0`. Milestones M0–M6 are implemented; release hardening
+is ongoing. Run `npm run check` for current test results and `npm run audit:deps`
+for the full dependency audit. The roadmap below describes the remaining work.
 
 ---
 
@@ -92,7 +92,9 @@ Properties enforced by tests and the conformance gate:
 - **JSON-safe**: state survives a JSON round-trip (save/resume).
 - **Legality-complete**: the acting seat always has at least one legal action;
   illegal actions are rejected; extra fields a model invents are stripped.
-- **Leak-free**: `secrets()` drives a leak checker over every seat's view.
+- **Privacy tests**: exact-token checks supplement counterfactual tests across
+  seat views, private phases, model prompts and action schemas. Live player
+  IPC snapshots are also tested to exclude god views.
 - **Capability-complete**: declared capabilities imply the UI panels the
   generic renderer needs.
 
@@ -336,8 +338,12 @@ The full threat model is in [SECURITY.md](../SECURITY.md); the essentials:
   keyring access — no home-directory access. Import/export goes through the
   desktop portal file chooser.
 - **Hidden information**: the projection boundary protects roles and hidden
-  state. Replay files contain hidden information and are owner-only; transcript
-  export contains the seat-perspective transcript you choose to save.
+  state during play. Replay files contain hidden information and are owner-only.
+  Transcript export defaults to public chat and records common to all seat
+  projections; selected-seat and omniscient exports require native consent and
+  contain explicit sharing warnings. Filtered exports never include raw events
+  and fail closed on incompatible replays. The post-game model debrief is
+  deliberately omniscient, unlike seat-playing prompts.
 
 Not protected against: root or the same user account, a locked/unavailable
 keyring (fallback is plaintext `0600`), metadata visible to OpenRouter by
@@ -376,15 +382,17 @@ The headless CLI uses the same referee and supports `run`, `gauntlet`, `models`,
 
 ## 8. Testing and quality gates
 
-`npm run check` runs typecheck, game lint and the full test suite. At the time
-of writing: **136 tests across 24 files**, including
+`npm run check` runs typecheck, game lint and the full test suite. Coverage includes:
 
 - engine/game unit tests for all three games and the toy fixture;
 - the cross-game conformance gate and gateway round-trip;
+- counterfactual hidden-state tests, deliberately leaky fixtures, private
+  transition logs and live IPC projection checks;
 - agent tests for redaction, prompt injection escaping, streaming, previews,
   snapshots and shared budgets;
 - desktop tests for secret storage/migration/fallback, secure files, validation,
-  transcript export, replay compatibility, arena budgets and resumable session
+  public/seat/omniscient transcript filtering and native consent, replay
+  compatibility, arena budgets and resumable session
   memory;
 - renderer tests for the recorder.
 
@@ -403,7 +411,8 @@ streaming diagnostics.
 - **TTS excerpt**: long speeches are read as a sentence-aligned excerpt, not in
   full, to bound lag.
 - **Replay files are not encrypted**, only `0600`; they contain hidden roles and
-  private chat. Transcript export is the shareable artifact.
+  private chat. Public-only transcripts exclude private channels and hidden
+  state; seat and omniscient exports are private records, not safe public shares.
 - **Keyring fallback is plaintext** when no secret service is running; the UI
   states this.
 - **Metadata exposure**: model choice, prompts, token counts and timing go to

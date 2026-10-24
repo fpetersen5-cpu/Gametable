@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { GameView, MatchSummary, ReplayBundle } from '../../shared/api';
+import type { GameView, MatchSummary, ReplayBundle, TranscriptPerspective } from '../../shared/api';
 import { formatUsd } from '../game-data';
 import { GameTable } from '../components/GameTable';
 
@@ -75,8 +75,8 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
     setSeatViews({});
   };
 
-  const exportMatch = async (matchId: string) => {
-    const result = await window.gametable.exportTranscript(matchId);
+  const exportMatch = async (matchId: string, perspective: TranscriptPerspective) => {
+    const result = await window.gametable.exportTranscript(matchId, perspective);
     setNote(result.ok ? `Saved to ${result.path}` : result.error ?? 'Export failed');
   };
 
@@ -90,8 +90,13 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
         ? bundle.views[index]
         : seatViews[viewAs]?.[index] ?? null
     : null;
-  const activeEvent = bundle && index > 0 ? bundle.events[index - 1] : null;
+  // Raw events may contain private targets or card choices. They are only an
+  // omniscient replay feature, not part of any seat's perspective.
+  const activeEvent = viewAs === 'god' && bundle && index > 0 ? bundle.events[index - 1] : null;
   const shownSeat = bundle?.summary.seats.find((seat) => seat.seatId === viewAs);
+  const exportSeat = viewAs === 'you'
+    ? bundle?.seats.find((seat) => seat.kind === 'human')?.id
+    : isSeat ? viewAs : undefined;
 
   return (
     <div className="replay-screen">
@@ -177,9 +182,19 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
                   </select>
                 </label>
                 {loadingSeat && <span className="muted">loading…</span>}
-                <button className="ghost" onClick={() => void exportMatch(bundle.summary.matchId)}>
-                  Export
+                <button className="ghost" onClick={() => void exportMatch(bundle.summary.matchId, { mode: 'public' })}>
+                  Export public
                 </button>
+                {exportSeat && (
+                  <button className="ghost" onClick={() => void exportMatch(bundle.summary.matchId, { mode: 'seat', seatId: exportSeat })}>
+                    Export this seat…
+                  </button>
+                )}
+                {viewAs === 'god' && (
+                  <button className="ghost" onClick={() => void exportMatch(bundle.summary.matchId, { mode: 'omniscient' })}>
+                    Export omniscient…
+                  </button>
+                )}
               </div>
             </header>
 
@@ -212,8 +227,7 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
 
             {isSeat && (
               <p className="muted replay-perspective">
-                Seeing only what <strong>{shownSeat?.name}</strong> saw
-                {shownSeat?.role ? ` — ${shownSeat.role}` : ''}.
+                Seeing only what <strong>{shownSeat?.name}</strong> saw.
               </p>
             )}
 

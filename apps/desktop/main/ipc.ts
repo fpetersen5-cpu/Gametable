@@ -9,7 +9,7 @@ import { mafia } from '@gametable/games-mafia';
 import { ResultsStore, bradleyTerry } from '@gametable/stats';
 import { SecretStore } from './secrets.js';
 import { secureWrite, readJsonFile } from './secure-file.js';
-import { validateArena, validateConfig, validateStartRequest, BadRequest } from './validation.js';
+import { validateArena, validateConfig, validateStartRequest, validateTranscriptPerspective, BadRequest } from './validation.js';
 import { redact } from '@gametable/agent';
 import { ModelCatalogCache } from './catalog.js';
 import { MatchSession } from './session.js';
@@ -32,6 +32,7 @@ import {
   type ReplayBundle,
   type StartMatchRequest,
   type StartMatchResult,
+  type TranscriptPerspective,
 } from '../shared/api.js';
 
 const games: Array<GameDef<any>> = [mafia, buckshot, coup];
@@ -552,7 +553,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
   });
 
-  handle('matches:export', async (_event, matchId: unknown) => {
+  handle('matches:export', async (_event, matchId: unknown, rawPerspective?: unknown) => {
     if (typeof matchId !== 'string' || !/^[am]-[a-z0-9-]+$/i.test(matchId)) {
       return { ok: false, error: 'invalid match' };
     }
@@ -562,16 +563,44 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     } catch {
       return { ok: false, error: 'that match is no longer on disk' };
     }
+    let perspective: TranscriptPerspective;
+    let transcript: string;
+    try {
+      perspective = validateTranscriptPerspective(rawPerspective);
+      const def = games.find((game) => game.id === bundle.summary.gameId);
+      if (!def) return { ok: false, error: 'that game is not installed' };
+      transcript = buildTranscript(def, bundle, perspective);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof ReplayIncompatibleError || error instanceof BadRequest
+          ? error.message : 'That transcript could not be projected safely. Nothing was exported.',
+      };
+    }
     const window = getWindow();
+    // A compromised renderer cannot bypass this warning by calling IPC directly.
+    if (perspective.mode !== 'public') {
+      if (!window) return { ok: false, error: 'cancelled' };
+      const confirmation = await dialog.showMessageBox(window, {
+        type: 'warning', title: 'Export private game information?',
+        message: perspective.mode === 'omniscient'
+          ? 'This export reveals all hidden roles, private chat and raw actions.'
+          : `This export includes ${bundle.seats.find((seat) => seat.id === perspective.seatId)!.name}’s hidden cards, private knowledge and permitted private chat.`,
+        detail: 'Review this file before sharing. Public export is the safer option.',
+        buttons: ['Cancel', 'Export private transcript'], defaultId: 0, cancelId: 0, noLink: true,
+      });
+      if (confirmation.response !== 1) return { ok: false, error: 'cancelled' };
+    }
+    const label = perspective.mode === 'seat' ? `seat-${perspective.seatId}` : perspective.mode;
     const result = window
       ? await dialog.showSaveDialog(window, {
-          title: 'Export transcript',
-          defaultPath: `gametable-${bundle.summary.gameId}-${matchId}.md`,
+          title: `Export ${perspective.mode} transcript`,
+          defaultPath: `gametable-${bundle.summary.gameId}-${matchId}-${label}.md`,
           filters: [{ name: 'Markdown', extensions: ['md'] }],
         })
       : { canceled: true, filePath: '' };
     if (result.canceled || !result.filePath) return { ok: false, error: 'cancelled' };
-    await writeFile(result.filePath, buildTranscript(bundle), 'utf8');
+    await writeFile(result.filePath, transcript, { encoding: 'utf8', mode: 0o600 });
     return { ok: true, path: result.filePath };
   });
 

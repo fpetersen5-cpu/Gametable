@@ -77,4 +77,28 @@ describe('Mafia hidden-information boundaries', () => {
     changed.savedTonight = viewer;
     assertViewNonInterference(mafia, viewer, before, changed);
   });
+
+  it('does not publish the identity of the private night speaker in the log', () => {
+    const start = mafia.setup({ seed: 3, seats: seatRoster(8), options: {} });
+    const mob = start.alive.filter((id) => start.roles[id] === 'mafia');
+    const viewer = start.alive.find((id) => start.roles[id] === 'villager')!;
+    let first = mafia.apply(start, mob[0]!, { type: 'raise' });
+    first = mafia.apply(first, mob[1]!, { type: 'quiet' });
+    let second = mafia.apply(start, mob[0]!, { type: 'quiet' });
+    second = mafia.apply(second, mob[1]!, { type: 'raise' });
+    expect(first.nightSpeaker).not.toBe(second.nightSpeaker);
+    assertViewNonInterference(mafia, viewer, first, second);
+  });
+
+  it('does not publish investigation targets through transition log messages', () => {
+    const start = nightState();
+    start.steps = ['night-check', 'dawn'];
+    const detective = start.alive.find((id) => start.roles[id] === 'detective')!;
+    const viewer = start.alive.find((id) => start.roles[id] === 'villager')!;
+    const targets = start.alive.filter((id) => id !== detective);
+    const first = mafia.apply(start, detective, { type: 'investigate', target: targets[0] });
+    const second = mafia.apply(start, detective, { type: 'investigate', target: targets[1] });
+    assertViewNonInterference(mafia, viewer, first, second);
+    expect(mafia.view(first, detective)).not.toEqual(mafia.view(second, detective));
+  });
 });

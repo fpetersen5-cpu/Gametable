@@ -211,7 +211,7 @@ function PostGame(props: {
             Watch replay
           </button>
           <button className="ghost" onClick={props.onExport}>
-            Export transcript
+          Export public transcript
           </button>
           <button className="ghost" onClick={props.onClose}>
             Back to table

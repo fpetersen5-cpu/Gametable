@@ -1,4 +1,4 @@
-import type { AppConfig, ArenaConfig, StartMatchRequest } from '../shared/api.js';
+import type { AppConfig, ArenaConfig, StartMatchRequest, TranscriptPerspective } from '../shared/api.js';
 
 /** A rejected request. Handlers turn this into a user-facing error. */
 export class BadRequest extends Error {
@@ -6,6 +6,16 @@ export class BadRequest extends Error {
     super(message);
     this.name = 'BadRequest';
   }
+}
+
+export function validateTranscriptPerspective(raw: unknown): TranscriptPerspective {
+  if (raw === undefined) return { mode: 'public' };
+  const value = record(raw, 'transcript perspective');
+  if (value.mode === 'public' || value.mode === 'omniscient') return { mode: value.mode };
+  if (value.mode === 'seat') {
+    return { mode: 'seat', seatId: asText(value.seatId, 'seat ID', 64) };
+  }
+  throw new BadRequest('Choose a public, seat, or omniscient transcript');
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {
