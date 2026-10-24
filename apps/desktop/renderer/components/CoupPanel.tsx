@@ -84,10 +84,13 @@ export function CoupPanel({ data, seats }: { data: CoupData; seats: SeatInfo[] }
 
       {data.exchangeCards && data.exchangeCards.length > 0 && (
         <div className="coup-exchange">
-          <h4>Choose two cards to keep</h4>
+          <h4>
+            Choose {data.hand.length === 1 ? 'one card' : 'two cards'} to keep
+          </h4>
           <p className="muted">
-            You drew {data.exchangeCards.length - data.hand.length} cards. Pick two from your
-            four, and the rest return to the deck.
+            You drew {data.exchangeCards.length - data.hand.length} cards. Pick{' '}
+            {data.hand.length === 1 ? 'one' : 'two'} of the {data.exchangeCards.length} and
+            return the rest to the deck.
           </p>
         </div>
       )}

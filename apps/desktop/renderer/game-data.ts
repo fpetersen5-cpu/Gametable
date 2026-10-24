@@ -51,7 +51,9 @@ export interface BuckshotData {
 
 export function mafiaData(view: GameView): MafiaRole | null {
   const data = view.data as Record<string, unknown> | null;
-  return data && typeof data === 'object' && 'yourRole' in data ? (data as unknown as MafiaRole) : null;
+  return data && typeof data === 'object' && 'yourRole' in data && 'votes' in data
+    ? (data as unknown as MafiaRole)
+    : null;
 }
 
 export function buckshotData(view: GameView): BuckshotData | null {
@@ -107,7 +109,7 @@ export interface CoupData {
 
 export function coupData(view: GameView): CoupData | null {
   const data = view.data as Record<string, unknown> | null;
-  return data && typeof data === 'object' && 'influence' in data && 'deckCount' in data
+  return data && typeof data === 'object' && 'hand' in data && 'deckCount' in data
     ? (data as unknown as CoupData)
     : null;
 }
@@ -132,6 +134,11 @@ export const ROLE_GLYPH: Record<string, string> = {
   jester: '🃏',
   player: '🎯',
   dealer: '🎩',
+  Duke: '👑',
+  Assassin: '🗡️',
+  Captain: '⚓',
+  Ambassador: '🕊️',
+  Contessa: '💃',
 };
 
 export function seatColor(seatId: string): string {

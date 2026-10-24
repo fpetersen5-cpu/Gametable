@@ -222,8 +222,9 @@ const data = coupData(shown); // guard on a field unique to this game
 {data && <CoupPanel data={data} seats={shown.seats} />}
 ```
 
-Keep the guard narrow: `coupData` checks for `influence` and `deckCount`, so a
-Mafia or Buckshot view cannot be mistaken for a Coup view.
+Keep the guard narrow: `coupData` checks for `hand` and `deckCount`, so a Mafia
+or Buckshot view cannot be mistaken for Coup. The Mafia guard likewise checks
+for `yourRole` *and* `votes`, not just `yourRole`.
 
 ---
 

@@ -358,7 +358,7 @@ function describeAction(action: GameAction, view: GameView): string {
     case 'assassinate':
       return `Assassinate — ${target}`;
     case 'steal':
-      return `Steal from — ${target}`;
+      return `Steal from ${target}`;
     case 'challenge':
       return 'Challenge the claim';
     case 'block':

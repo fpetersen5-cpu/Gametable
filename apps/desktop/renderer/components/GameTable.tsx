@@ -40,6 +40,11 @@ export function GameTable({
   const mafia = mafiaData(shown);
   const buck = buckshotData(shown);
   const coup = coupData(shown);
+  const coupRoles = coup?.god
+    ? Object.fromEntries(
+        Object.entries(coup.god.hands).map(([id, hand]) => [id, hand.join(' + ')]),
+      )
+    : null;
   const showActions = Boolean(onAction) && !spectator;
 
   return (
@@ -48,8 +53,8 @@ export function GameTable({
         seats={shown.seats}
         phase={shown.phase}
         humanSeatId={humanSeatId}
-        roles={mafia?.god?.roles ?? buck?.publicRoles ?? null}
-        yourRole={mafia?.yourRole ?? null}
+        roles={mafia?.god?.roles ?? buck?.publicRoles ?? coupRoles ?? null}
+        yourRole={mafia?.yourRole ?? coup?.yourRole ?? null}
         thinking={awaiting}
         controlledSeats={controlledSeats}
         onTakeover={onTakeover}

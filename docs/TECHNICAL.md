@@ -6,8 +6,8 @@ Flatpak and talks to OpenRouter with a key the user supplies. The app owns all
 state; each seat — human or model — receives only the projection the rules
 allow it to see.
 
-At the time of writing: version `0.1.0`, 41 commits, ~14.1k lines of source,
-134 tests across 23 files, and a 178 MB signed bundle. Milestones M0–M6 are
+At the time of writing: version `0.1.0`, 42 commits, ~14.1k lines of source,
+136 tests across 24 files, and a 178 MB signed bundle. Milestones M0–M6 are
 complete; the roadmap below is what remains.
 
 ---
@@ -375,7 +375,7 @@ The headless CLI uses the same referee and supports `run`, `gauntlet`, `models`,
 ## 8. Testing and quality gates
 
 `npm run check` runs typecheck, game lint and the full test suite. At the time
-of writing: **134 tests across 23 files**, including
+of writing: **136 tests across 24 files**, including
 
 - engine/game unit tests for all three games and the toy fixture;
 - the cross-game conformance gate and gateway round-trip;

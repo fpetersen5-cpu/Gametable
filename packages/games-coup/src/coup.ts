@@ -724,6 +724,7 @@ export const coup: GameDef<CoupState> = {
         if (type === 'coup') {
           if (coins < 7) throw new IllegalAction(seatId, action, 'a coup costs 7 coins');
           next.coins[seatId] = coins - 7;
+          next.stats.coups += 1;
           pushLog(next, `${nameOf(next, seatId)} pays 7 coins for a coup against ${nameOf(next, target as SeatId)}.`);
           next.step = { kind: 'lose', actor: target as SeatId, action: pending, next: 'end-turn' };
           return next;
@@ -731,12 +732,12 @@ export const coup: GameDef<CoupState> = {
         if (type === 'assassinate') {
           if (coins < 3) throw new IllegalAction(seatId, action, 'an assassination costs 3 coins');
           next.coins[seatId] = coins - 3;
-          pushLog(next, `${nameOf(next, seatId)} pays 3 coins to assassinate ${nameOf(next, target as SeatId)}.`);
+          pushLog(next, `${nameOf(next, seatId)} pays 3 coins to attempt an assassination of ${nameOf(next, target as SeatId)}.`);
           beginChallenge(next, pending);
           return next;
         }
         if (type === 'foreign-aid') {
-          pushLog(next, `${nameOf(next, seatId)} takes foreign aid.`);
+          pushLog(next, `${nameOf(next, seatId)} attempts to take foreign aid.`);
           beginBlock(next, pending);
           return next;
         }
