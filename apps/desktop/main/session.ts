@@ -27,6 +27,7 @@ import type {
   StartMatchRequest,
   TableSnapshot,
 } from '../shared/api.js';
+import { REPLAY_FORMAT_VERSION } from '../shared/api.js';
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -658,7 +659,7 @@ export class MatchSession {
       }
       await this.deps.store.append(toRecord(result, personas));
       await this.deps.saveBundle({
-        formatVersion: 2,
+        formatVersion: REPLAY_FORMAT_VERSION,
         summary,
         options: this.gameOptions(),
         seats: this.deps.seats,
