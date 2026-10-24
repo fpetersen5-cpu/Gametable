@@ -1,0 +1,32 @@
+# Flatpak integration for OHF-Voice/piper1-gpl 1.8.0.
+# Build upstream sources against separately source-built system dependencies.
+# No ExternalProject, downloads, copied runtime binaries, or Python wheels.
+cmake_minimum_required(VERSION 3.26)
+project(gametable_piper LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(GNUInstallDirs)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ESPEAK REQUIRED IMPORTED_TARGET espeak-ng)
+find_path(ORT_INCLUDE onnxruntime_cxx_api.h PATH_SUFFIXES onnxruntime onnxruntime/core/session REQUIRED)
+find_library(ORT_LIBRARY onnxruntime REQUIRED)
+
+add_library(piper SHARED libpiper/src/piper.cpp libpiper/src/chinese_phonemizer.cpp)
+target_include_directories(piper PUBLIC libpiper/include ${ORT_INCLUDE})
+target_compile_definitions(piper PRIVATE BUILDING_LIBPIPER PIPER_VERSION="1.8.0")
+target_link_libraries(piper PRIVATE PkgConfig::ESPEAK ${ORT_LIBRARY})
+set_target_properties(piper PROPERTIES VERSION 1.8.0 SOVERSION 1)
+
+add_library(main_utils STATIC
+  libpiper/src/main/utils/wavfile.cpp
+  libpiper/src/main/utils/main_utils.cpp
+  libpiper/src/main/utils/process.cpp
+  libpiper/src/main/utils/wav_headers.cpp)
+target_include_directories(main_utils PUBLIC libpiper/src/main PRIVATE libpiper/src/main/utils)
+target_link_libraries(main_utils PRIVATE piper)
+
+add_executable(piper_cli libpiper/src/main/main.cpp)
+set_target_properties(piper_cli PROPERTIES OUTPUT_NAME piper)
+target_link_libraries(piper_cli PRIVATE piper main_utils)
+install(TARGETS piper LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS piper_cli RUNTIME DESTINATION piper)

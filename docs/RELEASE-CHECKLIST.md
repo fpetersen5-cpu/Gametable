@@ -102,10 +102,11 @@ float-WAV format. The stripped ONNX shared library is about 24 MB.
   `io.github.takmikill.GameTable` installation is a **different app**; it is
   intentionally left installed until users choose to migrate their local
   records. See [`FLATPAK-ID-MIGRATION.md`](FLATPAK-ID-MIGRATION.md).
-- Replace the development Git `branch: main` source with the final immutable
-  release tag/commit for submission. Local verification of the new app ID
-  resolves the public GitHub source; the branch remains the manifest-linter
-  blocker before Flathub submission.
+- A commit-pinned, single-manifest Flathub staging draft is in
+  [`flatpak/flathub/`](../flatpak/flathub/README.md). It passes the manifest and
+  AppStream linters and targets runtime 26.08. It is **not** a submission: Flathub
+  prohibits AI-generated/AI-assisted manifests and AI-submitted PRs. A human must
+  independently author/review the final manifest and submit it.
 - Flathub's current generative-AI policy prohibits AI-generated or AI-assisted
   manifest content in submissions. The packaging edits here were AI-assisted
   and **must not be submitted as-is**: a human maintainer needs to author and
