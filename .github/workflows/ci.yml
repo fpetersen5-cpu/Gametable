@@ -23,6 +23,7 @@ jobs:
       - run: npm run lint:games
       - run: npm test
       - run: npm run build
+      - run: python3 -m unittest discover -s flatpak/tests -v
 
   flatpak:
     runs-on: ubuntu-latest
@@ -36,7 +37,7 @@ jobs:
       - name: Install flatpak toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder pipx
+          sudo apt-get install -y flatpak flatpak-builder pipx appstream desktop-file-utils
           flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak install -y --noninteractive flathub \
             org.flatpak.Builder \
@@ -44,21 +45,19 @@ jobs:
             org.freedesktop.Sdk.Extension.node22//25.08 \
             org.electronjs.Electron2.BaseApp//25.08
 
+      - name: Validate desktop metadata
+        run: |
+          appstreamcli validate --no-net flatpak/io.github.takmikill.GameTable.metainfo.xml
+          desktop-file-validate flatpak/io.github.takmikill.GameTable.desktop
+
       - name: Rebuild npm sources (validates the committed file)
         run: |
           pipx install flatpak-node-generator
-          pipx runpip flatpak-node-generator show >/dev/null
           cp flatpak/node-sources.json /tmp/sources.committed.json
-          pipx run --spec flatpak-node-generator python flatpak/generate-sources.py || true
-          # The generator is not byte-stable across runs; fail only if the
-          # package count collapses (the bug this wrapper works around).
-          python3 - <<'PY'
-          import json
-          committed = json.load(open('/tmp/sources.committed.json'))
-          fresh = json.load(open('flatpak/node-sources.json'))
-          assert len(fresh) >= len(committed) * 0.95, (len(fresh), len(committed))
-          print(f'sources ok: {len(fresh)}')
-          PY
+          # Run in pipx's installed environment. Do not swallow generator errors
+          # or accept stale sources merely because their count is similar.
+          "$(pipx environment --value PIPX_LOCAL_VENVS)/flatpak-node-generator/bin/python" flatpak/generate-sources.py
+          python3 flatpak/check-node-sources.py /tmp/sources.committed.json flatpak/node-sources.json
 
       - name: Build bundle
         env:

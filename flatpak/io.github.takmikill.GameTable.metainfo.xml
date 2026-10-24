@@ -16,7 +16,8 @@
       allowed to see, so hidden roles stay hidden. The same projection that is sent to a model is
       the one shown to you.
     </p>
-    <p>Games include Mafia / Werewolf and Buckshot Roulette, with more to come.</p>
+    <p>Games include Mafia / Werewolf, Buckshot Roulette and Coup.</p>
+    <p>Watch AI-only matches, replay games from a seat's perspective, and compare models on the leaderboard. Neural voices can read each seat's public speech.</p>
   </description>
 
   <launchable type="desktop-id">io.github.takmikill.GameTable.desktop</launchable>

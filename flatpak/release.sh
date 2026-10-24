@@ -17,6 +17,7 @@ cd "$(dirname "$0")/.."
 : "${GAMETABLE_GPG_KEY:?set GAMETABLE_GPG_KEY to the signing key id}"
 : "${GAMETABLE_REPO_URL:?set GAMETABLE_REPO_URL to the public repo URL}"
 export GAMETABLE_GPG_HOME="${GAMETABLE_GPG_HOME:-$HOME/.gnupg}"
+python3 flatpak/release-preflight.py
 
 APP_ID=io.github.takmikill.GameTable
 BRANCH=master
