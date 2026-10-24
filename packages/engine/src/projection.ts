@@ -9,6 +9,9 @@ export interface LeakReport {
  * Serialises a seat's view and looks for strings that the seat must not see.
  * Secrets shorter than `minLength` are ignored — hunting for single characters
  * produces noise, not signal.
+ * This checks literal occurrences only. Synthetic labels not present in the
+ * hidden values cannot detect raw-state leaks; supplement with game-specific
+ * counterfactual view tests (assertViewNonInterference in sdk-conformance).
  */
 export function findLeaks<S>(
   def: GameDef<S>,

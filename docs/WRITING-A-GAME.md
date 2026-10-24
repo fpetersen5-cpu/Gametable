@@ -157,9 +157,24 @@ secrets(state, seatId) {
 }
 ```
 
-The leak checker serialises the seat's view and fails if any of these tokens
-appear. Use prefixes so a role name in a public log line does not create a
-false positive.
+The leak checker serialises the seat's view and fails if these exact tokens
+appear. Synthetic labels alone do **not** detect a raw hand or deck leak:
+they do not occur in the underlying role strings. This check is supplementary,
+not a proof of privacy.
+
+Use `assertViewNonInterference` from `@gametable/sdk-conformance` with two
+valid states that differ only in information hidden from the viewing seat:
+
+```ts
+assertViewNonInterference(coup, viewerId, before, after);
+```
+
+Keep public facts and the viewer's permitted knowledge fixed. For example,
+swap an opponent's card with a card in the deck while preserving hand sizes.
+The helper compares the entire seat view, both briefing paths, model prompts
+and action schema. Cover each private phase and channel; verify that an
+intentionally leaky definition fails the test. Also test positive controls:
+the owner still sees their own cards/results, and spectators receive a god view.
 
 ### Capabilities
 
@@ -261,8 +276,9 @@ cover hidden hands, the challenge/block pipeline, exchange and elimination.
 
 - **Mutable transitions.** Clone before mutating. A replay compares snapshots;
   mutating in place makes the original state and the replay disagree.
-- **Hidden data in the log.** Reveal only what the rules reveal. A lost card is
-  public; another seat's hand is not. Use `secrets()` to prove it.
+- **Hidden data in the log or phase.** Reveal only what the rules reveal. A lost
+  card is public; another seat's hand or night-role actor is not. Test actual
+  values and counterfactual hidden states, not only `secrets()` labels.
 - **Randomness outside the state.** If you call `Math.random()` or read the
   clock, the replay diverges. Seed and persist the RNG.
 - **Trusting action fields.** A model can invent `target`, `role` or `card`.

@@ -259,3 +259,4 @@ export { mines } from './toy-mines.js';
 export type { MinesState } from './toy-mines.js';
 export * from './audits.js';
 export * from './fake-model.js';
+export * from './privacy.js';

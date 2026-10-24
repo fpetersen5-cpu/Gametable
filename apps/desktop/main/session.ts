@@ -556,7 +556,8 @@ export class MatchSession {
       spectator: this.human === null,
       status: this.status,
       view: this.latest.view,
-      godView: this.latest.god,
+      // Keep omniscient snapshots on disk for replays, never in a live player's IPC payload.
+      godView: this.human === null ? this.latest.god : null,
       humanSeatId: this.human?.id ?? null,
       awaitingHuman: this.pendingHuman !== null,
       seatIssues: this.seatIssues(),

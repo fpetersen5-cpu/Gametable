@@ -161,8 +161,10 @@ public coin and influence counts, the pending claim and block, the challenge
 queue, the exchange choices and the last 20 public log lines. `godView` adds
 all hands and the deck order for spectators and replays. `secrets` emits
 `#coup-hand#<seat>#<role>#`, `#coup-deck#<index>#<role>#` and
-`#coup-drawn#<role>#` tokens, so the leak checker catches any projection
-mistake. The game declares `uiPanels: ['seat-ring', 'phase-banner',
+`#coup-drawn#<role>#` tokens as a supplementary exact-token check. Actual privacy
+coverage comes from counterfactual tests which change hidden hands, draws and
+deck order while requiring the entire seat view and model request to stay
+unchanged. The game declares `uiPanels: ['seat-ring', 'phase-banner',
 'action-panel', 'coup-panel']`.
 
 This third game needed no engine changes: it is the practical proof that the

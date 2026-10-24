@@ -477,7 +477,10 @@ export const mafia: GameDef<MafiaState> = {
     const visibleChat = state.chat.filter(
       (line) => line.channel === 'public' || (line.channel === 'mafia' && role === 'mafia'),
     );
-    const votes = Object.entries(state.votes).map(([voter, target]) => ({
+    // Night kill votes belong to the mafia, not to waiting town seats.
+    const visibleVotes = step === 'day-vote' || step === 'runoff' ||
+      (step === 'night-kill' && role === 'mafia') ? state.votes : {};
+    const votes = Object.entries(visibleVotes).map(([voter, target]) => ({
       voter,
       voterName: seatNames.get(voter) ?? voter,
       target,
@@ -493,15 +496,24 @@ export const mafia: GameDef<MafiaState> = {
     }));
 
     const canAct = !state.over && actorsFor(state).includes(seatId);
+    const night = step.startsWith('night-') || step === 'mafia-talk';
+    const entitled = !night ||
+      ((step === 'mafia-talk' || step === 'night-kill') && role === 'mafia') ||
+      (step === 'night-save' && role === 'doctor') ||
+      (step === 'night-check' && role === 'detective');
+    const phase = entitled ? mafia.phase(state) : {
+      id: 'night', label: 'Night', kind: 'sequential' as const,
+      actor: null, actors: [], round: state.day,
+    };
 
     return {
       gameId: mafia.id,
       seatId,
-      phase: mafia.phase(state),
+      phase,
       seats,
       data: {
         day: state.day,
-        step,
+        step: entitled ? step : 'night',
         yourRole: role,
         yourRoleText: ROLE_TEXT[role],
         teammates,
@@ -518,7 +530,7 @@ export const mafia: GameDef<MafiaState> = {
               }))
             : [],
         canAct,
-        queue: [...state.talkQueue],
+        queue: night ? [] : [...state.talkQueue],
         ...(role === 'mafia'
           ? {
               mafiaHands: Object.entries(state.nightHands)
@@ -785,8 +797,14 @@ export const mafia: GameDef<MafiaState> = {
     return {
       ...base,
       seatId: '__all__',
+      phase: mafia.phase(state),
       data: {
         ...(base.data as Record<string, unknown>),
+        step: state.steps[0] ?? 'dawn',
+        queue: [...state.talkQueue],
+        votes: Object.entries(state.votes).map(([voter, target]) => ({
+          voter, voterName: nameOf(state, voter), target, targetName: nameOf(state, target),
+        })),
         yourRole: null,
         yourRoleText: '',
         teammates: [],
