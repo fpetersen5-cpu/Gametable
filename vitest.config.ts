@@ -13,6 +13,7 @@ export default defineConfig({
       '@gametable/sdk-conformance': pkg('sdk-conformance'),
       '@gametable/games-mafia': pkg('games-mafia'),
       '@gametable/games-buckshot': pkg('games-buckshot'),
+      '@gametable/games-coup': pkg('games-coup'),
     },
   },
   test: {

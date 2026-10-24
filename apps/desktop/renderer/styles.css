@@ -1018,6 +1018,7 @@ select {
 .vote-panel,
 .checks-panel,
 .buckshot-panel,
+.coup-panel,
 .chat {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -1265,6 +1266,85 @@ select {
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
+}
+
+/* coup --------------------------------------------------------------- */
+
+.coup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.coup-pending h4,
+.coup-players h4,
+.coup-exchange h4,
+.coup-discard h4,
+.coup-log h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.coup-pending p,
+.coup-exchange p,
+.coup-discard p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.coup-players {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coup-player {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+}
+
+.coup-player.out {
+  opacity: 0.55;
+}
+
+.coup-player-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.coup-player-stats {
+  display: flex;
+  gap: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.coup-log {
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.coup-log p {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.coup-log p:last-child {
+  color: var(--text);
 }
 
 /* buckshot ----------------------------------------------------------- */

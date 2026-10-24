@@ -1,8 +1,9 @@
 import type { GameAction, GameView } from '../../shared/api';
-import { buckshotData, mafiaData } from '../game-data';
+import { buckshotData, coupData, mafiaData } from '../game-data';
 import { ActionPanel } from './ActionPanel';
 import { BuckshotPanel } from './BuckshotPanel';
 import { ChatLog } from './ChatLog';
+import { CoupPanel } from './CoupPanel';
 import { MafiaLog, MafiaPanel } from './MafiaPanel';
 import { SeatRing } from './SeatRing';
 
@@ -38,6 +39,7 @@ export function GameTable({
   const shown = spectator && godView ? godView : view;
   const mafia = mafiaData(shown);
   const buck = buckshotData(shown);
+  const coup = coupData(shown);
   const showActions = Boolean(onAction) && !spectator;
 
   return (
@@ -66,7 +68,8 @@ export function GameTable({
               humanSeatId={humanSeatId}
             />
           )}
-          {!mafia && !buck && (
+          {coup && <CoupPanel data={coup} seats={shown.seats} />}
+          {!mafia && !buck && !coup && (
             <pre className="raw-state">{JSON.stringify(shown.data, null, 2)}</pre>
           )}
           {(shown.chat.length > 0 || Object.keys(previews ?? {}).length > 0) && (

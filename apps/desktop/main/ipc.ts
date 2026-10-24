@@ -4,6 +4,7 @@ import { dialog, ipcMain, safeStorage, shell, type BrowserWindow, type IpcMainIn
 import { OpenRouterClient, type CompletionClient } from '@gametable/agent';
 import type { GameDef, MatchEvent, Seat } from '@gametable/engine';
 import { buckshot } from '@gametable/games-buckshot';
+import { coup } from '@gametable/games-coup';
 import { mafia } from '@gametable/games-mafia';
 import { ResultsStore, bradleyTerry } from '@gametable/stats';
 import { SecretStore } from './secrets.js';
@@ -33,7 +34,7 @@ import {
   type StartMatchResult,
 } from '../shared/api.js';
 
-const games: Array<GameDef<any>> = [mafia, buckshot];
+const games: Array<GameDef<any>> = [mafia, buckshot, coup];
 const demo = process.env.GAMETABLE_DEMO === '1';
 
 export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow | null): void {

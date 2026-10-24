@@ -61,6 +61,57 @@ export function buckshotData(view: GameView): BuckshotData | null {
     : null;
 }
 
+export interface CoupPlayer {
+  id: string;
+  name: string;
+  kind: string;
+  modelId?: string;
+  alive: boolean;
+  coins: number;
+  influence: number;
+}
+
+export interface CoupData {
+  coins: number;
+  hand: string[];
+  yourRole: string | null;
+  influence: number;
+  players: CoupPlayer[];
+  step: string;
+  pending: {
+    actor: string;
+    actorName: string;
+    type: string;
+    target?: string;
+    targetName?: string;
+    claimedRole?: string;
+  } | null;
+  block: {
+    blocker: string;
+    blockerName: string;
+    role: string;
+  } | null;
+  queue: string[];
+  log: string[];
+  canAct: boolean;
+  over: boolean;
+  deckCount: number;
+  discard: string[];
+  exchangeCards?: string[];
+  god?: {
+    hands: Record<string, string[]>;
+    deck: string[];
+    discard: string[];
+  };
+}
+
+export function coupData(view: GameView): CoupData | null {
+  const data = view.data as Record<string, unknown> | null;
+  return data && typeof data === 'object' && 'influence' in data && 'deckCount' in data
+    ? (data as unknown as CoupData)
+    : null;
+}
+
 export const ITEM_LABEL: Record<string, { name: string; glyph: string; text: string }> = {
   cigarette: { name: 'Cigarette', glyph: '🚬', text: '+1 health' },
   beer: { name: 'Beer', glyph: '🍺', text: 'Eject the current shell' },

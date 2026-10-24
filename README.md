@@ -30,6 +30,7 @@ makes hidden-role games work at all.
 | **M3** — game tables, action panel, spectator cinema, replay, post-game report | **done** |
 | **M4** — results store, Bradley–Terry leaderboard, EV-loss ranking | **done** |
 | **M5** — signed `.flatpak` bundle, self-hosted repo, `.flatpakref` | **done** |
+| **M6** — third game: Coup (2–6 seats, challenges, blocks) and the game-author guide | **done** |
 
 Everything is playable in-app and installs as a Flatpak. `GAMETABLE_DEMO=1
 flatpak run io.github.takmikill.GameTable` runs the whole UI against a fake
@@ -79,6 +80,7 @@ npm test
 packages/engine/           referee, projections, event log, match runner, bots
 packages/games-buckshot/   duel rules, items, expectiminimax oracle, gauntlet
 packages/games-mafia/      roles, night phases, discussion, votes, runoff
+packages/games-coup/       hidden hands, claims, challenges, blocks, exchange
 packages/agent/            OpenRouter client, prompt builder, LLM seat, semaphore
 packages/stats/            frozen results record, JSONL store, Bradley–Terry
 packages/sdk-conformance/  cross-game gate + toy game fixture + fake model
@@ -136,11 +138,31 @@ A seat's view contains its own role, the public log and chat, the mafia
 channel only if it is mafia, and investigations only if it is the detective.
 `discussionRounds: 0` plays a silent day — the null-chat path the gate exercises.
 
+## Coup
+
+2 to 6 seats. Each seat starts with two hidden influence cards from a 15-card
+deck (three each of Duke, Assassin, Captain, Ambassador and Contessa) and two
+coins. On a turn a seat takes income or foreign aid, or claims a role to tax,
+steal, exchange or assassinate; a coup costs seven coins and cannot be
+answered. Any claim may be challenged, and a challenged player who holds the
+role proves it and the challenger loses an influence. Foreign aid, steals and
+assassinations can be blocked by the role that stops them; a block may be
+challenged in turn. The last seat with influence wins.
+
+```bash
+npm run cli -- run --game coup --seats 4 --seed 7
+```
+
+A seat's view contains its own cards, public coin and influence counts, the
+claim and block on the table and the last 20 public log lines. Other hands and
+the deck order are secrets; the conformance gate checks every seat's view for
+them.
+
 ## The cross-game compatibility gate
 
 `packages/sdk-conformance` is a generic suite that every `GameDef` must pass.
-It runs against all three games (Mafia, Buckshot, and a deliberately tiny toy
-fixture), so an abstraction shaped around one genre shows up immediately.
+It runs against all four games (Mafia, Buckshot, Coup, and a deliberately tiny
+toy fixture), so an abstraction shaped around one genre shows up immediately.
 
 | Check | Catches |
 |---|---|
@@ -150,7 +172,7 @@ fixture), so an abstraction shaped around one genre shows up immediately.
 | state survives a JSON round-trip | save/resume breakage |
 | illegal actions are rejected | permissive `apply()` |
 | the acting seat always has a legal move | soft-locks |
-| no seat sees another seat's secrets | leaks of roles, hands, chamber order |
+| no seat sees another seat's secrets | leaks of roles, hands, deck order |
 | unknown seats are rejected | projection bugs |
 | capabilities satisfy the platform contract | UI panels missing for a declared capability |
 | a full match is playable through the LLM gateway | schema/prompt/parse mismatches (fake transport, zero tokens) |
@@ -315,11 +337,12 @@ covered.
 ## Roadmap
 
 Shipped: Buckshot Roulette with an expectiminimax oracle (leaderboard by EV lost
-per decision), Mafia/Werewolf with discussion, addressed speech and voting, the
-cross-game conformance gate, spectator mode, replays with seat perspectives,
-resume/rewind, arena runs, neural voices with per-seat selection, live token
-streaming, and the signed Flatpak.
+per decision), Mafia/Werewolf with discussion, addressed speech and voting, Coup
+with challenges and blocks, the cross-game conformance gate, spectator mode,
+replays with seat perspectives, resume/rewind, arena runs, neural voices with
+per-seat selection, live token streaming, and the signed Flatpak. The
+game-author guide in [docs/WRITING-A-GAME.md](docs/WRITING-A-GAME.md) proves the
+SDK is a platform, not a Mafia-shaped abstraction.
 
-Next: a third game (Coup) plus a game-author guide to prove the SDK, local
-models through an OpenAI-compatible endpoint, then a Flathub submission with
-Piper built from source.
+Next: local models through an OpenAI-compatible endpoint, then a Flathub
+submission with Piper built from source.

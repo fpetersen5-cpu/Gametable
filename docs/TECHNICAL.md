@@ -6,8 +6,8 @@ Flatpak and talks to OpenRouter with a key the user supplies. The app owns all
 state; each seat — human or model — receives only the projection the rules
 allow it to see.
 
-At the time of writing: version `0.1.0`, 39 commits, ~13.7k lines of source,
-130 tests across 22 files, and a 178 MB signed bundle. Milestones M0–M5 are
+At the time of writing: version `0.1.0`, 41 commits, ~14.1k lines of source,
+134 tests across 23 files, and a 178 MB signed bundle. Milestones M0–M6 are
 complete; the roadmap below is what remains.
 
 ---
@@ -42,6 +42,7 @@ complete; the roadmap below is what remains.
 | `packages/engine` | `GameDef` contract, projections, seeded RNG, event log, match runner, bots, replay helpers |
 | `packages/games-buckshot` | Duel rules, nine items, expectiminimax oracle, gauntlet |
 | `packages/games-mafia` | Roles, night phases, discussion, votes, runoff, view filtering |
+| `packages/games-coup` | Hidden hands, claims, challenges, blocks, exchange, view filtering |
 | `packages/agent` | OpenRouter client, prompt builder, JSON schema, `LlmController`, streaming, redaction, semaphore |
 | `packages/stats` | Frozen results record, JSONL store, Bradley–Terry ratings |
 | `packages/sdk-conformance` | Cross-game gate, toy game fixture, fake model transport |
@@ -142,11 +143,37 @@ only if it is mafia, and investigations only if it is the detective.
 `discussionRounds: 0` plays a silent day — the null-chat path the gate
 exercises.
 
+### Coup (`packages/games-coup`)
+
+2–6 seats. A 15-card deck holds three each of Duke, Assassin, Captain,
+Ambassador and Contessa. Each seat starts with two hidden influence cards and
+two coins. A turn is one of income, foreign aid, coup, assassinate, steal, tax
+or exchange. Claims are public and may be challenged; blocks are public and may
+be challenged in turn. A challenge to a proven claim returns the revealed card
+to the deck, shuffles, and draws a replacement. A failed challenge to an
+assassination refunds the three coins paid. Exchange draws two cards and keeps
+as many cards as the seat currently holds. The last seat with influence wins;
+a seat with ten or more coins must coup.
+
+The state is a `CoupStep` union: `action`, `challenge`, `block`,
+`challenge-block`, `lose` and `exchange`. The view exposes the seat's own hand,
+public coin and influence counts, the pending claim and block, the challenge
+queue, the exchange choices and the last 20 public log lines. `godView` adds
+all hands and the deck order for spectators and replays. `secrets` emits
+`#coup-hand#<seat>#<role>#`, `#coup-deck#<index>#<role>#` and
+`#coup-drawn#<role>#` tokens, so the leak checker catches any projection
+mistake. The game declares `uiPanels: ['seat-ring', 'phase-banner',
+'action-panel', 'coup-panel']`.
+
+This third game needed no engine changes: it is the practical proof that the
+frozen `GameDef` contract covers a bluffing/counteraction genre as well as
+Mafia's discussion and Buckshot's expectiminimax.
+
 ### Cross-game conformance gate (`packages/sdk-conformance`)
 
-A generic suite every `GameDef` must pass. It runs against Mafia, Buckshot and
-a deliberately tiny toy fixture, so an abstraction shaped around one genre
-shows up immediately.
+A generic suite every `GameDef` must pass. It runs against Mafia, Buckshot,
+Coup and a deliberately tiny toy fixture, so an abstraction shaped around one
+genre shows up immediately.
 
 | Check | Catches |
 | --- | --- |
@@ -156,7 +183,7 @@ shows up immediately.
 | state survives a JSON round-trip | save/resume breakage |
 | illegal actions are rejected | permissive `apply()` |
 | the acting seat always has a legal move | soft-locks |
-| no seat sees another seat's secrets | role/hand/chamber leaks |
+| no seat sees another seat's secrets | role/hand/deck leaks |
 | unknown seats are rejected | projection bugs |
 | capabilities satisfy the platform contract | missing UI panels |
 | a full match plays through the LLM gateway | schema/prompt/parse mismatches (fake transport, zero tokens) |
@@ -348,9 +375,9 @@ The headless CLI uses the same referee and supports `run`, `gauntlet`, `models`,
 ## 8. Testing and quality gates
 
 `npm run check` runs typecheck, game lint and the full test suite. At the time
-of writing: **130 tests across 22 files**, including
+of writing: **134 tests across 23 files**, including
 
-- engine/game unit tests for both games and the toy fixture;
+- engine/game unit tests for all three games and the toy fixture;
 - the cross-game conformance gate and gateway round-trip;
 - agent tests for redaction, prompt injection escaping, streaming, previews,
   snapshots and shared budgets;
@@ -389,12 +416,14 @@ streaming diagnostics.
 
 ## 10. Roadmap
 
-1. **Third game: Coup** (2–6 players; bluffing, challenges, blocks) plus a
-   game-author guide — the proof that the SDK is a platform, not a Mafia-shaped
-   abstraction.
-2. **Local models** through an OpenAI-compatible endpoint (for example Ollama),
+The third game, Coup (2–6 players; bluffing, challenges, blocks), ships against
+the frozen contract and is covered by the conformance gate. The game-author
+guide in [`docs/WRITING-A-GAME.md`](WRITING-A-GAME.md) is the practical proof
+that the SDK is a platform, not a Mafia-shaped abstraction. Remaining:
+
+1. **Local models** through an OpenAI-compatible endpoint (for example Ollama),
    with per-seat provider choice and no key needed for local seats.
-3. **Flathub submission** after the app is feature-frozen, with Piper built from
+2. **Flathub submission** after the app is feature-frozen, with Piper built from
    source and final metainfo/screenshots.
 
 Deliberately deferred: multi-human/networked play (changes the trust model),
@@ -414,15 +443,18 @@ npm run typecheck
 npm run lint:games
 npm test
 npm run cli -- run --game mafia --seats 8 --seed 11
+npm run cli -- run --game coup --seats 4 --seed 7
 ```
 
 Key paths:
 
 - `packages/engine/src/types.ts` — the `GameDef` contract.
+- `packages/games-coup/src/coup.ts` — the third game, and the worked example in the guide.
 - `packages/agent/src/openrouter.ts` — transport, streaming, retries.
 - `packages/agent/src/gateway.ts` — `LlmController`, prompts, snapshots.
 - `apps/desktop/main/session.ts` — match loop, resume, rewind, takeover.
 - `apps/desktop/main/ipc.ts` — the IPC handlers and sender guard.
 - `apps/desktop/main/secrets.ts` — key encryption, migration, fallback.
 - `apps/desktop/main/secure-file.ts` — atomic `0600`/`0700` writes.
+- `docs/WRITING-A-GAME.md` — the game-author guide.
 - `SECURITY.md` — threat model and boundaries.

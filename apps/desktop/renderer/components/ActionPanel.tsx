@@ -46,13 +46,24 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
   const passes = actions.filter((action) => action.type === 'pass');
   const shoots = actions.filter((action) => action.type === 'shoot');
   const items = actions.filter((action) => action.type === 'use');
-  const steals = actions.filter((action) => action.type === 'steal');
+  const steals = actions.filter((action) => action.type === 'steal' && 'item' in action);
   const skips = actions.filter((action) => action.type === 'skip');
   const targetActions = actions.filter((action) =>
     ['vote', 'kill', 'investigate', 'save', 'probe'].includes(action.type),
   );
   const votes = targetActions.filter((action) => action.type === 'vote');
   const hands = actions.filter((action) => action.type === 'raise' || action.type === 'quiet');
+  const handled = (action: GameAction): boolean =>
+    action.type === 'say' ||
+    action.type === 'pass' ||
+    action.type === 'shoot' ||
+    action.type === 'use' ||
+    (action.type === 'steal' && 'item' in action) ||
+    action.type === 'skip' ||
+    action.type === 'raise' ||
+    action.type === 'quiet' ||
+    ['vote', 'kill', 'investigate', 'save', 'probe'].includes(action.type);
+  const others = actions.filter((action) => !handled(action));
 
   const stopTalking = async () => {
     const wav = await recorder.stop();
@@ -283,12 +294,29 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
 
       {passes.map((action) => (
         <div key="pass" className="action-block">
-          <label className="action-label">Nothing to add?</label>
+          <label className="action-label">Pass</label>
           <button className="ghost" onClick={() => onAction(action)}>
-            Pass — let the others speak
+            Pass
           </button>
         </div>
       ))}
+
+      {others.length > 0 && (
+        <div className="action-block">
+          <label className="action-label">Choose an action</label>
+          <div className="action-grid">
+            {others.map((action, index) => (
+              <button
+                key={`${action.type}-${String(action.target ?? '')}-${String(action.role ?? '')}-${String(action.card ?? '')}-${String(action.first ?? '')}-${String(action.second ?? '')}-${index}`}
+                className="action-target"
+                onClick={() => onAction(action)}
+              >
+                {describeAction(action, view)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {skips.length > 0 && (
         <div className="action-block">
@@ -308,4 +336,38 @@ export function ActionPanel({ view, awaiting, onAction }: Props) {
       )}
     </div>
   );
+}
+
+function describeAction(action: GameAction, view: GameView): string {
+  const target = actionTargetName(action, view.seats);
+  const role = typeof action.role === 'string' ? action.role : '';
+  const card = typeof action.card === 'string' ? action.card : '';
+  const first = typeof action.first === 'string' ? action.first : '';
+  const second = typeof action.second === 'string' ? action.second : '';
+  switch (action.type) {
+    case 'income':
+      return 'Income (+1 coin)';
+    case 'foreign-aid':
+      return 'Foreign aid (+2 coins)';
+    case 'tax':
+      return 'Tax (+3 coins)';
+    case 'exchange':
+      return 'Exchange cards';
+    case 'coup':
+      return `Coup — ${target}`;
+    case 'assassinate':
+      return `Assassinate — ${target}`;
+    case 'steal':
+      return `Steal from — ${target}`;
+    case 'challenge':
+      return 'Challenge the claim';
+    case 'block':
+      return `Block with ${role}`;
+    case 'lose':
+      return `Reveal ${card}`;
+    case 'keep':
+      return second ? `Keep ${first} and ${second}` : `Keep ${first}`;
+    default:
+      return target ? `${action.type} — ${target}` : action.type;
+  }
 }
