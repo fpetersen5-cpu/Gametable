@@ -7,6 +7,7 @@
   "config-opts": [
     "-DCMAKE_BUILD_TYPE=Release",
     "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG",
+    "-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized",
     "-DCMAKE_INSTALL_LIBDIR=lib",
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
     "-DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER",
