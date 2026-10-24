@@ -277,6 +277,12 @@ binary is an explicit manifest source. Permissions are `--share=network` (the ap
 is an OpenRouter client), Wayland/X11, audio, DRI and optional keyring access —
 no `--filesystem=home`, so saves and exports go through the file chooser portal.
 
+Piper, eSpeak NG and the CPU-only ONNX Runtime are built from pinned source,
+not copied from the old Piper binary bundle. The voice weights are pinned data.
+The voice module tests three speakers with the actual neural model during the
+build. See [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) for licensing,
+offline dependency mirrors and remaining Flathub submission checks.
+
 ```bash
 # one-time
 flatpak install --user flathub org.flatpak.Builder \
@@ -294,7 +300,7 @@ flatpak run io.github.takmikill.GameTable
 ```bash
 export GAMETABLE_GPG_KEY=<key id>
 export GAMETABLE_GPG_HOME=$HOME/.gnupg
-export GAMETABLE_REPO_URL=https://example.com/gametable/repo/
+export GAMETABLE_REPO_URL=https://YOUR-PUBLIC-HOST/gametable/repo/
 ./flatpak/release.sh
 ```
 
@@ -303,9 +309,14 @@ That produces a signed `GameTable.flatpak`, a public `gametable.gpg`, a
 Users then install with one click, or:
 
 ```bash
-flatpak --user remote-add --gpg-import=gametable.gpg gametable https://example.com/gametable/repo/
+flatpak --user remote-add --gpg-import=gametable.gpg gametable https://YOUR-PUBLIC-HOST/gametable/repo/
 flatpak install gametable io.github.takmikill.GameTable
 ```
+
+Replace `YOUR-PUBLIC-HOST` with your actual HTTPS host. Placeholder/local URLs
+are rejected unless `GAMETABLE_ALLOW_TEST_RELEASE=1` explicitly enables a local
+test release. Do not distribute a test `.flatpakref`. Builds default to three
+parallel jobs; `GAMETABLE_BUILD_JOBS` can override this.
 
 ### Two generator bugs worked around
 
@@ -349,5 +360,6 @@ per-seat selection, live token streaming, and the signed Flatpak. The
 game-author guide in [docs/WRITING-A-GAME.md](docs/WRITING-A-GAME.md) proves the
 SDK is a platform, not a Mafia-shaped abstraction.
 
-Next: local models through an OpenAI-compatible endpoint, then a Flathub
-submission with Piper built from source.
+Next: local models through an OpenAI-compatible endpoint, then final Flathub
+submission checks. The speech stack now has source-build recipes; see the
+release checklist for the remaining hosting, metadata and licensing gates.

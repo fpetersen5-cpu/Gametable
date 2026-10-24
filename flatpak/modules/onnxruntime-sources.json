@@ -1,0 +1,73 @@
+[
+  {
+    "type": "archive",
+    "url": "https://github.com/microsoft/onnxruntime/archive/refs/tags/v1.31.0.tar.gz",
+    "sha256": "a7e84230b5d509e48fbd6b73c2453a56345ccb22da34a46dac1f0cb4a2d6507b"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.0.zip",
+    "sha256": "b2bdcf6682d8cb53df365bcc5d6c318a22e55821d9978a10fdb61404c026daff",
+    "dest": "mirror/github.com/abseil/abseil-cpp/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/HowardHinnant/date/archive/refs/tags/v3.0.1.zip",
+    "sha256": "f4300b96f7a304d4ef9bf6e0fa3ded72159f7f2d0f605bdde3e030a0dba7cf9f",
+    "dest": "mirror/github.com/HowardHinnant/date/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip",
+    "sha256": "6a60d76351f97132669daeeb721d6bf14b008101883ad2d687a3201c5c461eb0",
+    "dest": "mirror/github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/google/flatbuffers/archive/refs/tags/v23.5.26.zip",
+    "sha256": "57bd580c0772fd1a726c34ab8bf05325293bc5f9c165060a898afa1feeeb95e1",
+    "dest": "mirror/github.com/google/flatbuffers/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip",
+    "sha256": "04022b05d806eb5ff73023c280b68697d12b93e1b7267a0b22a1a39ec7578069",
+    "dest": "mirror/github.com/nlohmann/json/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/microsoft/GSL/archive/refs/tags/v4.2.1.zip",
+    "sha256": "c9291d95f5f6e5c561990d06a589b01d89e553d0f366f0ce723dd1788e7a6076",
+    "dest": "mirror/github.com/microsoft/GSL/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/boostorg/mp11/archive/refs/tags/boost-1.82.0.zip",
+    "sha256": "81431bdc44c439a324e02c07ed067f8f556419fd86f2d8b486ff568df6aac899",
+    "dest": "mirror/github.com/boostorg/mp11/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/onnx/onnx/archive/refs/tags/v1.22.0.zip",
+    "sha256": "8dc1181d33529a1249e031226126d0699ac9bdfc571ee530ee3a12f4656f2be3",
+    "dest": "mirror/github.com/onnx/onnx/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/protocolbuffers/protobuf/releases/download/v33.6/protobuf-33.6.tar.gz",
+    "sha256": "16498d7dc7967e9b100632138babd4b86b61592beeccdd556f67539d9c231355",
+    "dest": "mirror/github.com/protocolbuffers/protobuf/releases/download/v33.6"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/google/re2/archive/refs/tags/2024-07-02.zip",
+    "sha256": "a835fe55fbdcd8e80f38584ab22d0840662c67f2feb36bd679402da9641dc71e",
+    "dest": "mirror/github.com/google/re2/archive/refs/tags"
+  },
+  {
+    "type": "file",
+    "url": "https://github.com/dcleblanc/SafeInt/archive/refs/tags/3.0.28.zip",
+    "sha256": "3ffbd9a2fdff45da77da3e7269e9aa512ea43bed5c38ce8fd8f3d1068a032c3f",
+    "dest": "mirror/github.com/dcleblanc/SafeInt/archive/refs/tags"
+  }
+]

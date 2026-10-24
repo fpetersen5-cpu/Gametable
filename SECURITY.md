@@ -82,6 +82,8 @@ The manifest grants exactly what the app needs:
 - `--share=network` for OpenRouter.
 - `--socket=wayland`, `--socket=fallback-x11`, `--socket=pulseaudio`,
   `--device=dri` for the window, audio, and rendering.
+- `--share=ipc` for X11 fallback's shared-memory rendering, as required by the
+  Flatpak/Flathub X11 configuration checks.
 - `--talk-name=org.freedesktop.secrets` for encrypted key storage.
 - **No** `--filesystem=home`, no host filesystem access. Importing and exporting
   replay transcripts goes through the XDG desktop portal file chooser, so the
@@ -170,6 +172,12 @@ Electron cache directory together, then regenerate `flatpak/node-sources.json`
 with `flatpak/generate-sources.py`. Test with `npm run check` and `npm run build`,
 and rebuild the Flatpak; changing the lockfile alone does not patch an already
 installed runtime.
+
+The native speech stack is not covered by npm's audit. Piper, eSpeak NG and
+CPU-only ONNX Runtime are built offline from pinned sources; optional GPU,
+training and telemetry components are disabled. Their source versions, licenses
+and actual-model smoke checks are documented in `docs/RELEASE-CHECKLIST.md`.
+Each synthesis process has a 60-second limit and bounded diagnostic output.
 
 ## Reporting
 

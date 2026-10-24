@@ -13,6 +13,8 @@ sdk-extensions:
 finish-args:
   # The whole application is an OpenRouter client.
   - --share=network
+  # X11 fallback uses shared-memory IPC (required by Flathub's X11 checks).
+  - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --socket=pulseaudio
@@ -22,29 +24,33 @@ finish-args:
   # No --filesystem=home: imports and exports go through the file chooser portal.
 
 modules:
-  # Neural speech synthesis. Piper bundles onnxruntime plus an espeak-ng
-  # phonemiser; the LibriTTS-R model carries 904 speakers, so every seat gets a
-  # genuinely different voice from a single 79 MB model file.
-  - name: piper
+  # CPU-only neural speech, built entirely from source. Model weights are data,
+  # not executable code. No upstream Piper/ONNX Runtime binary bundle is used.
+  - modules/piper.json
+  - name: piper-voice
     buildsystem: simple
     build-commands:
-      # flatpak-builder strips the archive's top-level directory.
       - mkdir -p /app/piper/voices
-      - cp -r ./. /app/piper/
-      - mv /app/piper/en_US-libritts_r-medium.onnx /app/piper/voices/
-      - mv /app/piper/en_US-libritts_r-medium.onnx.json /app/piper/voices/
+      - install -m644 en_US-libritts_r-medium.onnx en_US-libritts_r-medium.onnx.json /app/piper/voices/
+      - install -Dm644 MODEL_CARD /app/share/licenses/piper-voice/MODEL_CARD
+      - install -Dm644 SPEECH-NOTICES.md /app/share/doc/gametable/SPEECH-NOTICES.md
+      - python3 smoke-tts.py
     sources:
-      - type: archive
-        url: https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
-        sha256: a50cb45f355b7af1f6d758c1b360717877ba0a398cc8cbe6d2a7a3a26e225992
       - type: file
-        url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx
+        url: https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx
         sha256: 10bb85e071d616fcf4071f369f1799d0491492ab3c5d552ec19fb548fac13195
         dest-filename: en_US-libritts_r-medium.onnx
       - type: file
-        url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
+        url: https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
         sha256: b471dc60d2d8335e819c393d196d6fbf792817f40051257b269878505bc9afb3
         dest-filename: en_US-libritts_r-medium.onnx.json
+      - type: file
+        url: https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/libritts_r/medium/MODEL_CARD
+        sha256: 0ccde6927e5bb4d743f4ea39618a9387ba18cca3351220a8a9cfdbc68b30fcb9
+      - type: file
+        path: modules/smoke-tts.py
+      - type: file
+        path: modules/SPEECH-NOTICES.md
 
   - name: gametable
     buildsystem: simple
@@ -88,6 +94,7 @@ modules:
       # which is where @electron/get looks when electron_config_cache is set.
       - type: file
         url: https://github.com/electron/electron/releases/download/v44.9.3/electron-v44.9.3-linux-x64.zip
+        only-arches: [x86_64]
         sha256: 6e7fd2d450d442507b846ace4ae6e2bd17e1b1653e86a033b5231abfc23e6df4
         dest: flatpak-node/electron-cache/902aaaf97776b0cc78be070e68179849dc7cd5aca622b2a809146b1684b69562
         dest-filename: electron-v44.9.3-linux-x64.zip

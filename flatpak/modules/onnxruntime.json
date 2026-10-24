@@ -1,0 +1,34 @@
+{
+  "name": "onnxruntime",
+  "buildsystem": "cmake-ninja",
+  "builddir": true,
+  "subdir": "cmake",
+  "build-options": { "no-debuginfo": true, "strip": true, "cflags": "-g0", "cxxflags": "-g0" },
+  "config-opts": [
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG",
+    "-DCMAKE_INSTALL_LIBDIR=lib",
+    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+    "-DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER",
+    "-DFETCHCONTENT_UPDATES_DISCONNECTED=ON",
+    "-Donnxruntime_BUILD_SHARED_LIB=ON",
+    "-Donnxruntime_BUILD_UNIT_TESTS=OFF",
+    "-Donnxruntime_BUILD_BENCHMARKS=OFF",
+    "-Donnxruntime_ENABLE_PYTHON=OFF",
+    "-Donnxruntime_ENABLE_TRAINING=OFF",
+    "-Donnxruntime_ENABLE_CPUINFO=OFF",
+    "-Donnxruntime_USE_MIMALLOC=OFF",
+    "-Donnxruntime_USE_TELEMETRY=OFF",
+    "-Donnxruntime_USE_CUDA=OFF",
+    "-Donnxruntime_USE_TENSORRT=OFF",
+    "-Donnxruntime_USE_WEBGPU=OFF",
+    "-Donnxruntime_USE_XNNPACK=OFF",
+    "-Donnxruntime_USE_KLEIDIAI=OFF"
+  ],
+  "post-install": [
+    "install -Dm644 ../../LICENSE /app/share/licenses/onnxruntime/LICENSE",
+    "install -Dm644 ../../ThirdPartyNotices.txt /app/share/licenses/onnxruntime/ThirdPartyNotices.txt"
+  ],
+  "cleanup": ["/include", "/lib/cmake", "/lib/pkgconfig", "/lib/*.a", "/bin/protoc*", "/bin/flatc"],
+  "sources": ["onnxruntime-sources.json"]
+}

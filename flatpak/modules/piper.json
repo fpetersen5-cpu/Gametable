@@ -1,0 +1,46 @@
+{
+  "name": "piper",
+  "buildsystem": "cmake-ninja",
+  "builddir": true,
+  "config-opts": ["-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_INSTALL_LIBDIR=lib"],
+  "modules": [
+    "onnxruntime.json",
+    {
+      "name": "espeak-ng",
+      "buildsystem": "cmake-ninja",
+      "builddir": true,
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_INSTALL_LIBDIR=lib",
+        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-DBUILD_SHARED_LIBS=ON",
+        "-DENABLE_TESTS=OFF", "-DUSE_ASYNC=OFF", "-DUSE_MBROLA=OFF",
+        "-DUSE_LIBSONIC=OFF", "-DUSE_LIBPCAUDIO=OFF", "-DUSE_KLATT=OFF",
+        "-DUSE_SPEECHPLAYER=OFF", "-DEXTRA_cmn=ON", "-DEXTRA_ru=ON"
+      ],
+      "post-install": [
+        "install -Dm644 ../COPYING /app/share/licenses/espeak-ng/COPYING",
+        "mkdir -p /app/piper",
+        "ln -s ../share/espeak-ng-data /app/piper/espeak-ng-data"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/espeak-ng/espeak-ng/archive/212928b394a96e8fd2096616bfd54e17845c48f6.tar.gz",
+          "sha256": "1f201cabc73e569a7cb434d40d3b30980f923010f8ecd4d1c4ae94691ac2888a"
+        },
+        { "type": "patch", "path": "espeak-no-sonic-download.patch" }
+      ]
+    }
+  ],
+  "post-install": [
+    "install -Dm644 ../COPYING /app/share/licenses/piper/COPYING",
+    "cp -r ../licenses /app/share/licenses/piper/third-party"
+  ],
+  "sources": [
+    {
+      "type": "archive",
+      "url": "https://github.com/OHF-Voice/piper1-gpl/archive/refs/tags/v1.8.0.tar.gz",
+      "sha256": "0a22987a6157f14e2fb7cf4aa702b547467fd0448bea9f233abd503c3ff4a0e1"
+    },
+    { "type": "file", "path": "piper.CMakeLists.txt", "dest-filename": "CMakeLists.txt" }
+  ]
+}

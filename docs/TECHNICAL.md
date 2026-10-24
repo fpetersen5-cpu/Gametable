@@ -360,7 +360,11 @@ design, and replay/transcript contents at rest (permission-restricted only).
 The Flatpak builds against `org.freedesktop.Platform//25.08`,
 `org.electronjs.Electron2.BaseApp//25.08` and the Node 22 SDK extension. The
 build is offline: npm tarballs come from `flatpak/node-sources.json` and
-Electron's binary is an explicit manifest source.
+Electron's binary is an explicit manifest source. Piper 1.8.0, eSpeak NG and
+the CPU-only ONNX Runtime 1.31.0 are compiled from SHA-256-pinned sources;
+ONNX dependencies are staged in a local mirror and protoc is source-built.
+The voice model is pinned data, with an actual-model build smoke test. See
+[`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) for licensing and release gates.
 
 ```bash
 ./flatpak/generate-sources.sh   # rewrites flatpak/node-sources.json
@@ -423,9 +427,9 @@ streaming diagnostics.
   OpenRouter by design.
 - **Arena overshoot is bounded, not zero**: the shared budget stops the match,
   but calls already in flight when the cap trips may add a small amount.
-- **Flathub readiness**: the manifest ships a prebuilt Piper tarball, which
-  Flathub will not accept; Piper/onnxruntime/espeak-ng must be built from source
-  or TTS split out before submission.
+- **Flathub readiness**: the opaque Piper binary bundle has been replaced by
+  source-build recipes. Final metadata/screenshots, distribution/licensing
+  review, public hosting and Flathub acceptance are still separate release gates.
 
 ---
 
@@ -438,8 +442,8 @@ that the SDK is a platform, not a Mafia-shaped abstraction. Remaining:
 
 1. **Local models** through an OpenAI-compatible endpoint (for example Ollama),
    with per-seat provider choice and no key needed for local seats.
-2. **Flathub submission** after the app is feature-frozen, with Piper built from
-   source and final metainfo/screenshots.
+2. **Flathub submission** after the app is feature-frozen, with the source-built
+   speech stack, final metainfo/screenshots and licensing/manifest review.
 
 Deliberately deferred: multi-human/networked play (changes the trust model),
 streaming private night talk (correctly suppressed today), full-length TTS,

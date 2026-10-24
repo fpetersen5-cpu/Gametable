@@ -16,6 +16,9 @@ results.jsonl
 
 flatpak/.build/
 flatpak/build-dir/
+flatpak/native-build/
+flatpak/speech-probe/
+__pycache__/
 flatpak/repo/
 GameTable.flatpak
 GameTable.flatpakref
