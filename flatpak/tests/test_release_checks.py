@@ -17,6 +17,18 @@ def load(name):
 
 
 class ReleaseChecks(unittest.TestCase):
+    def test_public_github_urls_and_local_build_rewrite_match(self):
+        source = 'https://github.com/fpetersen5-cpu/Gametable.git'
+        homepage = 'https://github.com/fpetersen5-cpu/Gametable'
+        manifest = (ROOT / 'io.github.takmikill.GameTable.yml').read_text()
+        metadata = (ROOT / 'io.github.takmikill.GameTable.metainfo.xml').read_text()
+        builder = (ROOT / 'build.sh').read_text()
+        self.assertIn(f'url: {source}', manifest)
+        self.assertIn(f'<url type="homepage">{homepage}</url>', metadata)
+        self.assertIn(f'<url type="bugtracker">{homepage}/issues</url>', metadata)
+        self.assertIn(source, builder)
+        self.assertNotIn('github.com/takmikill/gametable', manifest + metadata + builder)
+
     def test_public_url(self):
         load('release-preflight').validate_repo_url('https://downloads.gametable.app/repo/')
 

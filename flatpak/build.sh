@@ -32,7 +32,7 @@ mkdir -p flatpak/.build
 cp flatpak/node-sources.json flatpak/.build/node-sources.json
 mkdir -p flatpak/.build/modules
 cp -r flatpak/modules/. flatpak/.build/modules/
-sed -e "s|https://github.com/takmikill/gametable.git|${SOURCE_URL}|" \
+sed -e "s|https://github.com/fpetersen5-cpu/Gametable.git|${SOURCE_URL}|" \
     -e "s|branch: main|branch: ${BRANCH}|" \
     flatpak/${APP_ID}.yml > flatpak/.build/manifest.yml
 

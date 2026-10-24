@@ -39,6 +39,8 @@ transport, with no key and no spend.
 Architecture, invariants, security boundaries, testing gates and the roadmap are
 described in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+Public source and issues: <https://github.com/fpetersen5-cpu/Gametable>.
+
 ## Quick start (development)
 
 ```bash

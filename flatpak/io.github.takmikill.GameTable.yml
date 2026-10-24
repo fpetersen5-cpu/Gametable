@@ -85,7 +85,7 @@ modules:
     sources:
       # build.sh rewrites this to the local checkout for local builds.
       - type: git
-        url: https://github.com/takmikill/gametable.git
+        url: https://github.com/fpetersen5-cpu/Gametable.git
         branch: main
       # Offline npm tarballs (flatpak-node-generator).
       - node-sources.json

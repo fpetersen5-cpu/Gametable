@@ -22,8 +22,8 @@
 
   <launchable type="desktop-id">io.github.takmikill.GameTable.desktop</launchable>
 
-  <url type="homepage">https://github.com/takmikill/gametable</url>
-  <url type="bugtracker">https://github.com/takmikill/gametable/issues</url>
+  <url type="homepage">https://github.com/fpetersen5-cpu/Gametable</url>
+  <url type="bugtracker">https://github.com/fpetersen5-cpu/Gametable/issues</url>
 
   <developer id="io.github.takmikill">
     <name>takmikill</name>

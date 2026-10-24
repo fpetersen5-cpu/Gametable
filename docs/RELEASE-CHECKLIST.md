@@ -89,10 +89,22 @@ float-WAV format. The stripped ONNX shared library is about 24 MB.
 - Confirm project-ID ownership, software/model licensing, attribution and
   Flathub manifest/linter review. Source-built speech removes the opaque Piper
   binary bundle; it does not itself constitute Flathub acceptance.
+- The public source is now at
+  [fpetersen5-cpu/Gametable](https://github.com/fpetersen5-cpu/Gametable)
+  (Git over SSH for contributors; HTTPS for Flatpak builders). Both the
+  homepage and issue tracker have been checked for public access.
 - Replace the development Git `branch: main` source with the final immutable
-  release tag/commit for submission. The declared GitHub homepage currently
-  returns 404; publish/verify it before claiming a public release. These are
-  remaining manifest-linter errors, not waived checks.
+  release tag/commit for submission. The public GitHub repository belongs to
+  `fpetersen5-cpu`, while the current Flatpak ID is
+  `io.github.takmikill.GameTable`. The Flathub linter still reports
+  `appid-url-not-reachable` because its ID-derived URL points at the old
+  `takmikill` GitHub account, even though the explicit homepage and source URLs
+  now work. Confirm ownership/approval of the existing ID or plan a deliberate
+  app-ID migration before submission. Changing an installed app ID needs a
+  migration plan; don't silently rename it during release hardening.
+- The public repository currently has no `LICENSE` file despite package and
+  AppStream metadata declaring MIT. Publish an appropriate license file and
+  complete bundled speech/model attribution before release.
 - Assess the linter's optional 26.08 runtime upgrade recommendation separately;
   the current source build targets the existing 25.08 runtime.
 - Test clean install/update and voice output on supported desktop environments,
