@@ -315,7 +315,7 @@ warning and may not support filtered seat views.
 
 ## Flatpak
 
-Built against `org.freedesktop.Platform//25.08`, `org.electronjs.Electron2.BaseApp//25.08`
+Built against `org.freedesktop.Platform//26.08`, `org.electronjs.Electron2.BaseApp//26.08`
 and the Node 22 SDK extension. (24.08 is end-of-life as of 2026.) The build is
 fully offline: npm tarballs come from `flatpak/node-sources.json` and Electron's
 binary is an explicit manifest source. Permissions are `--share=network` (the app
@@ -331,8 +331,8 @@ offline dependency mirrors and remaining Flathub submission checks.
 ```bash
 # one-time
 flatpak install --user flathub org.flatpak.Builder \
-  org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.node22//25.08 \
-  org.electronjs.Electron2.BaseApp//25.08
+  org.freedesktop.Sdk//26.08 org.freedesktop.Sdk.Extension.node22//26.08 \
+  org.electronjs.Electron2.BaseApp//26.08
 pipx install flatpak-node-generator
 
 ./flatpak/generate-sources.sh     # rewrites flatpak/node-sources.json

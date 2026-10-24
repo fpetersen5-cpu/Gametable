@@ -118,7 +118,7 @@ float-WAV format. The stripped ONNX shared library is about 24 MB.
 - Complete the remaining bundled model/third-party attribution and licensing
   review for distribution.
 - Assess the linter's optional 26.08 runtime upgrade recommendation separately;
-  the current source build targets the existing 25.08 runtime.
+  the source build targets the 26.08 runtime.
 - Test clean install/update and voice output on supported desktop environments,
   including locked/unavailable keyrings, real OpenRouter models, API failures,
   budget stops, microphone permissions and replay compatibility.

@@ -362,8 +362,8 @@ rest (permission-restricted only).
 
 ## 7. Build, packaging and release
 
-The Flatpak builds against `org.freedesktop.Platform//25.08`,
-`org.electronjs.Electron2.BaseApp//25.08` and the Node 22 SDK extension. The
+The Flatpak builds against `org.freedesktop.Platform//26.08`,
+`org.electronjs.Electron2.BaseApp//26.08` and the Node 22 SDK extension. The
 build is offline: npm tarballs come from `flatpak/node-sources.json` and
 Electron's binary is an explicit manifest source. Piper 1.8.0, eSpeak NG and
 the CPU-only ONNX Runtime 1.31.0 are compiled from SHA-256-pinned sources;

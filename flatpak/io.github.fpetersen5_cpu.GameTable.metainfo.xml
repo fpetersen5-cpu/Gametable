@@ -22,6 +22,21 @@
 
   <launchable type="desktop-id">io.github.fpetersen5_cpu.GameTable.desktop</launchable>
 
+  <screenshots>
+    <screenshot type="default">
+      <caption>Set up a human seat and up to ten cloud or local models.</caption>
+      <image width="1440" height="810">https://raw.githubusercontent.com/fpetersen5-cpu/Gametable/main/flatpak/screenshots/table.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Follow every claim and challenge, with live seat health.</caption>
+      <image width="1440" height="810">https://raw.githubusercontent.com/fpetersen5-cpu/Gametable/main/flatpak/screenshots/match.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Replay a finished match from the table's or any seat's perspective.</caption>
+      <image width="1440" height="810">https://raw.githubusercontent.com/fpetersen5-cpu/Gametable/main/flatpak/screenshots/replay.png</image>
+    </screenshot>
+  </screenshots>
+
   <url type="homepage">https://github.com/fpetersen5-cpu/Gametable</url>
   <url type="bugtracker">https://github.com/fpetersen5-cpu/Gametable/issues</url>
 
@@ -46,7 +61,4 @@
     <category>Game</category>
   </categories>
 
-  <requires>
-    <internet>always</internet>
-  </requires>
 </component>

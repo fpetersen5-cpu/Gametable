@@ -3,8 +3,8 @@
 #
 # One-time setup:
 #   flatpak install --user flathub org.flatpak.Builder \
-#     org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.node22//25.08 \
-#     org.electronjs.Electron2.BaseApp//25.08
+#     org.freedesktop.Sdk//26.08 org.freedesktop.Sdk.Extension.node22//26.08 \
+#     org.electronjs.Electron2.BaseApp//26.08
 #   pipx install flatpak-node-generator && ./flatpak/generate-sources.sh
 #
 # Signing (optional, recommended for distribution):
