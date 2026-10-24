@@ -89,7 +89,10 @@ float-WAV format. The stripped ONNX shared library is about 24 MB.
 - Confirm project-ID ownership, software/model licensing, attribution and
   Flathub manifest/linter review. Source-built speech removes the opaque Piper
   binary bundle; it does not itself constitute Flathub acceptance.
-- The public source is now at
+- `flatpak/build.sh` refuses a dirty working tree because its git source would
++  otherwise silently omit uncommitted changes. Commit or stash before building;
++  `GAMETABLE_ALLOW_DIRTY_SOURCE=1` is an explicit escape hatch.
+ - The public source is now at
   [fpetersen5-cpu/Gametable](https://github.com/fpetersen5-cpu/Gametable)
   (Git over SSH for contributors; HTTPS for Flatpak builders). Both the
   homepage and issue tracker have been checked for public access.

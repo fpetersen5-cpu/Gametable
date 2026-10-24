@@ -32,6 +32,7 @@ class ReleaseChecks(unittest.TestCase):
         self.assertIn(f'APP_ID={app_id}', (ROOT / 'release.sh').read_text())
         self.assertIn('GameTable-fpetersen5_cpu.flatpak', (ROOT / 'build.sh').read_text())
         self.assertIn('GameTable-fpetersen5_cpu.flatpakref', (ROOT / 'release.sh').read_text())
+        self.assertIn('Working tree is dirty', (ROOT / 'build.sh').read_text())
         self.assertIn(app_id, (ROOT / 'gametable.sh').read_text())
         self.assertNotIn('io.github.takmikill.GameTable', manifest + metadata + desktop)
 

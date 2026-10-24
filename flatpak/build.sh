@@ -23,6 +23,11 @@ if [[ ! "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
   echo 'GAMETABLE_BUILD_JOBS must be a positive integer' >&2
   exit 1
 fi
+if [[ "${GAMETABLE_ALLOW_DIRTY_SOURCE:-0}" != '1' ]] && [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
+  echo 'Working tree is dirty. Commit or stash changes first; the Flatpak git source only includes commits.' >&2
+  echo 'Set GAMETABLE_ALLOW_DIRTY_SOURCE=1 only when you deliberately accept that.' >&2
+  exit 1
+fi
 
 if [[ ! -f flatpak/node-sources.json ]]; then
   echo "flatpak/node-sources.json is missing — run ./flatpak/generate-sources.sh first" >&2
