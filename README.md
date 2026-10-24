@@ -375,10 +375,12 @@ handler, since the binary is supplied as a manifest source.
 
 ### Verified
 
-Built and installed on this machine, signature checked by installing from a
-signed local repository, and a full Buckshot Roulette match was played inside
-the sandbox (results and replay written to
-`~/.var/app/io.github.fpetersen5_cpu.GameTable/config/GameTable`).
+Built and installed against runtime 26.08 on this machine, with a signed
+self-hosted repository. The installed app completed a full local-only Coup
+match with no OpenRouter key, produced neural speech, and wrote results and a
+replay under the app's private data directory. The commit-pinned Flathub
+staging manifest was built from its flattened form and passes the manifest and
+AppStream linters.
 
 ## Security notes
 
