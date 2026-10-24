@@ -84,6 +84,10 @@ modules:
         /app/share/icons/hicolor/scalable/apps/io.github.fpetersen5_cpu.GameTable.svg
       - install -Dm644 LICENSE
         /app/share/licenses/io.github.fpetersen5_cpu.GameTable/gametable/LICENSE
+      - install -Dm644 node_modules/electron/LICENSE
+        /app/share/licenses/io.github.fpetersen5_cpu.GameTable/electron/LICENSE
+      - install -Dm644 node_modules/electron/dist/LICENSES.chromium.html
+        /app/share/licenses/io.github.fpetersen5_cpu.GameTable/electron/LICENSES.chromium.html
     sources:
       # build.sh rewrites this to the local checkout for local builds.
       - type: git

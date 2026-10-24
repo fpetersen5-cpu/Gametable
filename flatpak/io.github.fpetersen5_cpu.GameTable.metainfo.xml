@@ -8,15 +8,18 @@
 
   <description>
     <p>
-      GameTable is a tabletop platform for one human and up to ten AI models. You bring your own
-      OpenRouter key; every model at the table is billed to you, at cost.
+      GameTable is a tabletop platform for one human and up to ten AI models. Use your own
+      OpenRouter key for cloud seats, or connect a local OpenAI-compatible server such as Ollama;
+      local seats need no key.
     </p>
     <p>
       A deterministic referee owns all game state and hands each seat only what that seat is
       allowed to see, so hidden roles stay hidden. The same projection that is sent to a model is
       the one shown to you.
     </p>
-    <p>Games include Mafia / Werewolf, Buckshot Roulette and Coup.</p>
+    <p>Games include Mafia / Werewolf, Buckshot Roulette and Coup. Seat preflight tests, live
+      health, spectator mode, seat-perspective replays and owner-only backups help keep a table
+      understandable.</p>
     <p>Watch AI-only matches, replay games from a seat's perspective, and compare models on the leaderboard. Neural voices can read each seat's public speech.</p>
   </description>
 
@@ -50,9 +53,11 @@
   </content_rating>
 
   <releases>
-    <release version="0.1.0" date="2026-10-20">
+    <release version="0.1.0" date="2026-10-24">
       <description>
-        <p>First build: referee engine, projection layer, OpenRouter gateway, table setup UI.</p>
+        <p>First public build: deterministic referee, Mafia / Werewolf, Buckshot Roulette and Coup;
+          OpenRouter and local OpenAI-compatible seats; seat health and preflight tests; replays,
+          backups, arena and neural voices.</p>
       </description>
     </release>
   </releases>
