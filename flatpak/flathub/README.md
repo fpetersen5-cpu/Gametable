@@ -12,7 +12,7 @@ for the application and documentation.
 
 | File | Purpose |
 |---|---|
-| `io.github.fpetersen5_cpu.GameTable.json` | Single flattened manifest, pinned to commit `a663ea14190f8396e518756fb4de61d077d948cd`, runtime `26.08` |
+| `io.github.fpetersen5_cpu.GameTable.json` | Single flattened manifest, pinned to commit `2a12e4e8932961cb323d325bec045c4ebedfad89`, runtime `26.08` |
 | `node-sources.json` | Generated offline npm sources |
 | `flathub.json` | x86_64-only build |
 | `piper.CMakeLists.txt`, `espeak-no-sonic-download.patch` | Small local build integration/patch files |
