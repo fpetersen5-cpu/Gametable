@@ -1,0 +1,428 @@
+# GameTable — technical description
+
+GameTable is a Linux desktop tabletop platform where AI models take seats at a
+game and play through a deterministic referee. It is packaged as a signed
+Flatpak and talks to OpenRouter with a key the user supplies. The app owns all
+state; each seat — human or model — receives only the projection the rules
+allow it to see.
+
+At the time of writing: version `0.1.0`, 39 commits, ~13.7k lines of source,
+130 tests across 22 files, and a 178 MB signed bundle. Milestones M0–M5 are
+complete; the roadmap below is what remains.
+
+---
+
+## 1. Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Electron main process (Node, network, filesystem, secrets)      │
+│                                                                  │
+│  GameDef ── setup · phase · view · apply · terminal · scoring    │
+│    │                                                             │
+│  MatchSession ── action loop · pause · speed · rewind · resume   │
+│    │                                                             │
+│  Controllers ── human (IPC) · LlmController ── OpenRouterClient  │
+│    │                                                             │
+│  ResultsStore · ReplayBundles · ArenaRunner · Piper TTS          │
+└───────────────────────────────┬──────────────────────────────────┘
+                                │ typed IPC (validated, sender-checked)
+┌───────────────────────────────▼──────────────────────────────────┐
+│ Preload: window.gametable — no key, no prompts, no raw state     │
+├──────────────────────────────────────────────────────────────────┤
+│ Renderer: React UI (sandboxed, contextIsolation, no Node)        │
+│  Table · Match · Arena · Replays · Leaderboard · Settings         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Packages
+
+| Package | Responsibility |
+| --- | --- |
+| `packages/engine` | `GameDef` contract, projections, seeded RNG, event log, match runner, bots, replay helpers |
+| `packages/games-buckshot` | Duel rules, nine items, expectiminimax oracle, gauntlet |
+| `packages/games-mafia` | Roles, night phases, discussion, votes, runoff, view filtering |
+| `packages/agent` | OpenRouter client, prompt builder, JSON schema, `LlmController`, streaming, redaction, semaphore |
+| `packages/stats` | Frozen results record, JSONL store, Bradley–Terry ratings |
+| `packages/sdk-conformance` | Cross-game gate, toy game fixture, fake model transport |
+| `apps/desktop` | Electron main, preload, React renderer, sessions, arena, TTS/STT |
+| `apps/cli` | Headless runner and eval harness |
+| `flatpak/` | Manifest, metainfo, icon, launcher, source generator, build/release scripts |
+
+### The referee invariant
+
+`view(state, seatId)` is the only projection a seat ever receives. The human
+UI receives the same projection as the AI seat; an LLM prompt is built only
+from its seat's view. There is no path from an LLM request to the full game
+state. `apply()` validates every action against the view's `legalActions` and
+throws `IllegalAction` otherwise, so a model cannot invent a move or read
+another seat's secrets.
+
+---
+
+## 2. Engine contract (`GameDef`, frozen at v1.0)
+
+```ts
+setup(ctx)                    // seed + seats + options → state
+phase(state)                  // whose turn, phase id/kind/round
+view(state, seatId)           // seat projection: data, briefing, chat, legalActions
+godView?(state)               // omniscient projection for spectators/replays only
+apply(state, seatId, action)  // pure transition; throws IllegalAction
+terminal(state)               // finished?
+scoring(state)                // winners + per-seat scores
+metrics(state)                // game-wide leaderboard numbers
+metricsFor?(state, seatId)    // per-seat numbers (e.g. EV loss)
+briefing(state, seatId)       // rules + role card for the prompt
+secrets(state, seatId)        // tokens that must not appear in this view
+roleOf?(state, seatId)        // role/faction label for results
+phaseTimeoutMs?(state)        // wall-clock limit, or null
+timeoutAction?(state)         // action applied when the limit expires
+previewIsPublic?(view, type)  // may in-progress table talk be shown live?
+```
+
+Properties enforced by tests and the conformance gate:
+
+- **Deterministic**: same seed + same actions produce the same match. Games
+  never read the clock or use unseeded randomness.
+- **Pure**: `apply` returns a new state; no game module touches the network or
+  filesystem.
+- **Replayable**: a match is reconstructed from seed + event log, and the
+  rebuilt state is compared against the stored final god view.
+- **JSON-safe**: state survives a JSON round-trip (save/resume).
+- **Legality-complete**: the acting seat always has at least one legal action;
+  illegal actions are rejected; extra fields a model invents are stripped.
+- **Leak-free**: `secrets()` drives a leak checker over every seat's view.
+- **Capability-complete**: declared capabilities imply the UI panels the
+  generic renderer needs.
+
+The contract and the results record are frozen at v1.0: additions must be
+optional and additive. `npm run lint:games` fails the build if a literal
+`gameId` comparison appears outside `packages/games-*`.
+
+---
+
+## 3. Games
+
+### Buckshot Roulette (`packages/games-buckshot`)
+
+A two-seat duel with a shotgun holding live and blank shells. Remaining live
+and blank counts are public; the order is not. On a turn a seat may use any
+number of items and then must shoot itself or the opponent. A blank shot at
+oneself keeps the turn. Three rounds with 2/4/6 health; first to two rounds
+wins.
+
+Nine items: cigarette, beer, magnifying glass, handsaw, handcuffs, pills,
+burner phone, inverter, adrenaline. Each is implemented with its real effect,
+including private peeks that enter only that seat's view.
+
+The oracle scores every decision against an expectiminimax solver over the
+belief state (live/blank counts, both item belts, the mover's peek knowledge)
+and reports **EV loss per decision** — an objective suboptimality metric rather
+than a win rate. Documented approximations: a refilled chamber is assumed
+2 live / 2 blank, and a burner phone is modelled as a peek at the next shell.
+The oracle is engine-side only and is never reachable from a prompt.
+
+`gauntlet` chains duels against a list of opponents, carrying up to two items
+into the next duel.
+
+### Mafia / Werewolf (`packages/games-mafia`)
+
+5–11 seats. Roles by seat count: one mafia for 5–6, two for 7–9, three for
+10–11; a doctor always, a detective from 6 seats, a jester from 8. The mafia
+confer in a private channel and vote on a kill; the doctor may protect one
+seat; the detective learns one alignment. At dawn the result is announced and
+the dead seat's role is revealed. The town discusses in seat order (addressed
+speech and pass supported), then votes; a tie goes to a runoff between the tied
+seats, and a tied runoff kills nobody. The town wins when every mafia is gone;
+the mafia win when they equal or outnumber the town; the jester wins by being
+voted out.
+
+A seat's view contains its own role, the public log and chat, the mafia channel
+only if it is mafia, and investigations only if it is the detective.
+`discussionRounds: 0` plays a silent day — the null-chat path the gate
+exercises.
+
+### Cross-game conformance gate (`packages/sdk-conformance`)
+
+A generic suite every `GameDef` must pass. It runs against Mafia, Buckshot and
+a deliberately tiny toy fixture, so an abstraction shaped around one genre
+shows up immediately.
+
+| Check | Catches |
+| --- | --- |
+| every seat count completes a match | untested ranges, deadlocks |
+| same seed and actions produce the same match | hidden nondeterminism |
+| replay reconstructs the final state | event-log gaps |
+| state survives a JSON round-trip | save/resume breakage |
+| illegal actions are rejected | permissive `apply()` |
+| the acting seat always has a legal move | soft-locks |
+| no seat sees another seat's secrets | role/hand/chamber leaks |
+| unknown seats are rejected | projection bugs |
+| capabilities satisfy the platform contract | missing UI panels |
+| a full match plays through the LLM gateway | schema/prompt/parse mismatches (fake transport, zero tokens) |
+| results survive the store and produce ratings | stats pipeline regressions |
+
+---
+
+## 4. Agent layer (`packages/agent`)
+
+### OpenRouter client
+
+- Model catalogue from `/api/v1/models`, cached 24 h; the key is checked
+  against `/api/v1/auth/key`.
+- All traffic goes to `https://openrouter.ai` over TLS; the key travels only in
+  the `Authorization: Bearer …` header. Requests carry `HTTP-Referer` and
+  `X-Title` for attribution and nothing else.
+- Request timeouts are 90 s, retries are capped, and a semaphore allows at most
+  six completions in flight so ten seats cannot stampede the key.
+- Provider preferences are translated to OpenRouter's snake_case at the HTTP
+  boundary.
+
+### Constrained actions
+
+Each request builds a JSON schema from the **exact** legal actions offered to
+the seat, so the model can only copy a real option. The response is parsed,
+validated against the view's `legalActions`, and stripped of invented fields.
+One repair attempt is made, then the engine falls back to a legal move so one
+bad model cannot stall the table. Provider error bodies and messages are
+redacted and trimmed to 300 characters.
+
+### Prompt safety
+
+Table talk is untrusted input: it is escaped, delimited in `<table-talk>`, and
+the system prompt states that chat is never an instruction. Models only receive
+their own seat's projection — never the key, filesystem, or other seats' roles.
+
+### Streaming
+
+Completions stream token by token over SSE. While a model writes, the public
+`text` field of its action is extracted and sent to the chat as a draft. A
+game's `previewIsPublic(view, actionType)` hook suppresses previews for private
+channels (for example Mafia night talk); the preview waits for the action type
+to arrive and is always cleared when the action lands or the match aborts.
+Buffered calls remain the fallback for providers that reject streaming.
+
+### Cost and memory
+
+- Cost is read from OpenRouter's `usage.cost`, metered per seat and per call,
+  including streamed calls.
+- Each seat keeps notes, counters (calls, tokens, cost, latency, invalid
+  actions, fallbacks, errors) and capability flags. `snapshot()` / `restore()`
+  persist this across resume, takeover and release.
+- A seat may have its own `budgetUsd`; a match or arena may impose a shared
+  `SharedBudget`. The shared cap is checked before every call and trips the
+  match immediately instead of overspending.
+
+---
+
+## 5. Desktop application (`apps/desktop`)
+
+### IPC surface
+
+The renderer's entire privileged surface is `window.gametable`, defined in the
+preload script. `DesktopApi` (`apps/desktop/shared/api.ts`) covers status, key
+management, model catalogue, config, games, match control (start/submit/pause/
+speed/abort/rewind/takeover/release), events (`onTable`, `onPreview`,
+`onFinished`, `onMatchError`, `onDebrief`), replays and seat views, transcript
+export, leaderboard, arena, voices, speech-to-text and the data folder.
+
+Every handler is wrapped by a sender check: calls are accepted only from the
+app's own top-level `webContents`. Payloads are validated before use
+(`apps/desktop/main/validation.ts`): seat counts and kinds, model IDs, name and
+persona lengths, budgets, speed, seeds, arena counts, action sizes, takeover
+IDs and match ID formats. Invalid requests are rejected with a message, not
+coerced into a match.
+
+The renderer runs with `contextIsolation`, `sandbox`, no Node integration and
+no remote module. The production CSP is `default-src 'self'; script-src 'self';
+connect-src 'self' ws://localhost:5173; object-src 'none'; base-uri 'none';
+form-action 'none'; frame-ancestors 'none'`; the Vite HMR socket is the only
+reason for the `ws://localhost:5173` entry. The renderer makes no network
+requests at all.
+
+### Screens
+
+- **Table** — pick a game, add up to ten models (search the catalogue, filter
+  free or structured-output models), give each a play style and voice, then
+  deal in. "Watch AI vs AI" drops the human seat and reveals everything.
+- **Match** — seat ring, role card, night/day log, live vote tally,
+  investigations, chat channels, action panel built only from legal actions,
+  pause, speed 0.5×–8×, abort, cost meter.
+- **Arena** — runs a rotating lineup of models across repeated matches,
+  pausable, with a shared budget and per-match results.
+- **Replays** — scrub the timeline, play back at speed, reveal all, or view the
+  match from any seat's perspective.
+- **Leaderboard** — Bradley–Terry ratings from local matches; the human is a
+  fixed anchor and never appears on the board.
+- **Settings** — key storage mode, budget, voice, local data folder.
+
+### Sessions and persistence
+
+`MatchSession` drives the referee loop: ask the acting controller for an action,
+validate and apply it, emit snapshots/events, enforce timeouts and budgets. It
+supports pause, speed changes, abort, one-turn rewind (rebuild from seed + log),
+and seat takeover/release. A live snapshot is written after every event and
+includes the per-seat controller state, so a closed app can resume with each
+seat's notes and spend intact.
+
+Replay bundles store seed, seats, options, events and per-action views plus a
+god view for the debrief. `formatVersion: 2` bundles validate a rebuilt match
+against the stored final god view before projecting seat views; if the stored
+options cannot reproduce the recorded match, the app fails loudly instead of
+showing a different game. Legacy bundles whose defaults do reproduce the match
+still work.
+
+Results are appended to `results.jsonl`; replay bundles and live snapshots live
+in the app's private config directory. All writes go through `secureWrite()`
+(`apps/desktop/main/secure-file.ts`): `0700` directories, `0600` files, temp
+file + rename.
+
+### Voice and speech
+
+Piper (LibriTTS-R, 904 speakers) reads seat messages aloud. Each seat maps to a
+stable speaker by default; the Table screen lets you pin one of twelve presets
+per model and preview it. The chosen speaker index travels with the match
+request and is resolved in the main process — the renderer never receives the
+key or runs the synthesiser. Long speeches are read as a sentence-aligned
+excerpt to keep lag down. Push-to-talk uses OpenRouter audio-input models for
+speech-to-text, tried in order so one unavailable model does not break it.
+
+---
+
+## 6. Security and privacy
+
+The full threat model is in [SECURITY.md](../SECURITY.md); the essentials:
+
+- **Key at rest**: encrypted with Electron `safeStorage` (libsecret/KWallet)
+  into `secrets.enc` when a keyring is available; falls back to a plaintext
+  `0600` file only when it is not. A plaintext key from an older build is
+  migrated on first read and deleted. The settings screen shows the active mode.
+- **Key boundary**: the key is read, decrypted and used only in the main
+  process. It is never sent to the renderer or written to replays, transcripts,
+  logs or crash messages.
+- **Redaction**: `redact()` strips `sk-or-…`, `sk-…`, bearer tokens and
+  `apiKey` fields from provider errors and anything that can reach the UI or a
+  log.
+- **Sandbox**: the Flatpak grants network, Wayland/X11, audio, DRI and optional
+  keyring access — no home-directory access. Import/export goes through the
+  desktop portal file chooser.
+- **Hidden information**: the projection boundary protects roles and hidden
+  state. Replay files contain hidden information and are owner-only; transcript
+  export contains the seat-perspective transcript you choose to save.
+
+Not protected against: root or the same user account, a locked/unavailable
+keyring (fallback is plaintext `0600`), metadata visible to OpenRouter by
+design, and replay/transcript contents at rest (permission-restricted only).
+
+---
+
+## 7. Build, packaging and release
+
+The Flatpak builds against `org.freedesktop.Platform//25.08`,
+`org.electronjs.Electron2.BaseApp//25.08` and the Node 22 SDK extension. The
+build is offline: npm tarballs come from `flatpak/node-sources.json` and
+Electron's binary is an explicit manifest source.
+
+```bash
+./flatpak/generate-sources.sh   # rewrites flatpak/node-sources.json
+./flatpak/build.sh              # build, install, write GameTable.flatpak
+flatpak run io.github.takmikill.GameTable
+```
+
+`flatpak/generate-sources.py` works around two generator bugs: 1.0.0 misdetects
+every package as a local source when `node_modules` exists, silently dropping
+~85 tarballs, and tries to fetch a non-existent Electron `armv7l` build. The
+wrapper runs against a clean manifest-only tree and skips the Electron handler.
+
+`flatpak/release.sh` builds and signs a single-file bundle, writes a public key
+and a `.flatpakref` with the key embedded, and signs the OSTree repository
+summary after installing the new commit — otherwise GPG-verified clients reject
+the repo. Output: `GameTable.flatpak`, `gametable.gpg`, `GameTable.flatpakref`
+and `flatpak/repo/` to upload.
+
+The headless CLI uses the same referee and supports `run`, `gauntlet`, `models`,
+`leaderboard` and `games`, with an optional `--oracle` for Buckshot.
+
+---
+
+## 8. Testing and quality gates
+
+`npm run check` runs typecheck, game lint and the full test suite. At the time
+of writing: **130 tests across 22 files**, including
+
+- engine/game unit tests for both games and the toy fixture;
+- the cross-game conformance gate and gateway round-trip;
+- agent tests for redaction, prompt injection escaping, streaming, previews,
+  snapshots and shared budgets;
+- desktop tests for secret storage/migration/fallback, secure files, validation,
+  transcript export, replay compatibility, arena budgets and resumable session
+  memory;
+- renderer tests for the recorder.
+
+Manual verification covers the installed Flatpak: keyring storage and key
+validity, match play, token streaming, per-seat voices, replay/resume and the
+signed repository install. `GAMETABLE_DEMO=1` runs the whole UI against a fake
+transport with no key and no spend; `GAMETABLE_DEBUG_STREAM=1` adds opt-in
+streaming diagnostics.
+
+---
+
+## 9. Known limitations
+
+- **One human seat per match**; there is no networked or multi-human play.
+- **OpenRouter only** — one provider, one key. Local models are on the roadmap.
+- **TTS excerpt**: long speeches are read as a sentence-aligned excerpt, not in
+  full, to bound lag.
+- **Replay files are not encrypted**, only `0600`; they contain hidden roles and
+  private chat. Transcript export is the shareable artifact.
+- **Keyring fallback is plaintext** when no secret service is running; the UI
+  states this.
+- **Metadata exposure**: model choice, prompts, token counts and timing go to
+  OpenRouter by design.
+- **Arena overshoot is bounded, not zero**: the shared budget stops the match,
+  but calls already in flight when the cap trips may add a small amount.
+- **Flathub readiness**: the manifest ships a prebuilt Piper tarball, which
+  Flathub will not accept; Piper/onnxruntime/espeak-ng must be built from source
+  or TTS split out before submission.
+
+---
+
+## 10. Roadmap
+
+1. **Third game: Coup** (2–6 players; bluffing, challenges, blocks) plus a
+   game-author guide — the proof that the SDK is a platform, not a Mafia-shaped
+   abstraction.
+2. **Local models** through an OpenAI-compatible endpoint (for example Ollama),
+   with per-seat provider choice and no key needed for local seats.
+3. **Flathub submission** after the app is feature-frozen, with Piper built from
+   source and final metainfo/screenshots.
+
+Deliberately deferred: multi-human/networked play (changes the trust model),
+streaming private night talk (correctly suppressed today), full-length TTS,
+offline STT, and more game tables before the SDK proof.
+
+---
+
+## 11. Repository map and commands
+
+```bash
+npm install
+npm run build
+npm start --workspace @gametable/desktop
+
+npm run typecheck
+npm run lint:games
+npm test
+npm run cli -- run --game mafia --seats 8 --seed 11
+```
+
+Key paths:
+
+- `packages/engine/src/types.ts` — the `GameDef` contract.
+- `packages/agent/src/openrouter.ts` — transport, streaming, retries.
+- `packages/agent/src/gateway.ts` — `LlmController`, prompts, snapshots.
+- `apps/desktop/main/session.ts` — match loop, resume, rewind, takeover.
+- `apps/desktop/main/ipc.ts` — the IPC handlers and sender guard.
+- `apps/desktop/main/secrets.ts` — key encryption, migration, fallback.
+- `apps/desktop/main/secure-file.ts` — atomic `0600`/`0700` writes.
+- `SECURITY.md` — threat model and boundaries.

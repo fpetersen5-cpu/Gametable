@@ -144,7 +144,6 @@ export function App() {
           <span className="brand-mark">♠</span>
           <div>
             <strong>GameTable</strong>
-            <small>one human · ten minds</small>
           </div>
         </div>
 
@@ -339,7 +338,6 @@ function KeyGate({ onAccepted }: { onAccepted: () => Promise<void> }) {
           <span className="brand-mark">♠</span>
           <div>
             <strong>GameTable</strong>
-            <small>one human · ten minds</small>
           </div>
         </div>
         <h1>Bring your own OpenRouter key</h1>

@@ -35,6 +35,9 @@ Everything is playable in-app and installs as a Flatpak. `GAMETABLE_DEMO=1
 flatpak run io.github.takmikill.GameTable` runs the whole UI against a fake
 transport, with no key and no spend.
 
+Architecture, invariants, security boundaries, testing gates and the roadmap are
+described in [docs/TECHNICAL.md](docs/TECHNICAL.md).
+
 ## Quick start (development)
 
 ```bash
