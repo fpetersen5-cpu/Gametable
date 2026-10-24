@@ -104,9 +104,13 @@ float-WAV format. The stripped ONNX shared library is about 24 MB.
   records. See [`FLATPAK-ID-MIGRATION.md`](FLATPAK-ID-MIGRATION.md).
 - A commit-pinned, single-manifest Flathub staging draft is in
   [`flatpak/flathub/`](../flatpak/flathub/README.md). It passes the manifest and
-  AppStream linters and targets runtime 26.08. It is **not** a submission: Flathub
-  prohibits AI-generated/AI-assisted manifests and AI-submitted PRs. A human must
-  independently author/review the final manifest and submit it.
+  AppStream linters, targets runtime 26.08, and builds the full native/app stack
+  from the flattened manifest. The installed 26.08 app passed a local-only Coup
+  match and TTS. A local `builddir` lint still reports screenshot/icon mirroring
+  because Flathub's media compose pipeline is CI-side.
+- It is **not** a submission: Flathub prohibits AI-generated/AI-assisted
+  manifests and AI-submitted PRs. A human must independently author/review the
+  final manifest and submit it.
 - Flathub's current generative-AI policy prohibits AI-generated or AI-assisted
   manifest content in submissions. The packaging edits here were AI-assisted
   and **must not be submitted as-is**: a human maintainer needs to author and
