@@ -716,9 +716,12 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     if (!window) return { ok: false, error: 'No window is available' };
     let config: AppConfig;
     try {
-      const stored = await readJsonFile<Partial<AppConfig>>(configFile);
-      config = validateConfig({ ...DEFAULT_CONFIG, ...(stored ?? {}) });
-    } catch {
+      const stored = JSON.parse(await readFile(configFile, 'utf8')) as Partial<AppConfig>;
+      config = validateConfig({ ...DEFAULT_CONFIG, ...stored });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return { ok: false, error: 'Settings could not be validated; fix them before exporting.' };
+      }
       config = DEFAULT_CONFIG;
     }
     const resultRecords = await results.all();
