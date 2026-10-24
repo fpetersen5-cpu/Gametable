@@ -25,9 +25,12 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
     setLoadingSeat(true);
     void window.gametable
       .replaySeatViews(bundle.summary.matchId, viewAs)
-      .then((views) => {
-        if (!cancelled && views) {
-          setSeatViews((previous) => ({ ...previous, [viewAs]: views }));
+      .then((result) => {
+        if (cancelled) return;
+        if (result.views) {
+          setSeatViews((previous) => ({ ...previous, [viewAs]: result.views as GameView[] }));
+        } else {
+          setNote(result.error ?? 'That seat view could not be rebuilt.');
         }
       })
       .finally(() => {

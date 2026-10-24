@@ -311,6 +311,12 @@ covered.
 
 ## Roadmap
 
-Buckshot Roulette with an expectiminimax oracle (leaderboard by EV lost per
-decision), Mafia/Werewolf with discussion and voting, the M2c cross-game gate,
-then the game tables, spectator mode and replay.
+Shipped: Buckshot Roulette with an expectiminimax oracle (leaderboard by EV lost
+per decision), Mafia/Werewolf with discussion, addressed speech and voting, the
+cross-game conformance gate, spectator mode, replays with seat perspectives,
+resume/rewind, arena runs, neural voices with per-seat selection, live token
+streaming, and the signed Flatpak.
+
+Next: a third game (Coup) plus a game-author guide to prove the SDK, local
+models through an OpenAI-compatible endpoint, then a Flathub submission with
+Piper built from source.

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runMatch, type Controller, type GameAction, type GameDef, type GameView, type MatchEvent, type Seat } from '@gametable/engine';
-import { LlmController, type CompletionClient } from '@gametable/agent';
+import { LlmController, type CompletionClient, type SharedBudget } from '@gametable/agent';
 import { ResultsStore, toRecord } from '@gametable/stats';
 import type {
   ArenaConfig,
@@ -8,6 +8,48 @@ import type {
   ArenaResult,
   ReplayBundle,
 } from '../shared/api.js';
+
+/**
+ * A cap shared by every seat of one arena match. `capUsd` is the smaller of the
+ * per-match allowance and what is left of the run's total budget, so the arena
+ * cannot overspend between matches.
+ */
+/** Small arena budgets need more than two decimals to be legible. */
+function money(value: number): string {
+  return `$${value >= 0.1 ? value.toFixed(2) : value.toFixed(4)}`;
+}
+
+export class Budget implements SharedBudget {
+  private spent = 0;
+  private hit = false;
+
+  constructor(
+    readonly capUsd: number,
+    private readonly onExhausted: () => void = () => undefined,
+  ) {}
+
+  remaining(): number {
+    return Math.max(0, this.capUsd - this.spent);
+  }
+
+  spend(costUsd: number): void {
+    if (Number.isFinite(costUsd) && costUsd > 0) this.spent += costUsd;
+  }
+
+  exhausted(): void {
+    if (this.hit) return;
+    this.hit = true;
+    this.onExhausted();
+  }
+
+  get spentUsd(): number {
+    return this.spent;
+  }
+
+  get hitCap(): boolean {
+    return this.hit;
+  }
+}
 
 /** A controller that waits while the arena is paused and dies on cancel. */
 class Pausable implements Controller {
@@ -123,11 +165,13 @@ export class ArenaRunner {
     const config = this.config as ArenaConfig;
     for (let index = 0; index < config.matches; index++) {
       if (this.abort.signal.aborted) break;
-      if (this.progress.costUsd >= config.totalBudgetUsd) {
+
+      const remaining = Math.max(0, config.totalBudgetUsd - this.progress.costUsd);
+      if (remaining <= 0) {
         this.progress = {
           ...this.progress,
           running: false,
-          error: `Stopped: the $${config.totalBudgetUsd.toFixed(2)} arena budget was reached.`,
+          error: `Stopped: the ${money(config.totalBudgetUsd)} arena budget was reached.`,
         };
         this.deps.emit(this.progress);
         return;
@@ -145,12 +189,20 @@ export class ArenaRunner {
       };
       this.deps.emit(this.progress);
 
+      // Stop the whole match as soon as the shared cap is reached, instead of
+      // letting the seats keep spending for the rest of this match.
+      const matchAbort = new AbortController();
+      const budget = new Budget(Math.min(remaining, config.budgetPerMatch), () =>
+        matchAbort.abort(),
+      );
+
       const controllers = new Map<string, Controller>();
       for (const seat of seats) {
         const inner = new LlmController({
           client: this.deps.client,
           gameName: def.name,
           config: { model: seat.modelId as string, temperature: 0.9 },
+          sharedBudget: budget,
         });
         controllers.set(seat.id, new Pausable(inner, this, this.abort.signal));
       }
@@ -158,6 +210,7 @@ export class ArenaRunner {
       const matchSignal = AbortSignal.any([
         this.abort.signal,
         AbortSignal.timeout(10 * 60 * 1000),
+        matchAbort.signal,
       ]);
       const godViews: GameView[] = [];
       const events: MatchEvent[] = [];
@@ -213,6 +266,7 @@ export class ArenaRunner {
 
         await this.deps.store.append(toRecord(result));
         await this.deps.saveBundle({
+          formatVersion: 2,
           summary,
           options: { trackOptimality: def.capabilities.solver, discussionRounds: 1 },
           seats,
@@ -237,12 +291,46 @@ export class ArenaRunner {
         this.progress = {
           ...this.progress,
           index: index + 1,
-          costUsd: this.progress.costUsd + cost,
+          costUsd: this.progress.costUsd + budget.spentUsd,
           results: [...this.progress.results, entry],
           currentPhase: undefined,
         };
         this.deps.emit(this.progress);
       } catch (error) {
+        if (budget.hitCap) {
+          // The cap stopped this match mid-flight. Record what it spent, then
+          // continue only if the run still has room.
+          this.progress = {
+            ...this.progress,
+            index: index + 1,
+            results: [
+              ...this.progress.results,
+              {
+                matchId,
+                gameName: def.name,
+                winnerNames: [],
+                costUsd: budget.spentUsd,
+                eventCount: events.length,
+                seats: seats.map((seat) => ({ name: seat.name, modelId: seat.modelId })),
+              },
+            ],
+            costUsd: this.progress.costUsd + budget.spentUsd,
+            currentPhase: undefined,
+          };
+          const left = config.totalBudgetUsd - this.progress.costUsd;
+          if (left <= 1e-6) {
+            this.progress = {
+              ...this.progress,
+              running: false,
+              paused: false,
+              error: `Stopped: the ${money(config.totalBudgetUsd)} arena budget was reached.`,
+            };
+            this.deps.emit(this.progress);
+            return;
+          }
+          this.deps.emit(this.progress);
+          continue;
+        }
         if (!this.abort.signal.aborted && matchSignal.aborted) {
           this.progress = {
             ...this.progress,

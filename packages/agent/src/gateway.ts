@@ -38,10 +38,43 @@ export interface LlmSeatConfig {
   timeoutMs?: number;
 }
 
+/**
+ * A spend cap shared by every seat in a match. Each call checks the remaining
+ * amount first and records its cost afterwards, so a group of seats cannot
+ * collectively blow through a table-level budget.
+ */
+export interface SharedBudget {
+  /** USD left before the shared cap. */
+  remaining(): number;
+  /** Record spend after a successful call. */
+  spend(costUsd: number): void;
+  /** Called once when a call is refused because the cap has been reached. */
+  exhausted(): void;
+}
+
+/** Everything an LLM seat keeps between turns, for resume and takeover. */
+export interface LlmSeatState {
+  notes: string;
+  calls: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  latencyMs: number;
+  invalidActions: number;
+  fallbacks: number;
+  errors: number;
+  schemaSupported: boolean;
+  temperatureSupported: boolean;
+  lastOkCall: number;
+  lastErrorCall: number;
+  lastError: string | null;
+}
+
 export interface LlmControllerDeps {
   client: CompletionClient;
   gameName: string;
   config: LlmSeatConfig;
+  sharedBudget?: SharedBudget;
   /** Shared across every seat so the key is not hammered. */
   semaphore?: Semaphore;
   /**
@@ -196,6 +229,47 @@ export class LlmController implements Controller {
     };
   }
 
+  /** The seat's memory and counters, for persisting a resumable match. */
+  snapshot(): LlmSeatState {
+    return {
+      notes: this.notes,
+      ...this.counters,
+      schemaSupported: this.schemaSupported,
+      temperatureSupported: this.temperatureSupported,
+      lastOkCall: this.lastOkCall,
+      lastErrorCall: this.lastErrorCall,
+      lastError: this.lastError,
+    };
+  }
+
+  /**
+   * Restore a snapshot taken before the app closed or the seat was taken over.
+   * The data comes from our own live file, but it is validated anyway: a
+   * corrupt value must never poison a running match.
+   */
+  restore(state: unknown): void {
+    if (typeof state !== 'object' || state === null) return;
+    const saved = state as Partial<LlmSeatState>;
+    const number = (value: unknown): number =>
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+    this.notes = typeof saved.notes === 'string' ? saved.notes.slice(-1_200) : '';
+    this.counters = {
+      calls: number(saved.calls),
+      tokensIn: number(saved.tokensIn),
+      tokensOut: number(saved.tokensOut),
+      costUsd: number(saved.costUsd),
+      latencyMs: number(saved.latencyMs),
+      invalidActions: number(saved.invalidActions),
+      fallbacks: number(saved.fallbacks),
+      errors: number(saved.errors),
+    };
+    this.schemaSupported = saved.schemaSupported !== false;
+    this.temperatureSupported = saved.temperatureSupported !== false;
+    this.lastOkCall = number(saved.lastOkCall);
+    this.lastErrorCall = number(saved.lastErrorCall);
+    this.lastError = typeof saved.lastError === 'string' ? saved.lastError.slice(0, 300) : null;
+  }
+
   /** The most recent transport/API failure, for the table banner. */
   get errorMessage(): string | null {
     return this.lastError;
@@ -249,6 +323,11 @@ export class LlmController implements Controller {
     onText?: (text: string) => void,
   ): Promise<CompletionResult> {
     const { client, config } = this.deps;
+    const shared = this.deps.sharedBudget;
+    if (shared && shared.remaining() <= 0) {
+      shared.exhausted();
+      throw new Error('Arena budget reached.');
+    }
     if (config.budgetUsd !== undefined && this.counters.costUsd >= config.budgetUsd) {
       throw new Error(
         `Seat budget of $${config.budgetUsd.toFixed(2)} reached (spent $${this.counters.costUsd.toFixed(3)}).`,
@@ -280,6 +359,7 @@ export class LlmController implements Controller {
       throw error;
     }
     this.lastOkCall = this.counters.calls;
+    this.deps.sharedBudget?.spend(result.usage.costUsd);
     this.counters.tokensIn += result.usage.promptTokens;
     this.counters.tokensOut += result.usage.completionTokens;
     this.counters.costUsd += result.usage.costUsd;

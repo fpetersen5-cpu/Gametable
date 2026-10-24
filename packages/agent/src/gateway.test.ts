@@ -398,3 +398,81 @@ describe('streaming previews', () => {
     expect(calls[0]?.onText).toBeUndefined();
   });
 });
+
+describe('seat memory and shared budgets', () => {
+  it('round-trips notes, counters and capabilities through a snapshot', async () => {
+    const client: CompletionClient = {
+      async complete(req) {
+        return {
+          text: '{"action":{"type":"probe","target":"s2"},"notes":"seat 2 is suspicious"}',
+          model: req.model,
+          usage: { promptTokens: 120, completionTokens: 18, costUsd: 0.0004 },
+          latencyMs: 5,
+        };
+      },
+    };
+    const first = new LlmController({ client, gameName: 'Probe', config: { model: 'x/y' } });
+    await first.act(request());
+
+    const restored = new LlmController({ client, gameName: 'Probe', config: { model: 'x/y' } });
+    restored.restore(JSON.parse(JSON.stringify(first.snapshot())));
+
+    expect(restored.privateNotes).toBe('seat 2 is suspicious');
+    expect(restored.usage()).toMatchObject({
+      calls: 1,
+      tokensIn: 120,
+      tokensOut: 18,
+      costUsd: 0.0004,
+    });
+  });
+
+  it('rejects corrupt snapshots without breaking the seat', () => {
+    const client: CompletionClient = {
+      async complete() {
+        throw new Error('not called');
+      },
+    };
+    const controller = new LlmController({ client, gameName: 'Probe', config: { model: 'x/y' } });
+    controller.restore({ notes: 42, calls: -3, errors: Number.NaN });
+    expect(controller.privateNotes).toBe('');
+    expect(controller.usage()).toMatchObject({ calls: 0, errors: 0 });
+  });
+
+  it('refuses calls once a shared budget is spent', async () => {
+    let spent = 0;
+    let exhausted = 0;
+    const calls: string[] = [];
+    const client: CompletionClient = {
+      async complete(req) {
+        calls.push(req.model);
+        return {
+          text: '{"action":{"type":"probe","target":"s2"},"notes":""}',
+          model: req.model,
+          usage: { promptTokens: 10, completionTokens: 2, costUsd: 0.01 },
+          latencyMs: 1,
+        };
+      },
+    };
+    const shared = {
+      remaining: () => Math.max(0, 0.01 - spent),
+      spend: (cost: number) => {
+        spent += cost;
+      },
+      exhausted: () => {
+        exhausted += 1;
+      },
+    };
+    const controller = new LlmController({
+      client,
+      gameName: 'Probe',
+      config: { model: 'x/y' },
+      sharedBudget: shared,
+    });
+
+    await controller.act(request());
+    expect(spent).toBeCloseTo(0.01);
+    await expect(controller.act(request())).rejects.toThrow(/budget/);
+    expect(calls).toHaveLength(1);
+    expect(exhausted).toBe(1);
+  });
+});

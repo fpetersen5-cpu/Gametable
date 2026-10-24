@@ -11,7 +11,12 @@ import {
   type Seat,
   type SeatId,
 } from '@gametable/engine';
-import { LlmController, type CompletionClient, type LlmSeatConfig } from '@gametable/agent';
+import {
+  LlmController,
+  type CompletionClient,
+  type LlmSeatConfig,
+  type LlmSeatState,
+} from '@gametable/agent';
 import { ResultsStore, toRecord } from '@gametable/stats';
 import { generateDebrief } from './debrief.js';
 import type {
@@ -131,9 +136,15 @@ export interface SessionDeps {
     seed: number;
     state: unknown;
     events: MatchEvent[];
+    controllers?: Record<string, LlmSeatState>;
   }) => Promise<void>;
   clearLive?: (matchId: string) => Promise<void>;
-  resume?: { state: unknown; events: MatchEvent[] };
+  resume?: {
+    state: unknown;
+    events: MatchEvent[];
+    /** Per-seat memories and counters saved with the live match. */
+    controllers?: Record<string, unknown>;
+  };
   matchId?: string;
 }
 
@@ -163,6 +174,10 @@ export class MatchSession {
   private rewinding = false;
   private takenOver = new Set<SeatId>();
   private readonly seatVoices = new Map<SeatId, number>();
+  /** The live LLM controller per seat (absent while the human covers a seat). */
+  private readonly llmControllers = new Map<SeatId, LlmController>();
+  /** Last known seat memory, kept across takeover and resume. */
+  private readonly seatMemory = new Map<SeatId, LlmSeatState>();
   private phaseKey = '';
   private phaseStartedAt = Date.now();
   private phaseLimitMs: number | null = null;
@@ -174,6 +189,12 @@ export class MatchSession {
     this.gate.speed = this.speed;
     this.seed = deps.request.seed ?? Math.floor(Math.random() * 1e9);
     if (deps.resume) this.events = [...deps.resume.events];
+    for (const [seatId, state] of Object.entries(deps.resume?.controllers ?? {})) {
+      const seat = deps.seats.find((entry) => entry.id === seatId);
+      if (seat?.kind === 'llm' && state && typeof state === 'object') {
+        this.seatMemory.set(seatId, state as LlmSeatState);
+      }
+    }
     deps.request.seats.forEach((seat, index) => {
       if (typeof seat.voice === 'number' && deps.seats[index]) {
         this.seatVoices.set(deps.seats[index].id, seat.voice);
@@ -323,6 +344,12 @@ export class MatchSession {
   takeover(seatId: SeatId): void {
     const seat = this.deps.seats.find((entry) => entry.id === seatId);
     if (!seat || seat.kind !== 'llm') return;
+    // Keep the model's memory and spend so releasing the seat restores both.
+    const current = this.llmControllers.get(seatId);
+    if (current) {
+      this.seatMemory.set(seatId, current.snapshot());
+      this.llmControllers.delete(seatId);
+    }
     this.controllers.set(seatId, new HumanController(this));
     this.takenOver.add(seatId);
     this.push();
@@ -338,20 +365,17 @@ export class MatchSession {
       ...(seat.persona ? { persona: seat.persona } : {}),
       ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
     };
-    this.controllers.set(
-      seatId,
-      new PacedController(
-        new LlmController({
-          client: this.deps.client,
-          gameName: this.deps.def.name,
-          config,
-          onPreview: (text) => this.deps.sendPreview(seatId, text),
-          isPreviewPublic: (view, type) =>
-            this.deps.def.previewIsPublic?.(view, type) ?? false,
-        }),
-        this.gate,
-      ),
-    );
+    const controller = new LlmController({
+      client: this.deps.client,
+      gameName: this.deps.def.name,
+      config,
+      onPreview: (text) => this.deps.sendPreview(seatId, text),
+      isPreviewPublic: (view, type) => this.deps.def.previewIsPublic?.(view, type) ?? false,
+    });
+    const saved = this.seatMemory.get(seatId);
+    if (saved) controller.restore(saved);
+    this.llmControllers.set(seatId, controller);
+    this.controllers.set(seatId, new PacedController(controller, this.gate));
     this.takenOver.delete(seatId);
     this.push();
   }
@@ -407,6 +431,9 @@ export class MatchSession {
         onPreview: (text) => this.deps.sendPreview(seat.id, text),
         isPreviewPublic: (view, type) => this.deps.def.previewIsPublic?.(view, type) ?? false,
       });
+      const saved = this.seatMemory.get(seat.id);
+      if (saved) controller.restore(saved);
+      this.llmControllers.set(seat.id, controller);
       this.controllers.set(seat.id, new PacedController(controller, this.gate));
     }
   }
@@ -495,14 +522,27 @@ export class MatchSession {
         seed: this.seed,
         state,
         events: this.events,
+        controllers: this.controllerSnapshots(),
       })
       .catch(() => undefined);
   }
 
+  /**
+   * Freeze every live seat's memory into the persisted map. A seat the human
+   * is covering has no live controller, so its last snapshot is kept.
+   */
+  private controllerSnapshots(): Record<string, LlmSeatState> {
+    for (const [seatId, controller] of this.llmControllers) {
+      this.seatMemory.set(seatId, controller.snapshot());
+    }
+    return Object.fromEntries(this.seatMemory);
+  }
+
   private refreshCost(): void {
     let total = 0;
-    for (const controller of this.controllers.values()) {
-      total += controller.usage?.().costUsd ?? 0;
+    for (const seat of this.deps.seats) {
+      const live = this.llmControllers.get(seat.id);
+      total += live ? (live.usage?.().costUsd ?? 0) : (this.seatMemory.get(seat.id)?.costUsd ?? 0);
     }
     this.costUsd = total;
   }
@@ -549,6 +589,7 @@ export class MatchSession {
       }
       await this.deps.store.append(toRecord(result, personas));
       await this.deps.saveBundle({
+        formatVersion: 2,
         summary,
         options: this.gameOptions(),
         seats: this.deps.seats,

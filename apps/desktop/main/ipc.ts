@@ -17,7 +17,7 @@ import { DEMO_MODELS, DemoClient } from './demo.js';
 import { buildTranscript } from './transcript.js';
 import { synthesize, VOICE_PRESETS } from './tts.js';
 import { transcribe } from './stt.js';
-import { projectSeatViews } from './replay.js';
+import { projectSeatViews, ReplayIncompatibleError } from './replay.js';
 import {
   DEFAULT_CONFIG,
   type AppConfig,
@@ -427,6 +427,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       seed: number;
       state: unknown;
       events: MatchEvent[];
+      controllers?: Record<string, unknown>;
     };
     try {
       saved = JSON.parse(await readFile(join(liveDir, `${matchId}.json`), 'utf8')) as typeof saved;
@@ -453,7 +454,11 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
           : null,
       store: results,
       matchId: saved.matchId,
-      resume: { state: saved.state, events: saved.events },
+      resume: {
+        state: saved.state,
+        events: saved.events,
+        controllers: saved.controllers ?? {},
+      },
       saveBundle: async (bundle) => {
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
@@ -525,17 +530,24 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
 
   handle('replay:seat-views', async (_event, payload: unknown) => {
     const { matchId, seatId } = (payload ?? {}) as { matchId?: unknown; seatId?: unknown };
-    if (typeof matchId !== 'string' || typeof seatId !== 'string') return null;
-    if (!/^[am]-[a-z0-9-]+$/i.test(matchId)) return null;
+    if (typeof matchId !== 'string' || typeof seatId !== 'string') {
+      return { views: null, error: 'invalid replay request' };
+    }
+    if (!/^[am]-[a-z0-9-]+$/i.test(matchId)) {
+      return { views: null, error: 'invalid replay request' };
+    }
     try {
       const bundle = JSON.parse(
         await readFile(join(matchesDir, `${matchId}.json`), 'utf8'),
       ) as ReplayBundle;
       const def = games.find((game) => game.id === bundle.summary.gameId);
-      if (!def) return null;
-      return projectSeatViews(def, bundle, seatId);
-    } catch {
-      return null;
+      if (!def) return { views: null, error: 'that game is not installed' };
+      return { views: projectSeatViews(def, bundle, seatId) };
+    } catch (error) {
+      if (error instanceof ReplayIncompatibleError) {
+        return { views: null, error: error.message };
+      }
+      return { views: null, error: 'That replay could not be read.' };
     }
   });
 
