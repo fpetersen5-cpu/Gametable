@@ -256,17 +256,19 @@ Buffered calls remain the fallback for providers that reject streaming.
 
 The renderer's entire privileged surface is `window.gametable`, defined in the
 preload script. `DesktopApi` (`apps/desktop/shared/api.ts`) covers status, key
-management, model catalogue, config, games, match control (start/submit/pause/
-speed/abort/rewind/takeover/release), events (`onTable`, `onPreview`,
-`onFinished`, `onMatchError`, `onDebrief`), replays and seat views, transcript
-export, leaderboard, arena, voices, speech-to-text and the data folder.
+management, OpenRouter and local model catalogues, seat preflight tests,
+config, games, match control (start/submit/pause/speed/abort/rewind/takeover/
+release), events (`onTable`, `onPreview`, `onFinished`, `onMatchError`,
+`onDebrief`), replays and seat views, transcript export, backup export/restore,
+leaderboard, arena, voices, speech-to-text and the data folder.
 
 Every handler is wrapped by a sender check: calls are accepted only from the
 app's own top-level `webContents`. Payloads are validated before use
 (`apps/desktop/main/validation.ts`): seat counts and kinds, model IDs, name and
-persona lengths, budgets, speed, seeds, arena counts, action sizes, takeover
-IDs and match ID formats. Invalid requests are rejected with a message, not
-coerced into a match.
+persona lengths, provider kinds, local endpoint URLs, budgets, speed, seeds,
+arena counts, action sizes, takeover IDs and match ID formats. Backup files are
+size-capped, schema-checked and merged without overwriting existing records.
+Invalid requests are rejected with a message, not coerced into a match.
 
 The renderer runs with `contextIsolation`, `sandbox`, no Node integration and
 no remote module. The production CSP is `default-src 'self'; script-src 'self';
