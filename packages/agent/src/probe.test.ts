@@ -23,6 +23,14 @@ describe('seat probe', () => {
     expect(result).toMatchObject({ ok: true, structured: true, costUsd: 0.00001 });
   });
 
+  it('accepts a fenced JSON reply', async () => {
+    const result = await probeModel(
+      client(async () => '```json\n{"ok":true}\n```'),
+      'demo/model',
+    );
+    expect(result).toMatchObject({ ok: true, structured: true });
+  });
+
   it('retries without schema and marks structured output unavailable', async () => {
     let calls = 0;
     const result = await probeModel(

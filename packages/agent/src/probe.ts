@@ -1,6 +1,7 @@
 import type { CompletionClient } from './gateway.js';
 import { classifyError, type ProviderErrorKind } from './errors.js';
 import type { JsonSchemaSpec } from './openrouter.js';
+import { parseJsonReply } from './prompt.js';
 
 export interface ProbeResult {
   ok: boolean;
@@ -45,7 +46,7 @@ export async function probeModel(
       jsonSchema: PROBE_SCHEMA,
       signal: AbortSignal.timeout(timeoutMs),
     });
-    const parsed = JSON.parse(result.text) as { ok?: unknown };
+    const parsed = parseJsonReply(result.text) as { ok?: unknown } | null;
     if (parsed?.ok !== true) throw new Error('Model did not return {"ok":true}');
     return {
       ok: true,
