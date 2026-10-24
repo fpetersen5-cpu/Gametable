@@ -31,6 +31,11 @@ python3 flatpak/flathub/generate.py --commit <full-40-char-sha>
 - `flatpak-builder-lint appstream flatpak/io.github.fpetersen5_cpu.GameTable.metainfo.xml` — clean.
 - `appstreamcli validate --no-net` — pass.
 - Runtime and BaseApp `26.08`; source is a full commit, not a branch.
+- The exact flattened manifest builds the native speech stack and app on
+  26.08. A local `flatpak-builder-lint builddir` still reports screenshot/icon
+  mirroring because the local finish cache does not apply Flathub's media
+  compose pipeline; the manifest and AppStream linters are clean. Flathub CI's
+  composed build is authoritative.
 - Screenshots are 1440×810 and served from the public repository.
 - Source-built Piper/eSpeak/ONNX Runtime; all sources SHA-256 pinned; offline
   build; actual-model three-speaker smoke test.

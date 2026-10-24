@@ -24,3 +24,5 @@ GameTable.flatpak
 GameTable.flatpakref
 gametable.gpg
 .gnupg/
+flatpak/flathub-build/
+flatpak/flathub-build*/
