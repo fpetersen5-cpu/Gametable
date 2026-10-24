@@ -7,9 +7,9 @@
 #   ./flatpak/release.sh
 #
 # Produces:
-#   GameTable.flatpak      signed single-file bundle
+#   GameTable-fpetersen5_cpu.flatpak     signed single-file bundle
 #   gametable.gpg          public key
-#   GameTable.flatpakref   one-click install reference for the hosted repo
+#   GameTable-fpetersen5_cpu.flatpakref  one-click install reference for the hosted repo
 #   flatpak/repo/          the signed OSTree repository to upload
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,8 +19,10 @@ cd "$(dirname "$0")/.."
 export GAMETABLE_GPG_HOME="${GAMETABLE_GPG_HOME:-$HOME/.gnupg}"
 python3 flatpak/release-preflight.py
 
-APP_ID=io.github.takmikill.GameTable
+APP_ID=io.github.fpetersen5_cpu.GameTable
 BRANCH=master
+BUNDLE=GameTable-fpetersen5_cpu.flatpak
+REF=GameTable-fpetersen5_cpu.flatpakref
 
 ./flatpak/build.sh
 
@@ -38,7 +40,7 @@ gpg --homedir "$GAMETABLE_GPG_HOME" --export "$GAMETABLE_GPG_KEY" > gametable.gp
 KEY_B64="$(base64 -w0 gametable.gpg.bin)"
 rm -f gametable.gpg.bin
 
-cat > GameTable.flatpakref <<EOF
+cat > "$REF" <<EOF
 [Flatpak Ref]
 Title=GameTable
 Name=$APP_ID
@@ -50,7 +52,7 @@ SuggestRemoteName=gametable
 EOF
 
 echo
-echo "Signed bundle:  $(pwd)/GameTable.flatpak"
+echo "Signed bundle:  $(pwd)/$BUNDLE"
 echo "Repository:     $(pwd)/flatpak/repo   → upload to $GAMETABLE_REPO_URL"
-echo "One-click ref:  $(pwd)/GameTable.flatpakref"
+echo "One-click ref:  $(pwd)/$REF"
 echo "Public key:     $(pwd)/gametable.gpg"

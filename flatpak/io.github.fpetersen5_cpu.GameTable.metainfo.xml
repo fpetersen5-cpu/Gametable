@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.takmikill.GameTable</id>
+  <id>io.github.fpetersen5_cpu.GameTable</id>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <name>GameTable</name>
@@ -20,13 +20,13 @@
     <p>Watch AI-only matches, replay games from a seat's perspective, and compare models on the leaderboard. Neural voices can read each seat's public speech.</p>
   </description>
 
-  <launchable type="desktop-id">io.github.takmikill.GameTable.desktop</launchable>
+  <launchable type="desktop-id">io.github.fpetersen5_cpu.GameTable.desktop</launchable>
 
   <url type="homepage">https://github.com/fpetersen5-cpu/Gametable</url>
   <url type="bugtracker">https://github.com/fpetersen5-cpu/Gametable/issues</url>
 
-  <developer id="io.github.takmikill">
-    <name>takmikill</name>
+  <developer id="io.github.fpetersen5_cpu">
+    <name>fpetersen5-cpu</name>
   </developer>
 
   <content_rating type="oars-1.1">

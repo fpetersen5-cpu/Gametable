@@ -17,7 +17,7 @@
         "-DUSE_SPEECHPLAYER=OFF", "-DEXTRA_cmn=ON", "-DEXTRA_ru=ON"
       ],
       "post-install": [
-        "install -Dm644 ../COPYING /app/share/licenses/espeak-ng/COPYING",
+        "install -Dm644 ../COPYING /app/share/licenses/io.github.fpetersen5_cpu.GameTable/espeak-ng/COPYING",
         "mkdir -p /app/piper",
         "ln -s ../share/espeak-ng-data /app/piper/espeak-ng-data"
       ],
@@ -32,8 +32,8 @@
     }
   ],
   "post-install": [
-    "install -Dm644 ../COPYING /app/share/licenses/piper/COPYING",
-    "cp -r ../licenses /app/share/licenses/piper/third-party"
+    "install -Dm644 ../COPYING /app/share/licenses/io.github.fpetersen5_cpu.GameTable/piper/COPYING",
+    "cp -r ../licenses /app/share/licenses/io.github.fpetersen5_cpu.GameTable/piper/third-party"
   ],
   "sources": [
     {

@@ -17,11 +17,29 @@ def load(name):
 
 
 class ReleaseChecks(unittest.TestCase):
+    def test_app_identity_matches_github_owner_and_installed_assets(self):
+        app_id = 'io.github.fpetersen5_cpu.GameTable'
+        manifest = (ROOT / f'{app_id}.yml').read_text()
+        metadata = (ROOT / f'{app_id}.metainfo.xml').read_text()
+        desktop = (ROOT / f'{app_id}.desktop').read_text()
+        self.assertTrue((ROOT / f'{app_id}.svg').is_file())
+        self.assertIn(f'id: {app_id}', manifest)
+        self.assertIn(f'<id>{app_id}</id>', metadata)
+        self.assertIn(f'<launchable type="desktop-id">{app_id}.desktop</launchable>', metadata)
+        self.assertIn('<developer id="io.github.fpetersen5_cpu">', metadata)
+        self.assertIn(f'Icon={app_id}', desktop)
+        self.assertIn(f'APP_ID={app_id}', (ROOT / 'build.sh').read_text())
+        self.assertIn(f'APP_ID={app_id}', (ROOT / 'release.sh').read_text())
+        self.assertIn('GameTable-fpetersen5_cpu.flatpak', (ROOT / 'build.sh').read_text())
+        self.assertIn('GameTable-fpetersen5_cpu.flatpakref', (ROOT / 'release.sh').read_text())
+        self.assertIn(app_id, (ROOT / 'gametable.sh').read_text())
+        self.assertNotIn('io.github.takmikill.GameTable', manifest + metadata + desktop)
+
     def test_public_github_urls_and_local_build_rewrite_match(self):
         source = 'https://github.com/fpetersen5-cpu/Gametable.git'
         homepage = 'https://github.com/fpetersen5-cpu/Gametable'
-        manifest = (ROOT / 'io.github.takmikill.GameTable.yml').read_text()
-        metadata = (ROOT / 'io.github.takmikill.GameTable.metainfo.xml').read_text()
+        manifest = (ROOT / 'io.github.fpetersen5_cpu.GameTable.yml').read_text()
+        metadata = (ROOT / 'io.github.fpetersen5_cpu.GameTable.metainfo.xml').read_text()
         builder = (ROOT / 'build.sh').read_text()
         self.assertIn(f'url: {source}', manifest)
         self.assertIn(f'<url type="homepage">{homepage}</url>', metadata)

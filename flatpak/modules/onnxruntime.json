@@ -26,8 +26,8 @@
     "-Donnxruntime_USE_KLEIDIAI=OFF"
   ],
   "post-install": [
-    "install -Dm644 ../../LICENSE /app/share/licenses/onnxruntime/LICENSE",
-    "install -Dm644 ../../ThirdPartyNotices.txt /app/share/licenses/onnxruntime/ThirdPartyNotices.txt"
+    "install -Dm644 ../../LICENSE /app/share/licenses/io.github.fpetersen5_cpu.GameTable/onnxruntime/LICENSE",
+    "install -Dm644 ../../ThirdPartyNotices.txt /app/share/licenses/io.github.fpetersen5_cpu.GameTable/onnxruntime/ThirdPartyNotices.txt"
   ],
   "cleanup": ["/include", "/lib/cmake", "/lib/pkgconfig", "/lib/*.a", "/bin/protoc*", "/bin/flatc"],
   "sources": ["onnxruntime-sources.json"]

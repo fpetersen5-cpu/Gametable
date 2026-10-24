@@ -24,6 +24,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: python3 -m unittest discover -s flatpak/tests -v
+      - run: python3 -m unittest discover -s scripts/tests -v
 
   flatpak:
     runs-on: ubuntu-latest
@@ -47,8 +48,8 @@ jobs:
 
       - name: Validate desktop metadata
         run: |
-          appstreamcli validate --no-net flatpak/io.github.takmikill.GameTable.metainfo.xml
-          desktop-file-validate flatpak/io.github.takmikill.GameTable.desktop
+          appstreamcli validate --no-net flatpak/io.github.fpetersen5_cpu.GameTable.metainfo.xml
+          desktop-file-validate flatpak/io.github.fpetersen5_cpu.GameTable.desktop
 
       - name: Rebuild npm sources (validates the committed file)
         run: |
@@ -77,7 +78,7 @@ jobs:
         with:
           name: gametable-flatpak
           path: |
-            GameTable.flatpak
-            GameTable.flatpakref
+            GameTable-fpetersen5_cpu.flatpak
+            GameTable-fpetersen5_cpu.flatpakref
             gametable.gpg
           if-no-files-found: warn

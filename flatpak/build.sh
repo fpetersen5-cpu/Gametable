@@ -16,7 +16,8 @@ cd "$(dirname "$0")/.."
 ROOT="$(git rev-parse --show-toplevel)"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 SOURCE_URL="${GAMETABLE_SOURCE_URL:-file://$ROOT}"
-APP_ID=io.github.takmikill.GameTable
+APP_ID=io.github.fpetersen5_cpu.GameTable
+BUNDLE=GameTable-fpetersen5_cpu.flatpak
 JOBS="${GAMETABLE_BUILD_JOBS:-3}"
 if [[ ! "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
   echo 'GAMETABLE_BUILD_JOBS must be a positive integer' >&2
@@ -64,8 +65,8 @@ if [[ -n "${GAMETABLE_GPG_KEY:-}" ]]; then
                --gpg-homedir="${GAMETABLE_GPG_HOME:-$HOME/.gnupg}")
 fi
 
-flatpak build-bundle "${BUNDLE_ARGS[@]}" flatpak/repo GameTable.flatpak "$APP_ID"
+flatpak build-bundle "${BUNDLE_ARGS[@]}" flatpak/repo "$BUNDLE" "$APP_ID"
 echo
 echo "Installed:   flatpak run $APP_ID"
-echo "Bundle:      $(pwd)/GameTable.flatpak"
-echo "Share it:    flatpak install GameTable.flatpak"
+echo "Bundle:      $(pwd)/$BUNDLE"
+echo "Share it:    flatpak install $BUNDLE"

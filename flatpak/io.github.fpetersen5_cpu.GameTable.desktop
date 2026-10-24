@@ -2,7 +2,7 @@
 Name=GameTable
 Comment=Play games against up to ten AI models
 Exec=gametable
-Icon=io.github.takmikill.GameTable
+Icon=io.github.fpetersen5_cpu.GameTable
 Terminal=false
 Type=Application
 Categories=Game;

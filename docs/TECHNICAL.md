@@ -368,8 +368,8 @@ The voice model is pinned data, with an actual-model build smoke test. See
 
 ```bash
 ./flatpak/generate-sources.sh   # rewrites flatpak/node-sources.json
-./flatpak/build.sh              # build, install, write GameTable.flatpak
-flatpak run io.github.takmikill.GameTable
+./flatpak/build.sh              # build, install, write GameTable-fpetersen5_cpu.flatpak
+flatpak run io.github.fpetersen5_cpu.GameTable
 ```
 
 `flatpak/generate-sources.py` works around two generator bugs: 1.0.0 misdetects
@@ -380,7 +380,8 @@ wrapper runs against a clean manifest-only tree and skips the Electron handler.
 `flatpak/release.sh` builds and signs a single-file bundle, writes a public key
 and a `.flatpakref` with the key embedded, and signs the OSTree repository
 summary after installing the new commit — otherwise GPG-verified clients reject
-the repo. Output: `GameTable.flatpak`, `gametable.gpg`, `GameTable.flatpakref`
+the repo. Output: `GameTable-fpetersen5_cpu.flatpak`, `gametable.gpg`,
+`GameTable-fpetersen5_cpu.flatpakref`
 and `flatpak/repo/` to upload.
 
 The headless CLI uses the same referee and supports `run`, `gauntlet`, `models`,

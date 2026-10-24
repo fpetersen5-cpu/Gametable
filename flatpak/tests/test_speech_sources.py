@@ -17,7 +17,7 @@ class SpeechSources(unittest.TestCase):
         self.assertTrue(ort['build-options']['strip'])
         self.assertIn('-g0', ort['build-options']['cxxflags'])
         self.assertTrue(any(source.get('path') == 'espeak-no-sonic-download.patch' for source in espeak['sources']))
-        manifest = (ROOT / 'io.github.takmikill.GameTable.yml').read_text()
+        manifest = (ROOT / 'io.github.fpetersen5_cpu.GameTable.yml').read_text()
         self.assertIn('modules/piper.json', manifest)
         self.assertNotIn('piper_linux_x86_64.tar.gz', manifest)
         for source in json.loads((ROOT / 'modules/onnxruntime-sources.json').read_text()):
@@ -32,11 +32,25 @@ class SpeechSources(unittest.TestCase):
         for flag in ['onnxruntime_USE_TELEMETRY', 'onnxruntime_USE_CUDA', 'onnxruntime_USE_WEBGPU', 'onnxruntime_ENABLE_PYTHON']:
             self.assertIn(f'-D{flag}=OFF', opts)
 
+    def test_licenses_are_namespaced_under_the_flatpak_id(self):
+        app_id = 'io.github.fpetersen5_cpu.GameTable'
+        manifest = (ROOT / f'{app_id}.yml').read_text()
+        piper = (ROOT / 'modules/piper.json').read_text()
+        ort = (ROOT / 'modules/onnxruntime.json').read_text()
+        self.assertTrue((ROOT.parent / 'LICENSE').is_file())
+        self.assertIn(f'/app/share/licenses/{app_id}/gametable/LICENSE', manifest)
+        self.assertIn(f'/app/share/licenses/{app_id}/piper-voice/MODEL_CARD', manifest)
+        self.assertIn(f'/app/share/licenses/{app_id}/piper/COPYING', piper)
+        self.assertIn(f'/app/share/licenses/{app_id}/espeak-ng/COPYING', piper)
+        self.assertIn(f'/app/share/licenses/{app_id}/onnxruntime/LICENSE', ort)
+        for text in (piper, ort):
+            self.assertNotRegex(text, r'/app/share/licenses/(piper|espeak-ng|onnxruntime)/')
+
     def test_electron_lock_and_flatpak_binary_stay_in_sync(self):
         repo = ROOT.parent
         version = json.loads((repo / 'apps/desktop/package.json').read_text())['devDependencies']['electron']
         self.assertRegex(version, r'^\d+\.\d+\.\d+$')
-        manifest = (ROOT / 'io.github.takmikill.GameTable.yml').read_text()
+        manifest = (ROOT / 'io.github.fpetersen5_cpu.GameTable.yml').read_text()
         self.assertIn(f'/v{version}/electron-v{version}-linux-x64.zip', manifest)
         lock = json.loads((repo / 'package-lock.json').read_text())
         self.assertEqual(lock['packages']['node_modules/electron']['version'], version)

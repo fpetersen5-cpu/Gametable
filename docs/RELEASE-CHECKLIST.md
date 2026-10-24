@@ -93,18 +93,27 @@ float-WAV format. The stripped ONNX shared library is about 24 MB.
   [fpetersen5-cpu/Gametable](https://github.com/fpetersen5-cpu/Gametable)
   (Git over SSH for contributors; HTTPS for Flatpak builders). Both the
   homepage and issue tracker have been checked for public access.
+- The Flatpak ID now matches the public GitHub owner:
+  `io.github.fpetersen5_cpu.GameTable` (the GitHub hyphen becomes an underscore
+  in the reverse-DNS domain component). The former
+  `io.github.takmikill.GameTable` installation is a **different app**; it is
+  intentionally left installed until users choose to migrate their local
+  records. See [`FLATPAK-ID-MIGRATION.md`](FLATPAK-ID-MIGRATION.md).
 - Replace the development Git `branch: main` source with the final immutable
-  release tag/commit for submission. The public GitHub repository belongs to
-  `fpetersen5-cpu`, while the current Flatpak ID is
-  `io.github.takmikill.GameTable`. The Flathub linter still reports
-  `appid-url-not-reachable` because its ID-derived URL points at the old
-  `takmikill` GitHub account, even though the explicit homepage and source URLs
-  now work. Confirm ownership/approval of the existing ID or plan a deliberate
-  app-ID migration before submission. Changing an installed app ID needs a
-  migration plan; don't silently rename it during release hardening.
-- The public repository currently has no `LICENSE` file despite package and
-  AppStream metadata declaring MIT. Publish an appropriate license file and
-  complete bundled speech/model attribution before release.
+  release tag/commit for submission. Local verification of the new app ID
+  resolves the public GitHub source; the branch remains the manifest-linter
+  blocker before Flathub submission.
+- Flathub's current generative-AI policy prohibits AI-generated or AI-assisted
+  manifest content in submissions. The packaging edits here were AI-assisted
+  and **must not be submitted as-is**: a human maintainer needs to author and
+  review the final compliant Flathub manifest independently, disclose known
+  AI-generated application/documentation material as required, and submit the
+  pull request themselves. An AI agent must not prepare or submit that PR.
+- The public repository now includes the MIT `LICENSE` this tree declares, and
+  bundled speech/model notices are namespaced under the Flatpak ID. Confirm the
+  pushed repository matches before release.
+- Complete the remaining bundled model/third-party attribution and licensing
+  review for distribution.
 - Assess the linter's optional 26.08 runtime upgrade recommendation separately;
   the current source build targets the existing 25.08 runtime.
 - Test clean install/update and voice output on supported desktop environments,

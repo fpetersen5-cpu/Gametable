@@ -90,10 +90,14 @@ The manifest grants exactly what the app needs:
   user explicitly picks the path.
 
 Match data, results, and settings live under the app's private XDG directory
-(`~/.var/app/io.github.takmikill.GameTable/config/GameTable`). Directories are
+(`~/.var/app/io.github.fpetersen5_cpu.GameTable/config/GameTable`). Directories are
 created `0700`, files `0600`, and every write goes through
 `secureWrite()` (`apps/desktop/main/secure-file.ts`), which writes a temp file
 and renames it, so a crash cannot leave a half-written secret or replay.
+
+Changing the Flatpak ID does not grant access to the old app's sandbox data.
+The optional host-side migration in `docs/FLATPAK-ID-MIGRATION.md` never copies
+API keys or active sessions; users reenter their key in the new app.
 
 ## Hidden information
 

@@ -5,7 +5,7 @@ set -eu
 
 APP_ROOT=/app/gametable
 
-export TMPDIR="${XDG_RUNTIME_DIR:-/tmp}/app/${FLATPAK_ID:-io.github.takmikill.GameTable}"
+export TMPDIR="${XDG_RUNTIME_DIR:-/tmp}/app/${FLATPAK_ID:-io.github.fpetersen5_cpu.GameTable}"
 mkdir -p "$TMPDIR"
 export CHROME_WRAPPER=/app/bin/gametable
 

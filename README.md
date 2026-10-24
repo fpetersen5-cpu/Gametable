@@ -33,13 +33,19 @@ makes hidden-role games work at all.
 | **M6** — third game: Coup (2–6 seats, challenges, blocks) and the game-author guide | **done** |
 
 Everything is playable in-app and installs as a Flatpak. `GAMETABLE_DEMO=1
-flatpak run io.github.takmikill.GameTable` runs the whole UI against a fake
+flatpak run io.github.fpetersen5_cpu.GameTable` runs the whole UI against a fake
 transport, with no key and no spend.
 
 Architecture, invariants, security boundaries, testing gates and the roadmap are
 described in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
 Public source and issues: <https://github.com/fpetersen5-cpu/Gametable>.
+
+The Flatpak ID is now `io.github.fpetersen5_cpu.GameTable` (the GitHub dash is
+represented by an underscore). Users of the previous self-hosted
+`io.github.takmikill.GameTable` build can keep that install while moving records
+with the opt-in [migration guide](docs/FLATPAK-ID-MIGRATION.md); API keys must
+be entered again.
 
 ## Quick start (development)
 
@@ -293,8 +299,8 @@ flatpak install --user flathub org.flatpak.Builder \
 pipx install flatpak-node-generator
 
 ./flatpak/generate-sources.sh     # rewrites flatpak/node-sources.json
-./flatpak/build.sh                # builds, installs, writes GameTable.flatpak
-flatpak run io.github.takmikill.GameTable
+./flatpak/build.sh                # builds, installs, writes GameTable-fpetersen5_cpu.flatpak
+flatpak run io.github.fpetersen5_cpu.GameTable
 ```
 
 ### Signing and self-hosting
@@ -306,13 +312,14 @@ export GAMETABLE_REPO_URL=https://YOUR-PUBLIC-HOST/gametable/repo/
 ./flatpak/release.sh
 ```
 
-That produces a signed `GameTable.flatpak`, a public `gametable.gpg`, a
-`GameTable.flatpakref` with the key embedded, and `flatpak/repo/` to upload.
+That produces a signed `GameTable-fpetersen5_cpu.flatpak`, a public
+`gametable.gpg`, a `GameTable-fpetersen5_cpu.flatpakref` with the key embedded,
+and `flatpak/repo/` to upload. Existing legacy-ID bundles are not overwritten.
 Users then install with one click, or:
 
 ```bash
 flatpak --user remote-add --gpg-import=gametable.gpg gametable https://YOUR-PUBLIC-HOST/gametable/repo/
-flatpak install gametable io.github.takmikill.GameTable
+flatpak install gametable io.github.fpetersen5_cpu.GameTable
 ```
 
 Replace `YOUR-PUBLIC-HOST` with your actual HTTPS host. Placeholder/local URLs
@@ -334,7 +341,7 @@ handler, since the binary is supplied as a manifest source.
 Built and installed on this machine, signature checked by installing from a
 signed local repository, and a full Buckshot Roulette match was played inside
 the sandbox (results and replay written to
-`~/.var/app/io.github.takmikill.GameTable/config/GameTable`).
+`~/.var/app/io.github.fpetersen5_cpu.GameTable/config/GameTable`).
 
 ## Security notes
 

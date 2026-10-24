@@ -1,4 +1,4 @@
-id: io.github.takmikill.GameTable
+id: io.github.fpetersen5_cpu.GameTable
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
@@ -32,7 +32,7 @@ modules:
     build-commands:
       - mkdir -p /app/piper/voices
       - install -m644 en_US-libritts_r-medium.onnx en_US-libritts_r-medium.onnx.json /app/piper/voices/
-      - install -Dm644 MODEL_CARD /app/share/licenses/piper-voice/MODEL_CARD
+      - install -Dm644 MODEL_CARD /app/share/licenses/io.github.fpetersen5_cpu.GameTable/piper-voice/MODEL_CARD
       - install -Dm644 SPEECH-NOTICES.md /app/share/doc/gametable/SPEECH-NOTICES.md
       - python3 smoke-tts.py
     sources:
@@ -76,12 +76,14 @@ modules:
       - cp -r node_modules/electron/dist /app/gametable/electron
       - cp apps/desktop/package.json /app/gametable/package.json
       - install -Dm755 flatpak/gametable.sh /app/bin/gametable
-      - install -Dm644 flatpak/io.github.takmikill.GameTable.metainfo.xml
-        /app/share/metainfo/io.github.takmikill.GameTable.metainfo.xml
-      - install -Dm644 flatpak/io.github.takmikill.GameTable.desktop
-        /app/share/applications/io.github.takmikill.GameTable.desktop
-      - install -Dm644 flatpak/io.github.takmikill.GameTable.svg
-        /app/share/icons/hicolor/scalable/apps/io.github.takmikill.GameTable.svg
+      - install -Dm644 flatpak/io.github.fpetersen5_cpu.GameTable.metainfo.xml
+        /app/share/metainfo/io.github.fpetersen5_cpu.GameTable.metainfo.xml
+      - install -Dm644 flatpak/io.github.fpetersen5_cpu.GameTable.desktop
+        /app/share/applications/io.github.fpetersen5_cpu.GameTable.desktop
+      - install -Dm644 flatpak/io.github.fpetersen5_cpu.GameTable.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.fpetersen5_cpu.GameTable.svg
+      - install -Dm644 LICENSE
+        /app/share/licenses/io.github.fpetersen5_cpu.GameTable/gametable/LICENSE
     sources:
       # build.sh rewrites this to the local checkout for local builds.
       - type: git
