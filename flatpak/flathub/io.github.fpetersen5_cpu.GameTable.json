@@ -28,6 +28,7 @@
 			"config-opts": [
 				"-DCMAKE_BUILD_TYPE=Release",
 				"-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG",
+				"-DCMAKE_CXX_FLAGS=-Wno-maybe-uninitialized",
 				"-DCMAKE_INSTALL_LIBDIR=lib",
 				"-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
 				"-DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER",
@@ -244,7 +245,7 @@
 				{
 					"type": "git",
 					"url": "https://github.com/fpetersen5-cpu/Gametable.git",
-					"commit": "a663ea14190f8396e518756fb4de61d077d948cd"
+					"commit": "2a12e4e8932961cb323d325bec045c4ebedfad89"
 				},
 				"node-sources.json",
 				{
