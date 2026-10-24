@@ -23,6 +23,15 @@ BRANCH=master
 
 ./flatpak/build.sh
 
+# build.sh installs the new commit into the OSTree repo; its summary must be
+# signed again or clients with GPG verification refuse the repository.
+echo "Signing the repository summary…"
+flatpak build-update-repo \
+  --gpg-sign="$GAMETABLE_GPG_KEY" \
+  --gpg-homedir="$GAMETABLE_GPG_HOME" \
+  --prune \
+  flatpak/repo
+
 gpg --homedir "$GAMETABLE_GPG_HOME" --armor --export "$GAMETABLE_GPG_KEY" > gametable.gpg
 gpg --homedir "$GAMETABLE_GPG_HOME" --export "$GAMETABLE_GPG_KEY" > gametable.gpg.bin
 KEY_B64="$(base64 -w0 gametable.gpg.bin)"
