@@ -16,6 +16,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Electron is listed under devDependencies but its runtime is shipped.
+      # Audit the full tree, not only --omit=dev.
+      - run: npm run audit:deps
       - run: npm run typecheck
       - run: npm run lint:games
       - run: npm test

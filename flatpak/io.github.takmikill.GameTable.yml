@@ -84,10 +84,10 @@ modules:
       # Offline npm tarballs (flatpak-node-generator).
       - node-sources.json
       # Electron's runtime binary, pre-fetched as a source. The directory name
-      # is sha256("https://github.com/electron/electron/releases/download/v44.9.0"),
+      # is sha256("https://github.com/electron/electron/releases/download/v44.9.3"),
       # which is where @electron/get looks when electron_config_cache is set.
       - type: file
-        url: https://github.com/electron/electron/releases/download/v44.9.0/electron-v44.9.0-linux-x64.zip
-        sha256: ecced7ecb55697f92ca870939c5988557faa8acd8c222c232cae5913d318c8b9
-        dest: flatpak-node/electron-cache/5ea8d8a9b31b6adae9bf3c2dbe1ac40908da7b96143379b3ba53f43037430952
-        dest-filename: electron-v44.9.0-linux-x64.zip
+        url: https://github.com/electron/electron/releases/download/v44.9.3/electron-v44.9.3-linux-x64.zip
+        sha256: 6e7fd2d450d442507b846ace4ae6e2bd17e1b1653e86a033b5231abfc23e6df4
+        dest: flatpak-node/electron-cache/902aaaf97776b0cc78be070e68179849dc7cd5aca622b2a809146b1684b69562
+        dest-filename: electron-v44.9.3-linux-x64.zip

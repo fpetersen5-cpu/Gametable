@@ -132,6 +132,20 @@ Not protected against:
   private chat and hidden roles. They are not encrypted at rest, only
   permission-restricted.
 
+## Dependency security checks
+
+Run `npm run audit:deps` to audit the full npm dependency tree. CI runs this
+after `npm ci` and fails on reported vulnerabilities. Do not use `--omit=dev`
+as the release gate: Electron is a development dependency in npm but its
+runtime is included in the shipped application.
+
+Electron is pinned to an exact version in `apps/desktop/package.json`. When
+upgrading it, update the Flatpak manifest's binary URL, upstream SHA-256 and
+Electron cache directory together, then regenerate `flatpak/node-sources.json`
+with `flatpak/generate-sources.py`. Test with `npm run check` and `npm run build`,
+and rebuild the Flatpak; changing the lockfile alone does not patch an already
+installed runtime.
+
 ## Reporting
 
 Open an issue at the project repository. Do not paste API keys into an issue;
