@@ -192,9 +192,8 @@ export class ArenaRunner {
       // Stop the whole match as soon as the shared cap is reached, instead of
       // letting the seats keep spending for the rest of this match.
       const matchAbort = new AbortController();
-      const budget = new Budget(Math.min(remaining, config.budgetPerMatch), () =>
-        matchAbort.abort(),
-      );
+      const perMatch = config.budgetPerMatch > 0 ? config.budgetPerMatch : remaining;
+      const budget = new Budget(Math.min(remaining, perMatch), () => matchAbort.abort());
 
       const controllers = new Map<string, Controller>();
       for (const seat of seats) {
