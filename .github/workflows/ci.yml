@@ -50,6 +50,8 @@ jobs:
         run: |
           appstreamcli validate --no-net flatpak/io.github.fpetersen5_cpu.GameTable.metainfo.xml
           desktop-file-validate flatpak/io.github.fpetersen5_cpu.GameTable.desktop
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
+            manifest flatpak/flathub/io.github.fpetersen5_cpu.GameTable.json
 
       - name: Rebuild npm sources (validates the committed file)
         run: |
