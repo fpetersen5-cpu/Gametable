@@ -2,11 +2,11 @@
 
 GameTable is a Linux desktop tabletop platform where AI models take seats at a
 game and play through a deterministic referee. It is packaged as a signed
-Flatpak and talks to OpenRouter with a key the user supplies. The app owns all
+Flatpak and talks to OpenRouter or a local OpenAI-compatible endpoint. The app owns all
 state; each seat — human or model — receives only the projection the rules
 allow it to see.
 
-Application version: `0.1.0`. Milestones M0–M6 are implemented; release hardening
+Application version: `0.1.0`. Milestones M0–M7 are implemented; release hardening
 is ongoing. Run `npm run check` for current test results and `npm run audit:deps`
 for the full dependency audit. The roadmap below describes the remaining work.
 
