@@ -127,10 +127,14 @@ function runPiper(text: string, profile: VoiceProfile, output: string): Promise<
         String(profile.speaker),
         '--length_scale',
         String(profile.lengthScale),
+        '--espeak_data',
+        process.env.ESPEAK_DATA_PATH ?? join(PIPER_ROOT, 'espeak-ng-data'),
         '--output_file',
         output,
       ],
       {
+        // A stuck native synthesizer must not hold a voice request forever.
+        timeout: 60_000,
         env: {
           ...process.env,
           LD_LIBRARY_PATH: `${PIPER_ROOT}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ''}`,
@@ -141,7 +145,7 @@ function runPiper(text: string, profile: VoiceProfile, output: string): Promise<
 
     let stderr = '';
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
+      stderr = (stderr + chunk.toString()).slice(-300);
     });
     child.on('error', (error) => reject(error));
     child.on('close', (code) => {
