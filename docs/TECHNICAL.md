@@ -149,7 +149,8 @@ exercises.
 
 2–6 seats. A 15-card deck holds three each of Duke, Assassin, Captain,
 Ambassador and Contessa. Each seat starts with two hidden influence cards and
-two coins. A turn is one of income, foreign aid, coup, assassinate, steal, tax
+two coins, except that a duel's starting seat receives one coin. A turn is one
+of income, foreign aid, coup, assassinate, steal, tax
 or exchange. Claims are public and may be challenged; blocks are public and may
 be challenged in turn. A challenge to a proven claim returns the revealed card
 to the deck, shuffles, and draws a replacement. A failed challenge to an
@@ -158,7 +159,10 @@ as many cards as the seat currently holds. The last seat with influence wins;
 a seat with ten or more coins must coup.
 
 The state is a `CoupStep` union: `action`, `challenge`, `block`,
-`challenge-block`, `lose` and `exchange`. The view exposes the seat's own hand,
+`challenge-block`, `prove`, `lose` and `exchange`. Challenged players can prove
+or concede; all other living seats may challenge blocks. Targeted rules and
+test cases are documented in [`COUP-RULES.md`](COUP-RULES.md).
+The view exposes the seat's own hand,
 public coin and influence counts, the pending claim and block, the challenge
 queue, the exchange choices and the last 20 public log lines. `godView` adds
 all hands and the deck order for spectators and replays. `secrets` emits

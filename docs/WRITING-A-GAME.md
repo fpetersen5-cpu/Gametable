@@ -89,7 +89,7 @@ interface CoupState {
   deck: CoupRole[];
   discard: CoupRole[];
   turn: SeatId;
-  step: CoupStep;          // action | challenge | block | challenge-block | lose | exchange
+  step: CoupStep;          // action | challenge | block | challenge-block | prove | lose | exchange
   log: string[];
   rngState: number;
   stats: CoupStats;
@@ -102,7 +102,8 @@ public log — is public.
 
 ### `setup`
 
-Deal two cards to each seat and two coins. The deck is shuffled with
+Deal two cards to each seat and two coins (one coin for the starting seat in a
+duel). The deck is shuffled with
 `Rng.fromSeed(ctx.seed)`. Save `rng.snapshot()` in the state so a draw during a
 later exchange is reproducible.
 

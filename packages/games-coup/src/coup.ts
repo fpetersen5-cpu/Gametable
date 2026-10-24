@@ -44,7 +44,7 @@ const ROLE_TEXT: Record<CoupRole, string> = {
   Duke: 'Tax: take 3 coins. Also blocks Foreign Aid.',
   Assassin: 'Assassinate: pay 3 coins to make a target lose an influence.',
   Captain: 'Steal: take up to 2 coins from a target. Also blocks Steal.',
-  Ambassador: 'Exchange: draw 2 cards and keep any 2. Also blocks Steal.',
+  Ambassador: 'Exchange: draw 2 cards, keep your current influence count, and return 2. Also blocks Steal.',
   Contessa: 'Blocks Assassinate.',
 };
 
@@ -81,8 +81,17 @@ export type CoupStep =
   | {
       kind: 'challenge-block';
       actor: SeatId;
+      queue: SeatId[];
       action: PendingAction;
       block: BlockClaim;
+    }
+  | {
+      kind: 'prove';
+      actor: SeatId;
+      challenger: SeatId;
+      role: CoupRole;
+      action: PendingAction;
+      block?: BlockClaim;
     }
   | {
       kind: 'lose';
@@ -256,14 +265,13 @@ function afterChallenge(state: CoupState, action: PendingAction): void {
 }
 
 function drawCards(state: CoupState, count: number): CoupRole[] {
-  const rng = Rng.restore(state.rngState);
   if (state.deck.length < count) {
-    state.deck = rng.shuffle([...state.deck, ...state.discard]);
-    state.discard = [];
+    // Revealed influence remains face up and out of play. In a valid 2–6 seat
+    // game the Court deck always has enough cards; never recycle losses to
+    // conceal a broken state or give a player a publicly dead card.
+    throw new Error('Court deck does not contain enough hidden cards');
   }
-  const drawn = state.deck.splice(0, count);
-  state.rngState = rng.snapshot();
-  return drawn;
+  return state.deck.splice(0, count);
 }
 
 /**
@@ -288,7 +296,8 @@ function replaceRevealedCard(state: CoupState, seatId: SeatId, role: CoupRole): 
 function loseInfluence(state: CoupState, seatId: SeatId, role: CoupRole): boolean {
   const hand = handOf(state, seatId);
   const index = hand.indexOf(role);
-  const removed = index === -1 ? hand.pop() : hand.splice(index, 1)[0];
+  if (index === -1) throw new Error('Cannot lose an influence the seat does not hold');
+  const removed = hand.splice(index, 1)[0];
   if (removed) state.discard.push(removed);
   pushLog(state, `${nameOf(state, seatId)} loses the ${removed ?? role}.`);
   if (hand.length === 0) {
@@ -316,6 +325,7 @@ function startTurn(state: CoupState, seatId: SeatId): void {
 }
 
 function advanceTurn(state: CoupState): void {
+  if (finishIfOver(state)) return;
   const next = nextAlive(state, state.turn);
   if (next) startTurn(state, next);
   else state.step = { kind: 'action', actor: state.turn };
@@ -424,6 +434,11 @@ export function legalActionsFor(state: CoupState, seatId: SeatId): GameAction[] 
     case 'challenge':
     case 'challenge-block':
       return [{ type: 'challenge' }, { type: 'pass' }];
+    case 'prove':
+      return [
+        ...(handOf(state, seatId).includes(step.role) ? [{ type: 'prove' }] : []),
+        { type: 'concede' },
+      ];
     case 'block': {
       const roles = blockRoles(step.action.type);
       return [...roles.map((role) => ({ type: 'block', role })), { type: 'pass' }];
@@ -490,9 +505,11 @@ function phaseOf(state: CoupState): Phase {
           ? `Block — ${nameOf(state, step.actor)}`
           : step.kind === 'challenge-block'
             ? `Challenge the block — ${nameOf(state, step.actor)}`
-            : step.kind === 'lose'
-              ? `Lose an influence — ${nameOf(state, step.actor)}`
-              : `Exchange cards — ${nameOf(state, step.actor)}`;
+            : step.kind === 'prove'
+              ? `Prove or concede — ${nameOf(state, step.actor)}`
+              : step.kind === 'lose'
+                ? `Lose an influence — ${nameOf(state, step.actor)}`
+                : `Exchange cards — ${nameOf(state, step.actor)}`;
   return {
     id: step.kind,
     label,
@@ -507,7 +524,7 @@ function briefingOf(state: CoupState, seatId: SeatId): string {
   const hand = handOf(state, seatId);
   const lines = [
     `You are ${nameOf(state, seatId)}, playing Coup with ${state.seats.length} seats.`,
-    'GOAL: be the last player holding at least one influence card. You start with two hidden role cards and two coins.',
+    'GOAL: be the last player holding at least one influence card. Each seat starts with two hidden role cards and two coins, except the starting seat in a two-player game starts with one coin.',
     '',
     'ACTIONS (choose one on your turn):',
     '- Income: take 1 coin. Cannot be challenged or blocked.',
@@ -515,14 +532,17 @@ function briefingOf(state: CoupState, seatId: SeatId): string {
     '- Tax: claim Duke and take 3 coins. Can be challenged.',
     '- Steal: claim Captain and take up to 2 coins from a target. Can be challenged; the target may block with Captain or Ambassador.',
     '- Assassinate: pay 3 coins, claim Assassin, and make a target lose an influence. Can be challenged; the target may block with Contessa.',
-    '- Exchange: claim Ambassador, draw two cards, keep any two of your four, and return the rest to the deck. Can be challenged.',
+    '- Exchange: claim Ambassador, draw two cards, keep as many cards as your current influence count (one or two), and return exactly two to the Court deck. Revealed losses never return to the deck. Can be challenged.',
     '- Coup: pay 7 coins and make a target lose an influence. Cannot be challenged or blocked. With 10 or more coins you must choose Coup.',
     '',
     'CHALLENGES AND BLOCKS:',
     '- You may claim a role you do not hold. A challenge reveals the truth.',
     '- If a claim is challenged and you hold the role, the challenger loses an influence; otherwise you lose an influence and the action fails.',
+    '- When challenged, choose Prove to show the claimed card and draw a shuffled replacement, or Concede to lose an influence instead. You may concede even if you hold the role. A successfully challenged assassination refunds its three-coin fee; a blocked assassination does not.',
     '- If a block is challenged and the blocker holds the role, the challenger loses an influence and the action is blocked; otherwise the blocker loses an influence and the action proceeds.',
-    '- Once a challenge or block is resolved, no further reaction is offered for that action.',
+    '- Any other living seat may challenge an action or a block, even if not targeted. Reactions are offered sequentially; the action owner is offered the first challenge to a block. Once everyone passes, a claim cannot be challenged retroactively.',
+    '- An action that survives a challenge may still be blocked. A lost challenge against an assassination or a false Contessa block can cost the target two influences in total.',
+    '- Eliminated seats leave their revealed cards out of play, return remaining coins to the Treasury, and are skipped in turn order.',
     '',
     'ROLES:',
     ...COUP_ROLES.map((role) => `- ${role}: ${ROLE_TEXT[role]}`),
@@ -538,7 +558,8 @@ function viewOf(state: CoupState, seatId: SeatId): GameView {
   const hand = handOf(state, seatId);
   const step = state.step;
   const pending = step.kind === 'action' ? null : actionSummary(state, step.action);
-  const block = step.kind === 'challenge-block' ? { ...step.block, blockerName: nameOf(state, step.block.blocker) } : null;
+  const blockClaim = step.kind === 'challenge-block' || step.kind === 'prove' ? step.block : undefined;
+  const block = blockClaim ? { ...blockClaim, blockerName: nameOf(state, blockClaim.blocker) } : null;
   const queue = 'queue' in step ? [...step.queue] : [];
   const exchangeCards =
     step.kind === 'exchange' && step.actor === seatId ? [...hand, ...step.cards] : undefined;
@@ -595,7 +616,7 @@ function viewOf(state: CoupState, seatId: SeatId): GameView {
 export const coup: GameDef<CoupState> = {
   id: 'coup',
   name: 'Coup',
-  version: '1.0.0',
+  version: '1.0.1',
   minSeats: 2,
   maxSeats: 6,
   capabilities: {
@@ -625,7 +646,7 @@ export const coup: GameDef<CoupState> = {
     const coins: Record<SeatId, number> = {};
     for (const seat of seats) {
       hands[seat.id] = deck.splice(0, 2);
-      coins[seat.id] = 2;
+      coins[seat.id] = ctx.seats.length === 2 && seat.id === seats[0]?.id ? 1 : 2;
     }
     const first = seats[0] as SeatRecord;
     const state: CoupState = {
@@ -771,22 +792,8 @@ export const coup: GameDef<CoupState> = {
         next.stats.challenges += 1;
         const claimed = step.action.claimedRole as CoupRole;
         const claimant = step.action.actor;
-        if (handOf(next, claimant).includes(claimed)) {
-          pushLog(next, `${nameOf(next, seatId)} challenges ${nameOf(next, claimant)}'s ${claimed} claim.`);
-          pushLog(next, `${nameOf(next, claimant)} reveals the ${claimed}; the challenge fails.`);
-          replaceRevealedCard(next, claimant, claimed);
-          const nextStep =
-            isBlockable(step.action.type) ? 'proceed-block' : 'resolve-action';
-          next.step = { kind: 'lose', actor: seatId, action: step.action, next: nextStep };
-        } else {
-          pushLog(next, `${nameOf(next, seatId)} challenges ${nameOf(next, claimant)}'s ${claimed} claim.`);
-          pushLog(next, `${nameOf(next, claimant)} does not hold the ${claimed}; the action fails.`);
-          if (step.action.type === 'assassinate') {
-            next.coins[claimant] = coinsOf(next, claimant) + 3;
-            pushLog(next, `${nameOf(next, claimant)} recovers the 3 coins paid for the assassination.`);
-          }
-          next.step = { kind: 'lose', actor: claimant, action: step.action, next: 'end-turn' };
-        }
+        pushLog(next, `${nameOf(next, seatId)} challenges ${nameOf(next, claimant)}'s ${claimed} claim.`);
+        next.step = { kind: 'prove', actor: claimant, challenger: seatId, role: claimed, action: step.action };
         return next;
       }
 
@@ -810,12 +817,18 @@ export const coup: GameDef<CoupState> = {
         next.stats.blocks += 1;
         const block: BlockClaim = { blocker: seatId, role };
         pushLog(next, `${nameOf(next, seatId)} claims ${role} to block ${nameOf(next, step.action.actor)}.`);
-        next.step = { kind: 'challenge-block', actor: step.action.actor, action: step.action, block };
+        const queue = [step.action.actor, ...othersAlive(next, seatId).filter((id) => id !== step.action.actor)];
+        next.step = { kind: 'challenge-block', actor: queue[0]!, queue, action: step.action, block };
         return next;
       }
 
       case 'challenge-block': {
         if (chosen.type === 'pass') {
+          const queue = step.queue.slice(1);
+          if (queue.length > 0) {
+            next.step = { ...step, actor: queue[0]!, queue };
+            return next;
+          }
           pushLog(next, `The ${step.block.role} block stands; the action is blocked.`);
           advanceTurn(next);
           return next;
@@ -824,15 +837,32 @@ export const coup: GameDef<CoupState> = {
           throw new IllegalAction(seatId, action, 'only challenge or pass is allowed');
         }
         next.stats.challenges += 1;
-        if (handOf(next, step.block.blocker).includes(step.block.role)) {
-          pushLog(next, `${nameOf(next, seatId)} challenges the ${step.block.role} block.`);
-          pushLog(next, `${nameOf(next, step.block.blocker)} reveals the ${step.block.role}; the block holds.`);
-          replaceRevealedCard(next, step.block.blocker, step.block.role);
-          next.step = { kind: 'lose', actor: seatId, action: step.action, next: 'end-turn' };
+        pushLog(next, `${nameOf(next, seatId)} challenges the ${step.block.role} block.`);
+        next.step = {
+          kind: 'prove', actor: step.block.blocker, challenger: seatId,
+          role: step.block.role, action: step.action, block: step.block,
+        };
+        return next;
+      }
+
+      case 'prove': {
+        if (chosen.type === 'prove') {
+          replaceRevealedCard(next, seatId, step.role);
+          pushLog(next, `${nameOf(next, seatId)} reveals the ${step.role}; the challenge fails.`);
+          next.step = {
+            kind: 'lose', actor: step.challenger, action: step.action,
+            next: step.block ? 'end-turn' : isBlockable(step.action.type) ? 'proceed-block' : 'resolve-action',
+          };
         } else {
-          pushLog(next, `${nameOf(next, seatId)} challenges the ${step.block.role} block.`);
-          pushLog(next, `${nameOf(next, step.block.blocker)} does not hold the ${step.block.role}; the block fails.`);
-          next.step = { kind: 'lose', actor: step.block.blocker, action: step.action, next: 'resolve-action' };
+          pushLog(next, `${nameOf(next, seatId)} concedes the ${step.role} claim; ${step.block ? 'the block' : 'the action'} fails.`);
+          if (!step.block && step.action.type === 'assassinate') {
+            next.coins[seatId] = coinsOf(next, seatId) + 3;
+            pushLog(next, `${nameOf(next, seatId)} recovers the 3 coins paid for the assassination.`);
+          }
+          next.step = {
+            kind: 'lose', actor: seatId, action: step.action,
+            next: step.block ? 'resolve-action' : 'end-turn',
+          };
         }
         return next;
       }
@@ -845,7 +875,16 @@ export const coup: GameDef<CoupState> = {
         if (!handOf(next, seatId).includes(card)) {
           throw new IllegalAction(seatId, action, 'you do not hold that card');
         }
-        loseInfluence(next, seatId, card);
+        const eliminated = loseInfluence(next, seatId, card);
+        // The rulebook's steal example awards the pending theft even when the
+        // victim loses their last influence challenging it or defending a false
+        // block. Resolve that transfer before returning their remaining coins.
+        if (eliminated && step.action.type === 'steal' && step.action.target === seatId && step.next !== 'end-turn') {
+          resolveAction(next, step.action);
+          next.coins[seatId] = 0;
+          return next;
+        }
+        if (eliminated) next.coins[seatId] = 0;
         if (finishIfOver(next)) return next;
         if (step.next === 'end-turn') advanceTurn(next);
         else if (step.next === 'proceed-block') beginBlock(next, step.action);
@@ -855,7 +894,7 @@ export const coup: GameDef<CoupState> = {
 
       case 'exchange': {
         if (chosen.type !== 'keep') {
-          throw new IllegalAction(seatId, action, 'choose two cards to keep');
+          throw new IllegalAction(seatId, action, 'choose cards to keep');
         }
         const first = chosen.first as CoupRole;
         const second = typeof chosen.second === 'string' ? (chosen.second as CoupRole) : undefined;

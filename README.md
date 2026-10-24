@@ -142,7 +142,8 @@ channel only if it is mafia, and investigations only if it is the detective.
 
 2 to 6 seats. Each seat starts with two hidden influence cards from a 15-card
 deck (three each of Duke, Assassin, Captain, Ambassador and Contessa) and two
-coins. On a turn a seat takes income or foreign aid, or claims a role to tax,
+coins (the starting seat gets one coin in a duel). On a turn a seat takes
+income or foreign aid, or claims a role to tax,
 steal, exchange or assassinate; a coup costs seven coins and cannot be
 answered. Any claim may be challenged, and a challenged player who holds the
 role proves it and the challenger loses an influence. Foreign aid, steals and
@@ -156,7 +157,9 @@ npm run cli -- run --game coup --seats 4 --seed 7
 A seat's view contains its own cards, public coin and influence counts, the
 claim and block on the table and the last 20 public log lines. Other hands and
 the deck order are secrets; the conformance gate checks every seat's view for
-them.
+them. Targeted rules and regression coverage are described in
+[docs/COUP-RULES.md](docs/COUP-RULES.md), including voluntary concession,
+third-party block challenges and one-influence exchanges.
 
 ## The cross-game compatibility gate
 

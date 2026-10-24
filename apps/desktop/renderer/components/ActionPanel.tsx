@@ -361,6 +361,10 @@ function describeAction(action: GameAction, view: GameView): string {
       return `Steal from ${target}`;
     case 'challenge':
       return 'Challenge the claim';
+    case 'prove':
+      return 'Prove the claim (reveal and replace)';
+    case 'concede':
+      return 'Concede (lose an influence)';
     case 'block':
       return `Block with ${role}`;
     case 'lose':
