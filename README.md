@@ -1,6 +1,6 @@
 # GameTable
 
-One human against up to ten AI models, on your own OpenRouter key, packaged as a
+One human against up to ten AI models, on your own OpenRouter key or local models, packaged as a
 Flatpak.
 
 ```
@@ -9,7 +9,7 @@ Flatpak.
 │   view(state, seatId)   → projection for the human AND agents │
 │   apply(state, action)  → validates; illegal moves rejected   │
 │                                                                │
-│ Seats: you (IPC) · up to 10 LlmSeats → gateway → OpenRouter    │
+│ Seats: you (IPC) · up to 10 LlmSeats → gateway → cloud/local   │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -31,6 +31,7 @@ makes hidden-role games work at all.
 | **M4** — results store, Bradley–Terry leaderboard, EV-loss ranking | **done** |
 | **M5** — signed `.flatpak` bundle, self-hosted repo, `.flatpakref` | **done** |
 | **M6** — third game: Coup (2–6 seats, challenges, blocks) and the game-author guide | **done** |
+| **M7** — local model seats, seat health/preflight, portable backup and restore | **done** |
 
 Everything is playable in-app and installs as a Flatpak. `GAMETABLE_DEMO=1
 flatpak run io.github.fpetersen5_cpu.GameTable` runs the whole UI against a fake
@@ -67,11 +68,14 @@ npm run cli -- gauntlet --seed 3
 npm run cli -- leaderboard --file ./results.jsonl
 ```
 
-Against real models (uses your own key):
+Against real models (cloud uses your own key; local needs none):
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 npm run cli -- run --game toy.mines --seats 4 --llm --model openai/gpt-4o-mini
+npm run cli -- run --game coup --seats 2 --llm --model llama3.1:8b \
+  --base-url http://127.0.0.1:11434/v1
+npm run cli -- models --base-url http://127.0.0.1:11434/v1
 ```
 
 Checks:
@@ -89,7 +93,7 @@ packages/engine/           referee, projections, event log, match runner, bots
 packages/games-buckshot/   duel rules, items, expectiminimax oracle, gauntlet
 packages/games-mafia/      roles, night phases, discussion, votes, runoff
 packages/games-coup/       hidden hands, claims, challenges, blocks, exchange
-packages/agent/            OpenRouter client, prompt builder, LLM seat, semaphore
+packages/agent/            OpenRouter/local clients, prompts, LLM seat, health
 packages/stats/            frozen results record, JSONL store, Bradley–Terry
 packages/sdk-conformance/  cross-game gate + toy game fixture + fake model
 apps/desktop/              Electron main + preload + React renderer
@@ -160,6 +164,9 @@ challenged in turn. The last seat with influence wins.
 
 ```bash
 npm run cli -- run --game coup --seats 4 --seed 7
+# local OpenAI-compatible endpoint: no OpenRouter key
+npm run cli -- run --game coup --seats 2 --llm --model llama3.1:8b \
+  --base-url http://127.0.0.1:11434/v1
 ```
 
 A seat's view contains its own cards, public coin and influence counts, the
@@ -196,7 +203,7 @@ fails the build if a literal `gameId` comparison appears outside
 
 ## Playing in the app
 
-1. **Table** — pick a game, add up to ten models (search the OpenRouter
+1. **Table** — pick a game, add up to ten OpenRouter or local models (search the OpenRouter
    catalogue, filter to free or structured-output models), optionally give each
    a play style and a voice (with a preview button), then **Deal me in**.
    **Watch AI vs AI** drops the human seat and reveals everything.
@@ -276,13 +283,43 @@ model cannot stall the table.
   on streamed calls.
 - A shared semaphore keeps ten thinking models from stampeding the key.
 
+## Local models, health and backups
+
+**Local seats.** In Settings, set an OpenAI-compatible endpoint (Ollama defaults to
+`http://127.0.0.1:11434/v1`). On the Table screen, add **Local model**, or type a
+model id if discovery is unavailable. Local seats need no OpenRouter key and
+cost nothing from OpenRouter. For Ollama:
+
+```bash
+ollama pull llama3.1:8b
+# Settings → Local model endpoint → http://127.0.0.1:11434/v1
+```
+
+The main process contacts the endpoint; only `http`/`https` URLs without
+credentials, queries or fragments are accepted. Mixed tables are allowed: each
+seat has its own provider.
+
+**Seat health.** **Test seats** makes a tiny real structured-output call per
+model before dealing. During a match, a health strip shows each seat as idle,
+ok, degraded (retries or reduced capabilities) or error, with retry and latency
+counts. Provider failures are classified as auth, rate limit, context length,
+schema, timeout, network, model, budget or invalid response. Rate limits and
+server failures are retried with backoff; a failed seat is reported rather than
+silently replaced.
+
+**Backups.** Settings → Backup and restore writes a single owner-only JSON file
+with settings, results and replays. It never contains the API key, live matches
+or browser state. Restore keeps existing match IDs and never overwrites them;
+you can keep current settings or replace them. Legacy replays import with a
+warning and may not support filtered seat views.
+
 ## Flatpak
 
 Built against `org.freedesktop.Platform//25.08`, `org.electronjs.Electron2.BaseApp//25.08`
 and the Node 22 SDK extension. (24.08 is end-of-life as of 2026.) The build is
 fully offline: npm tarballs come from `flatpak/node-sources.json` and Electron's
 binary is an explicit manifest source. Permissions are `--share=network` (the app
-is an OpenRouter client), Wayland/X11, audio, DRI and optional keyring access —
+speaks to OpenRouter or a local model endpoint), Wayland/X11, audio, DRI and optional keyring access —
 no `--filesystem=home`, so saves and exports go through the file chooser portal.
 
 Piper, eSpeak NG and the CPU-only ONNX Runtime are built from pinned source,
@@ -363,12 +400,14 @@ covered.
 
 Shipped: Buckshot Roulette with an expectiminimax oracle (leaderboard by EV lost
 per decision), Mafia/Werewolf with discussion, addressed speech and voting, Coup
-with challenges and blocks, the cross-game conformance gate, spectator mode,
-replays with seat perspectives, resume/rewind, arena runs, neural voices with
-per-seat selection, live token streaming, and the signed Flatpak. The
-game-author guide in [docs/WRITING-A-GAME.md](docs/WRITING-A-GAME.md) proves the
-SDK is a platform, not a Mafia-shaped abstraction.
+with challenges and blocks, local OpenAI-compatible model seats, seat health and
+preflight tests, portable backup/restore, the cross-game conformance gate,
+spectator mode, replays with seat perspectives, resume/rewind, arena runs,
+neural voices with per-seat selection, live token streaming, and the signed
+Flatpak. The game-author guide in
+[docs/WRITING-A-GAME.md](docs/WRITING-A-GAME.md) proves the SDK is a platform,
+not a Mafia-shaped abstraction.
 
-Next: local models through an OpenAI-compatible endpoint, then final Flathub
-submission checks. The speech stack now has source-build recipes; see the
-release checklist for the remaining hosting, metadata and licensing gates.
+Next: final Flathub submission checks. The speech stack now has source-build
+recipes; see the release checklist for the remaining hosting, metadata and
+licensing gates.

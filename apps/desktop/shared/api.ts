@@ -1,7 +1,19 @@
-import type { KeyInfo, ModelInfo } from '@gametable/agent';
+import type { KeyInfo, ModelInfo, ProviderErrorKind } from '@gametable/agent';
 import type { ChatLine, GameAction, GameView, MatchEvent, Phase, Seat, SeatInfo } from '@gametable/engine';
+import type { MatchRecord } from '@gametable/stats';
 
-export type { KeyInfo, ModelInfo, ChatLine, GameAction, GameView, MatchEvent, Phase, Seat, SeatInfo };
+export type {
+  KeyInfo,
+  ModelInfo,
+  ProviderErrorKind,
+  ChatLine,
+  GameAction,
+  GameView,
+  MatchEvent,
+  Phase,
+  Seat,
+  SeatInfo,
+};
 
 /** The renderer's entire surface. No key, no prompts, no game state beyond views. */
 export interface DesktopApi {
@@ -9,6 +21,9 @@ export interface DesktopApi {
   setKey(key: string): Promise<KeyResult>;
   clearKey(): Promise<void>;
   listModels(refresh?: boolean): Promise<ModelCatalogResult>;
+  listLocalModels(baseUrl: string): Promise<LocalModelsResult>;
+  /** A tiny real call per seat; advisory, before dealing. */
+  testSeats(seats: SeatTestRequest[]): Promise<SeatTestResult[]>;
   loadConfig(): Promise<AppConfig>;
   saveConfig(config: AppConfig): Promise<void>;
 
@@ -37,6 +52,8 @@ export interface DesktopApi {
   ): Promise<{ views: GameView[] | null; error?: string }>;
   /** Public-only unless the user explicitly selects another perspective. */
   exportTranscript(matchId: string, perspective?: TranscriptPerspective): Promise<ExportResult>;
+  exportBackup(): Promise<ExportResult>;
+  importBackup(): Promise<BackupImportResult>;
   leaderboard(): Promise<LeaderboardRow[]>;
   arenaStart(config: ArenaConfig): Promise<{ ok: boolean; error?: string }>;
   arenaPause(paused: boolean): Promise<void>;
@@ -84,8 +101,13 @@ export interface SeatPreview {
   text: string;
 }
 
+export type ProviderKind = 'openrouter' | 'local';
+
 export interface SeatConfig {
   modelId: string;
+  provider?: ProviderKind;
+  /** OpenAI-compatible base URL for local seats, e.g. http://127.0.0.1:11434/v1. */
+  baseUrl?: string;
   persona?: string;
   /** Piper speaker index; undefined picks a stable voice from the seat id. */
   voice?: number;
@@ -97,6 +119,8 @@ export interface SeatConfig {
 export interface AppConfig {
   humanName: string;
   seats: SeatConfig[];
+  /** Default endpoint used when adding a local model seat. */
+  localEndpoint: string;
   /** Hard ceiling for a single match, in USD. */
   budgetUsd: number;
   /** Delay between AI actions, higher is faster. */
@@ -108,6 +132,7 @@ export interface AppConfig {
 export const DEFAULT_CONFIG: AppConfig = {
   humanName: 'You',
   seats: [],
+  localEndpoint: 'http://127.0.0.1:11434/v1',
   budgetUsd: 2,
   speed: 1,
   voice: true,
@@ -134,6 +159,8 @@ export interface StartMatchRequest {
     name: string;
     kind: 'human' | 'llm';
     modelId?: string;
+    provider?: ProviderKind;
+    baseUrl?: string;
     persona?: string;
     voice?: number;
     budgetUsd?: number;
@@ -163,6 +190,8 @@ export interface TableSnapshot {
   awaitingHuman: boolean;
   /** Per-seat transport failures, shown as a banner instead of failing silently. */
   seatIssues: SeatIssue[];
+  /** Live health for every model seat, including retries and degraded modes. */
+  seatHealth: SeatHealth[];
   /** Seats the human has taken over from a model. */
   takenOverSeats: string[];
   /** ms left in the current phase's deadline, or null when it has none. */
@@ -179,6 +208,44 @@ export interface SeatIssue {
   name: string;
   message: string;
   count: number;
+  kind?: ProviderErrorKind;
+}
+
+export interface SeatHealth {
+  seatId: string;
+  name: string;
+  modelId?: string;
+  status: 'idle' | 'ok' | 'degraded' | 'error';
+  calls: number;
+  errors: number;
+  retries: number;
+  costUsd: number;
+  avgLatencyMs: number;
+  message?: string;
+  kind?: ProviderErrorKind;
+}
+
+export interface SeatTestRequest {
+  name: string;
+  modelId: string;
+  provider?: ProviderKind;
+  baseUrl?: string;
+}
+
+export interface SeatTestResult {
+  name: string;
+  modelId: string;
+  ok: boolean;
+  kind?: ProviderErrorKind;
+  message?: string;
+  latencyMs: number;
+  costUsd: number;
+  structured: boolean;
+}
+
+export interface LocalModelsResult {
+  models: ModelInfo[];
+  error?: string;
 }
 
 export interface SeatSummary {
@@ -217,6 +284,8 @@ export interface MatchSummary {
   eventCount: number;
   metrics: Record<string, number>;
   aborted?: boolean;
+  /** False for local-only matches where no debrief model is configured. */
+  debriefExpected?: boolean;
 }
 
 export interface ArenaSeatConfig {
@@ -269,6 +338,9 @@ export type TranscriptPerspective =
   | { mode: 'seat'; seatId: string }
   | { mode: 'omniscient' };
 
+export const REPLAY_FORMAT_VERSION = 2;
+export const BACKUP_FORMAT_VERSION = 1;
+
 export interface ReplayBundle {
   /** Storage format; bumped when a field's meaning changes. */
   formatVersion?: number;
@@ -297,4 +369,24 @@ export interface ExportResult {
   ok: boolean;
   path?: string;
   error?: string;
+}
+
+export interface BackupBundle {
+  format: 'gametable-backup';
+  formatVersion: number;
+  appVersion: string;
+  exportedAt: number;
+  config: AppConfig;
+  results: MatchRecord[];
+  matches: ReplayBundle[];
+}
+
+export interface BackupImportResult {
+  ok: boolean;
+  error?: string;
+  importedMatches?: number;
+  skippedMatches?: number;
+  importedResults?: number;
+  legacyMatches?: number;
+  configRestored?: boolean;
 }

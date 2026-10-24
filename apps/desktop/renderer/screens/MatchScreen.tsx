@@ -132,8 +132,8 @@ export function MatchScreen(props: Props) {
           <ul className="issue-list">
             {snapshot.seatIssues.map((issue) => (
               <li key={issue.seatId}>
-                <span>{issue.name}</span>: {issue.message}{' '}
-                <span className="muted">({issue.count}×)</span>
+                <span>{issue.name}</span>: {issue.kind ? `[${issue.kind}] ` : ''}
+                {issue.message} <span className="muted">({issue.count}×)</span>
               </li>
             ))}
           </ul>
@@ -141,6 +141,24 @@ export function MatchScreen(props: Props) {
       )}
       {snapshot.status === 'aborted' && (
         <div className="banner warn-banner">Match aborted.</div>
+      )}
+
+      {snapshot.seatHealth.length > 0 && (
+        <div className="seat-health" aria-label="Model seat health">
+          {snapshot.seatHealth.map((seat) => (
+            <span
+              key={seat.seatId}
+              className={`seat-health-item ${seat.status}`}
+              title={seat.message ?? `${seat.calls} calls, ${seat.retries} retries`}
+            >
+              <span className="health-dot" />
+              <strong>{seat.name}</strong>
+              <span className="muted">{seat.status}</span>
+              {seat.retries > 0 && <span className="muted">{seat.retries} retries</span>}
+              {seat.avgLatencyMs > 0 && <span className="muted">{seat.avgLatencyMs} ms</span>}
+            </span>
+          ))}
+        </div>
       )}
 
       <GameTable
@@ -260,6 +278,8 @@ function PostGame(props: {
         <h3>Debrief</h3>
         {props.debrief ? (
           <p>{props.debrief.text}</p>
+        ) : summary.debriefExpected === false ? (
+          <p className="muted">No debrief model is configured for this match.</p>
         ) : (
           <p className="muted">Analysing the match…</p>
         )}

@@ -1,4 +1,13 @@
-import type { AppConfig, ArenaConfig, StartMatchRequest, TranscriptPerspective } from '../shared/api.js';
+import { normalizeOpenAIBaseUrl } from '@gametable/agent';
+import type {
+  AppConfig,
+  ArenaConfig,
+  ProviderKind,
+  SeatTestRequest,
+  StartMatchRequest,
+  TranscriptPerspective,
+} from '../shared/api.js';
+import { DEFAULT_CONFIG } from '../shared/api.js';
 
 /** A rejected request. Handlers turn this into a user-facing error. */
 export class BadRequest extends Error {
@@ -56,6 +65,39 @@ function optionalVoice(value: unknown): number | undefined {
   return Math.round(asNumber(value, 'voice', 0, 903));
 }
 
+function optionalProvider(value: unknown, field: string): ProviderKind | undefined {
+  if (value === undefined || value === null || value === 'openrouter') return undefined;
+  if (value === 'local') return 'local';
+  throw new BadRequest(`${field} must be openrouter or local`);
+}
+
+function localEndpoint(value: unknown, field: string): string {
+  const text = asText(value, field, 300);
+  try {
+    return normalizeOpenAIBaseUrl(text);
+  } catch (error) {
+    throw new BadRequest(error instanceof Error ? error.message : `${field} is invalid`);
+  }
+}
+
+function seatProvider(
+  seat: Record<string, unknown>,
+  field: string,
+  fallbackEndpoint: string,
+): { provider?: ProviderKind; baseUrl?: string } {
+  const provider = optionalProvider(seat.provider, `${field} provider`);
+  if (provider !== 'local') {
+    return provider === undefined ? {} : { provider };
+  }
+  return {
+    provider,
+    baseUrl: localEndpoint(
+      seat.baseUrl === undefined || seat.baseUrl === '' ? fallbackEndpoint : seat.baseUrl,
+      `${field} base URL`,
+    ),
+  };
+}
+
 function asList(value: unknown, field: string, min: number, max: number): unknown[] {
   if (!Array.isArray(value) || value.length < min || value.length > max) {
     throw new BadRequest(`${field} must contain ${min}–${max} items`);
@@ -72,14 +114,16 @@ export function validateStartRequest(raw: unknown): StartMatchRequest {
       throw new BadRequest(`seat ${index + 1} must be human or llm`);
     }
     const seatKind: 'human' | 'llm' = kind;
-    const modelId = optionalText(seat.modelId, `seat ${index + 1} modelId`);
+    const modelId = optionalText(seat.modelId, `seat ${index + 1} modelId`, 200);
     if (kind === 'llm' && !modelId) {
       throw new BadRequest(`seat ${index + 1} is an AI seat without a model`);
     }
+    const provider = seatProvider(seat, `seat ${index + 1}`, DEFAULT_CONFIG.localEndpoint);
     return {
       name: asText(seat.name, `seat ${index + 1} name`, 64),
       kind: seatKind,
       ...(modelId ? { modelId } : {}),
+      ...provider,
       ...(optionalText(seat.persona, 'persona') ? { persona: optionalText(seat.persona, 'persona') } : {}),
       ...(optionalVoice(seat.voice) === undefined ? {} : { voice: optionalVoice(seat.voice) }),
       ...(seat.budgetUsd === undefined
@@ -100,10 +144,15 @@ export function validateStartRequest(raw: unknown): StartMatchRequest {
 
 export function validateConfig(raw: unknown): AppConfig {
   const config = record(raw, 'config');
+  const endpoint = localEndpoint(
+    config.localEndpoint ?? DEFAULT_CONFIG.localEndpoint,
+    'localEndpoint',
+  );
   const seats = asList(config.seats, 'seats', 0, 10).map((entry, index) => {
     const seat = record(entry, `seat ${index + 1}`);
     return {
-      modelId: asText(seat.modelId, `seat ${index + 1} modelId`),
+      modelId: asText(seat.modelId, `seat ${index + 1} modelId`, 200),
+      ...seatProvider(seat, `seat ${index + 1}`, endpoint),
       ...(optionalText(seat.persona, 'persona') ? { persona: optionalText(seat.persona, 'persona') } : {}),
       ...(optionalVoice(seat.voice) === undefined ? {} : { voice: optionalVoice(seat.voice) }),
       ...(seat.temperature === undefined
@@ -118,10 +167,26 @@ export function validateConfig(raw: unknown): AppConfig {
   return {
     humanName: asText(config.humanName ?? 'You', 'humanName', 64),
     seats,
+    localEndpoint: endpoint,
     budgetUsd: asNumber(config.budgetUsd ?? 2, 'budgetUsd', 0, 1000),
     speed: asNumber(config.speed ?? 1, 'speed', 0.5, 8),
     voice: config.voice === undefined ? true : asBoolean(config.voice, 'voice'),
   };
+}
+
+export function validateLocalEndpoint(raw: unknown): string {
+  return localEndpoint(raw, 'local endpoint');
+}
+
+export function validateSeatTests(raw: unknown): SeatTestRequest[] {
+  return asList(raw, 'seats', 1, 10).map((entry, index) => {
+    const seat = record(entry, `seat ${index + 1}`);
+    return {
+      name: asText(seat.name, `seat ${index + 1} name`, 64),
+      modelId: asText(seat.modelId, `seat ${index + 1} modelId`, 200),
+      ...seatProvider(seat, `seat ${index + 1}`, DEFAULT_CONFIG.localEndpoint),
+    };
+  });
 }
 
 export function validateArena(raw: unknown): ArenaConfig {

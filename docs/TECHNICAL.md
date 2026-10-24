@@ -43,10 +43,10 @@ for the full dependency audit. The roadmap below describes the remaining work.
 | `packages/games-buckshot` | Duel rules, nine items, expectiminimax oracle, gauntlet |
 | `packages/games-mafia` | Roles, night phases, discussion, votes, runoff, view filtering |
 | `packages/games-coup` | Hidden hands, claims, challenges, blocks, exchange, view filtering |
-| `packages/agent` | OpenRouter client, prompt builder, JSON schema, `LlmController`, streaming, redaction, semaphore |
+| `packages/agent` | OpenRouter and local clients, prompt builder, JSON schema, `LlmController`, streaming, retries, redaction, error classification, probes |
 | `packages/stats` | Frozen results record, JSONL store, Bradley–Terry ratings |
 | `packages/sdk-conformance` | Cross-game gate, toy game fixture, fake model transport |
-| `apps/desktop` | Electron main, preload, React renderer, sessions, arena, TTS/STT |
+| `apps/desktop` | Electron main, preload, React renderer, sessions, arena, health, backups, TTS/STT |
 | `apps/cli` | Headless runner and eval harness |
 | `flatpak/` | Manifest, metainfo, icon, launcher, source generator, build/release scripts |
 
@@ -347,11 +347,14 @@ The full threat model is in [SECURITY.md](../SECURITY.md); the essentials:
   projections; selected-seat and omniscient exports require native consent and
   contain explicit sharing warnings. Filtered exports never include raw events
   and fail closed on incompatible replays. The post-game model debrief is
-  deliberately omniscient, unlike seat-playing prompts.
+  deliberately omniscient, unlike seat-playing prompts. Backups exclude the
+  API key, live sessions and browser state; restore never overwrites an existing
+  match ID. Local model prompts go only to the endpoint the user configured.
 
 Not protected against: root or the same user account, a locked/unavailable
-keyring (fallback is plaintext `0600`), metadata visible to OpenRouter by
-design, and replay/transcript contents at rest (permission-restricted only).
+keyring (fallback is plaintext `0600`), metadata visible to OpenRouter or a
+configured local endpoint by design, and replay/transcript/backup contents at
+rest (permission-restricted only).
 
 ---
 
@@ -398,11 +401,11 @@ The headless CLI uses the same referee and supports `run`, `gauntlet`, `models`,
 - counterfactual hidden-state tests, deliberately leaky fixtures, private
   transition logs and live IPC projection checks;
 - agent tests for redaction, prompt injection escaping, streaming, previews,
-  snapshots and shared budgets;
+  snapshots, shared budgets, local clients, error classification and probes;
 - desktop tests for secret storage/migration/fallback, secure files, validation,
-  public/seat/omniscient transcript filtering and native consent, replay
-  compatibility, arena budgets and resumable session
-  memory;
+  public/seat/omniscient transcript filtering and native consent, backup
+  validation/merge, replay compatibility, arena budgets, seat health and
+  resumable session memory;
 - renderer tests for the recorder.
 
 Manual verification covers the installed Flatpak: keyring storage and key
@@ -416,7 +419,12 @@ streaming diagnostics.
 ## 9. Known limitations
 
 - **One human seat per match**; there is no networked or multi-human play.
-- **OpenRouter only** — one provider, one key. Local models are on the roadmap.
+- **Cloud provider is OpenRouter**; local seats support unauthenticated
+  OpenAI-compatible endpoints. Authenticated local endpoints are not yet
+  supported. The endpoint sees the prompts for its seats.
+- **Local endpoint reachability**: the app validates http(s) URLs and rejects
+  credentials/queries, but a user-configured endpoint can still reach hosts on
+  the local network.
 - **TTS excerpt**: long speeches are read as a sentence-aligned excerpt, not in
   full, to bound lag.
 - **Replay files are not encrypted**, only `0600`; they contain hidden roles and
@@ -424,8 +432,8 @@ streaming diagnostics.
   state; seat and omniscient exports are private records, not safe public shares.
 - **Keyring fallback is plaintext** when no secret service is running; the UI
   states this.
-- **Metadata exposure**: model choice, prompts, token counts and timing go to
-  OpenRouter by design.
+- **Metadata exposure**: cloud model choice, prompts, token counts and timing go
+  to OpenRouter by design. Local prompts go to the endpoint you configure.
 - **Arena overshoot is bounded, not zero**: the shared budget stops the match,
   but calls already in flight when the cap trips may add a small amount.
 - **Flathub readiness**: the opaque Piper binary bundle has been replaced by
@@ -441,9 +449,7 @@ the frozen contract and is covered by the conformance gate. The game-author
 guide in [`docs/WRITING-A-GAME.md`](WRITING-A-GAME.md) is the practical proof
 that the SDK is a platform, not a Mafia-shaped abstraction. Remaining:
 
-1. **Local models** through an OpenAI-compatible endpoint (for example Ollama),
-   with per-seat provider choice and no key needed for local seats.
-2. **Flathub submission** after the app is feature-frozen, with the source-built
+1. **Flathub submission** after the app is feature-frozen, with the source-built
    speech stack, final metainfo/screenshots and licensing/manifest review.
 
 Deliberately deferred: multi-human/networked play (changes the trust model),
@@ -464,6 +470,8 @@ npm run lint:games
 npm test
 npm run cli -- run --game mafia --seats 8 --seed 11
 npm run cli -- run --game coup --seats 4 --seed 7
+npm run cli -- run --game coup --seats 2 --llm --model llama3.1:8b \
+  --base-url http://127.0.0.1:11434/v1
 ```
 
 Key paths:

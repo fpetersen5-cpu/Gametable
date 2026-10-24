@@ -1,10 +1,12 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AppConfig,
+  AppStatus,
   GameInfo,
   ModelInfo,
   ResumableMatch,
   SeatConfig,
+  SeatTestResult,
   StartMatchRequest,
   VoicePreset,
 } from '../../shared/api';
@@ -12,11 +14,13 @@ import { shortModel } from '../game-data';
 
 interface Props {
   config: AppConfig;
+  status: AppStatus;
   models: ModelInfo[];
   modelsError: string | null;
   games: GameInfo[];
   onChange: (config: AppConfig) => Promise<void>;
   onRefreshModels: (refresh: boolean) => Promise<void>;
+  onOpenSettings: () => void;
   onStart: (request: StartMatchRequest) => Promise<{ ok: boolean; error?: string }>;
   resumable: ResumableMatch[];
   voices: VoicePreset[];
@@ -30,6 +34,11 @@ export function TableSetup(props: Props) {
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [checks, setChecks] = useState<
+    Record<number, { testing?: boolean; result?: SeatTestResult }>
+  >({});
+  const [localPicking, setLocalPicking] = useState(false);
   const [previewing, setPreviewing] = useState<number | null>(null);
   const previewAudio = useRef<HTMLAudioElement | null>(null);
 
@@ -49,6 +58,7 @@ export function TableSetup(props: Props) {
     models.find((model) => model.id === seat.modelId)?.name ?? shortModel(seat.modelId);
 
   const estimate = config.seats.reduce((sum, seat) => {
+    if (seat.provider === 'local') return sum;
     const model = models.find((entry) => entry.id === seat.modelId);
     if (!model) return sum;
     // Rough: ~16 calls per seat, 1.6k prompt + 220 completion tokens each.
@@ -65,6 +75,8 @@ export function TableSetup(props: Props) {
         name: seatName(seat),
         kind: 'llm',
         modelId: seat.modelId,
+        ...(seat.provider ? { provider: seat.provider } : {}),
+        ...(seat.baseUrl ? { baseUrl: seat.baseUrl } : {}),
         ...(seat.persona ? { persona: seat.persona } : {}),
         ...(seat.voice === undefined ? {} : { voice: seat.voice }),
         ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
@@ -89,7 +101,37 @@ export function TableSetup(props: Props) {
     }
   };
 
-  const setSeats = (seats: SeatConfig[]) => void onChange({ ...config, seats });
+  const setSeats = (seats: SeatConfig[]) => {
+    setChecks({});
+    void onChange({ ...config, seats });
+  };
+
+  const testSeats = async () => {
+    if (config.seats.length === 0) return;
+    setError(null);
+    setTesting(true);
+    setChecks(
+      Object.fromEntries(config.seats.map((_, index) => [index, { testing: true }])),
+    );
+    try {
+      const results = await window.gametable.testSeats(
+        config.seats.map((seat) => ({
+          name: seatName(seat),
+          modelId: seat.modelId,
+          ...(seat.provider ? { provider: seat.provider } : {}),
+          ...(seat.baseUrl ? { baseUrl: seat.baseUrl } : {}),
+        })),
+      );
+      setChecks(
+        Object.fromEntries(results.map((result, index) => [index, { result }])),
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Seat test failed');
+      setChecks({});
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const previewVoice = async (index: number, seat: SeatConfig) => {
     previewAudio.current?.pause();
@@ -119,15 +161,41 @@ export function TableSetup(props: Props) {
         <div>
           <h1>The table</h1>
           <p className="muted">
-            One human against up to ten models, each on your own OpenRouter key.
+            One human against up to ten models, using OpenRouter or local OpenAI-compatible seats.
           </p>
         </div>
         <div className="head-actions">
-          <button className="ghost" onClick={() => void props.onRefreshModels(true)}>
+          <button
+            className="ghost"
+            onClick={() => void testSeats()}
+            disabled={testing || config.seats.length === 0}
+          >
+            {testing ? 'Testing…' : 'Test seats'}
+          </button>
+          <button
+            className="ghost"
+            onClick={() => void props.onRefreshModels(true)}
+            disabled={!props.status.hasKey}
+          >
             Refresh models
           </button>
         </div>
       </header>
+
+      {!props.status.hasKey && (
+        <section className="callout">
+          <div>
+            <strong>OpenRouter is not connected</strong>
+            <p className="muted">
+              Local model seats work without a key. Add an OpenRouter key in Settings to use cloud
+              models.
+            </p>
+          </div>
+          <button className="ghost" onClick={props.onOpenSettings}>
+            Open Settings
+          </button>
+        </section>
+      )}
 
       {props.resumable.length > 0 && (
         <section className="resume-card">
@@ -196,6 +264,9 @@ export function TableSetup(props: Props) {
           <div key={`${seat.modelId}-${index}`} className="seat-card">
             <div className="seat-top">
               <span className="badge">AI {index + 1}</span>
+              <span className={`pill ${seat.provider === 'local' ? 'free' : ''}`}>
+                {seat.provider === 'local' ? 'local' : 'OpenRouter'}
+              </span>
               <button
                 className="icon"
                 aria-label="Remove seat"
@@ -205,7 +276,9 @@ export function TableSetup(props: Props) {
               </button>
             </div>
             <strong className="seat-name">{seatName(seat)}</strong>
-            <small className="seat-sub">{seat.modelId}</small>
+            <small className="seat-sub">
+              {seat.provider === 'local' ? `${seat.modelId} · ${seat.baseUrl ?? ''}` : seat.modelId}
+            </small>
             <input
               className="persona-input"
               placeholder="play style (optional)"
@@ -262,15 +335,30 @@ export function TableSetup(props: Props) {
                 setSeats(seats);
               }}
             />
+            {checks[index]?.testing && <small className="seat-check">Testing connection…</small>}
+            {checks[index]?.result && (
+              <small className={`seat-check ${checks[index]?.result?.ok ? 'ok' : 'bad'}`}>
+                {checks[index]?.result?.ok
+                  ? `${checks[index]?.result?.structured ? 'ready' : 'reachable, no structured JSON'} · ${
+                      checks[index]?.result?.latencyMs
+                    } ms`
+                  : `${checks[index]?.result?.kind ?? 'error'}: ${checks[index]?.result?.message ?? 'failed'}`}
+              </small>
+            )}
           </div>
         ))}
 
         {config.seats.length < 10 && (
-          <button className="seat-card add" onClick={() => setPicking(true)}>
+          <div className="seat-card add">
             <span className="plus">+</span>
-            <span>Add a model</span>
+            <button className="ghost" onClick={() => setPicking(true)}>
+              OpenRouter model
+            </button>
+            <button className="ghost" onClick={() => setLocalPicking(true)}>
+              Local model
+            </button>
             <small>{10 - config.seats.length} seats left</small>
-          </button>
+          </div>
         )}
       </div>
 
@@ -309,6 +397,36 @@ export function TableSetup(props: Props) {
           onPick={(model) => {
             setSeats([...config.seats, { modelId: model.id }]);
             setPicking(false);
+          }}
+        />
+      )}
+
+      {localPicking && (
+        <LocalModelPicker
+          endpoint={config.localEndpoint}
+          onClose={() => setLocalPicking(false)}
+          onPick={(model, endpoint) => {
+            setChecks({});
+            setError(null);
+            try {
+              const url = new URL(endpoint);
+              if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error();
+            } catch {
+              setError('Local endpoints must be http or https URLs.');
+              return;
+            }
+            void onChange({
+              ...config,
+              localEndpoint: endpoint,
+              seats: [
+                ...config.seats,
+                { modelId: model.id, provider: 'local', baseUrl: endpoint },
+              ],
+            })
+              .then(() => setLocalPicking(false))
+              .catch((failure: unknown) =>
+                setError(failure instanceof Error ? failure.message : 'Invalid local endpoint'),
+              );
           }}
         />
       )}
@@ -393,6 +511,126 @@ function ModelPicker(props: {
           ))}
           {filtered.length === 0 && <li className="empty">No models match that filter.</li>}
         </ul>
+      </div>
+    </div>
+  );
+}
+
+function LocalModelPicker(props: {
+  endpoint: string;
+  onPick: (model: ModelInfo, endpoint: string) => void;
+  onClose: () => void;
+}) {
+  const [endpoint, setEndpoint] = useState(props.endpoint);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState('');
+  const [manual, setManual] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await window.gametable.listLocalModels(endpoint);
+      setModels(result.models);
+      if (result.error) setError(result.error);
+    } catch (failure) {
+      setModels([]);
+      setError(failure instanceof Error ? failure.message : 'Could not reach that endpoint');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // Load once for the endpoint carried in by the dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filtered = models.filter((model) =>
+    !query.trim() ? true : `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  return (
+    <div className="modal-backdrop" onClick={props.onClose}>
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Add a local model</h2>
+          <button className="icon" onClick={props.onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p className="muted">
+          Ollama and other OpenAI-compatible servers. The endpoint is contacted by the main process.
+        </p>
+        <div className="filters">
+          <input
+            aria-label="Local endpoint"
+            value={endpoint}
+            onChange={(event) => setEndpoint(event.target.value)}
+            spellCheck={false}
+          />
+          <button className="ghost" onClick={() => void load()} disabled={loading}>
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+        {error && <p className="error">{error}</p>}
+        <div className="filters">
+          <input
+            placeholder="Filter models…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <ul className="model-list">
+          {filtered.map((model) => (
+            <li key={model.id}>
+              <button className="model-row" onClick={() => props.onPick(model, endpoint)}>
+                <div className="model-main">
+                  <strong>{model.name}</strong>
+                  <small>{model.id}</small>
+                </div>
+                <div className="model-meta">
+                  <span>{model.contextLength ? formatContext(model.contextLength) : 'local'}</span>
+                  <span className="pill free">$0</span>
+                </div>
+              </button>
+            </li>
+          ))}
+          {!loading && filtered.length === 0 && (
+            <li className="empty">No models discovered. You can add a model id manually.</li>
+          )}
+        </ul>
+        <div className="filters">
+          <input
+            placeholder="Model id, e.g. llama3.1:8b"
+            value={manual}
+            onChange={(event) => setManual(event.target.value)}
+          />
+          <button
+            className="primary"
+            disabled={!manual.trim()}
+            onClick={() =>
+              props.onPick(
+                {
+                  id: manual.trim(),
+                  name: manual.trim(),
+                  description: `Local model at ${endpoint}`,
+                  contextLength: 0,
+                  promptPrice: 0,
+                  completionPrice: 0,
+                  supportedParameters: ['structured_outputs', 'response_format'],
+                  free: true,
+                },
+                endpoint,
+              )
+            }
+          >
+            Add id
+          </button>
+        </div>
       </div>
     </div>
   );

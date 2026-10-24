@@ -2119,3 +2119,94 @@ button.mic:disabled {
 .seat-voice .icon:disabled {
   opacity: 0.5;
 }
+
+/* local seats, health and key entry ---------------------------------- */
+
+.seat-card.add {
+  cursor: default;
+}
+
+.seat-card.add button {
+  width: 100%;
+}
+
+.seat-card.add:hover {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.seat-check {
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.seat-check.ok {
+  color: #6ee7b7;
+}
+
+.seat-check.bad {
+  color: #fca5a5;
+}
+
+.seat-health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-raised);
+}
+
+.seat-health-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-card);
+}
+
+.seat-health-item .health-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.seat-health-item.ok .health-dot {
+  background: #34d399;
+}
+
+.seat-health-item.degraded .health-dot {
+  background: #fbbf24;
+}
+
+.seat-health-item.error .health-dot {
+  background: #f87171;
+}
+
+.key-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.key-form label {
+  width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.key-form input {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.budget.wide input {
+  width: 100%;
+}

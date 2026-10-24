@@ -23,6 +23,7 @@ import {
 import { Semaphore } from './semaphore.js';
 import { redact } from './redact.js';
 import { actionTextPreview, actionTypePreview } from './preview.js';
+import { classifyError, type ProviderErrorKind } from './errors.js';
 
 export interface LlmSeatConfig {
   model: string;
@@ -63,11 +64,28 @@ export interface LlmSeatState {
   invalidActions: number;
   fallbacks: number;
   errors: number;
+  retries: number;
   schemaSupported: boolean;
   temperatureSupported: boolean;
   lastOkCall: number;
   lastErrorCall: number;
   lastError: string | null;
+  lastErrorKind: ProviderErrorKind | null;
+}
+
+export interface LlmSeatHealth {
+  status: 'idle' | 'ok' | 'degraded' | 'error';
+  calls: number;
+  errors: number;
+  retries: number;
+  costUsd: number;
+  latencyMs: number;
+  avgLatencyMs: number;
+  recovered: boolean;
+  lastError: string | null;
+  lastErrorKind: ProviderErrorKind | null;
+  schemaSupported: boolean;
+  temperatureSupported: boolean;
 }
 
 export interface LlmControllerDeps {
@@ -110,8 +128,10 @@ export class LlmController implements Controller {
     invalidActions: 0,
     fallbacks: 0,
     errors: 0,
+    retries: 0,
   };
   private lastError: string | null = null;
+  private lastErrorKind: ProviderErrorKind | null = null;
   /** Some models do not accept response_format / temperature at all. */
   private schemaSupported = true;
   private temperatureSupported = true;
@@ -229,6 +249,36 @@ export class LlmController implements Controller {
     };
   }
 
+  /** Provider health for the live table and preflight diagnostics. */
+  health(): LlmSeatHealth {
+    const recovered = this.lastOkCall > this.lastErrorCall;
+    const degraded = !this.schemaSupported || !this.temperatureSupported || this.counters.retries > 0;
+    const status: LlmSeatHealth['status'] =
+      this.counters.calls === 0
+        ? 'idle'
+        : this.counters.errors > 0 && !recovered
+          ? 'error'
+          : degraded
+            ? 'degraded'
+            : 'ok';
+    return {
+      status,
+      calls: this.counters.calls,
+      errors: this.counters.errors,
+      retries: this.counters.retries,
+      costUsd: Number(this.counters.costUsd.toFixed(6)),
+      latencyMs: this.counters.latencyMs,
+      avgLatencyMs: this.counters.calls
+        ? Math.round(this.counters.latencyMs / this.counters.calls)
+        : 0,
+      recovered,
+      lastError: this.lastError,
+      lastErrorKind: this.lastErrorKind,
+      schemaSupported: this.schemaSupported,
+      temperatureSupported: this.temperatureSupported,
+    };
+  }
+
   /** The seat's memory and counters, for persisting a resumable match. */
   snapshot(): LlmSeatState {
     return {
@@ -239,6 +289,7 @@ export class LlmController implements Controller {
       lastOkCall: this.lastOkCall,
       lastErrorCall: this.lastErrorCall,
       lastError: this.lastError,
+      lastErrorKind: this.lastErrorKind,
     };
   }
 
@@ -262,12 +313,17 @@ export class LlmController implements Controller {
       invalidActions: number(saved.invalidActions),
       fallbacks: number(saved.fallbacks),
       errors: number(saved.errors),
+      retries: number(saved.retries),
     };
     this.schemaSupported = saved.schemaSupported !== false;
     this.temperatureSupported = saved.temperatureSupported !== false;
     this.lastOkCall = number(saved.lastOkCall);
     this.lastErrorCall = number(saved.lastErrorCall);
     this.lastError = typeof saved.lastError === 'string' ? saved.lastError.slice(0, 300) : null;
+    this.lastErrorKind =
+      typeof saved.lastErrorKind === 'string'
+        ? (saved.lastErrorKind as ProviderErrorKind)
+        : null;
   }
 
   /** The most recent transport/API failure, for the table banner. */
@@ -312,6 +368,7 @@ export class LlmController implements Controller {
       // The failed probe was a capability mismatch, not a seat failure.
       this.counters.errors = Math.max(0, this.counters.errors - 1);
       this.lastError = null;
+      this.lastErrorKind = null;
       return attempt();
     }
   }
@@ -350,11 +407,18 @@ export class LlmController implements Controller {
         signal: AbortSignal.timeout(
           Math.max(1_000, Math.min(req.timeoutMs, config.timeoutMs ?? 90_000)),
         ),
+        onRetry: (_attempt, _delay, error) => {
+          this.counters.retries += 1;
+          this.lastError = describeError(error);
+          this.lastErrorKind = classifyError(error);
+          this.lastErrorCall = this.counters.calls;
+        },
         ...(onText ? { onText } : {}),
       });
     } catch (error) {
       this.counters.errors += 1;
       this.lastError = describeError(error);
+      this.lastErrorKind = classifyError(error);
       this.lastErrorCall = this.counters.calls;
       throw error;
     }

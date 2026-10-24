@@ -10,8 +10,18 @@ export class ResultsStore {
   constructor(private readonly file: string) {}
 
   async append(record: MatchRecord): Promise<void> {
+    await this.appendMany([record]);
+  }
+
+  /** One atomic append for imports; the caller deduplicates match IDs. */
+  async appendMany(records: MatchRecord[]): Promise<void> {
+    if (records.length === 0) return;
     await mkdir(dirname(this.file), { recursive: true });
-    await appendFile(this.file, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600 });
+    await appendFile(
+      this.file,
+      records.map((record) => `${JSON.stringify(record)}\n`).join(''),
+      { encoding: 'utf8', mode: 0o600 },
+    );
   }
 
   async all(): Promise<MatchRecord[]> {

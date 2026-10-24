@@ -11,7 +11,7 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
 
 finish-args:
-  # The whole application is an OpenRouter client.
+  # Cloud (OpenRouter) and user-configured local model servers.
   - --share=network
   # X11 fallback uses shared-memory IPC (required by Flathub's X11 checks).
   - --share=ipc

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type {
   AppConfig,
   AppStatus,
@@ -88,7 +88,11 @@ export function App() {
   }, [screen]);
 
   useEffect(() => {
-    if (!status?.hasKey) return;
+    if (!status?.hasKey) {
+      setModels([]);
+      setModelsError(null);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -124,16 +128,6 @@ export function App() {
   }, []);
 
   if (!status || !config) return <Splash />;
-
-  if (!status.hasKey) {
-    return (
-      <KeyGate
-        onAccepted={async () => {
-          await refreshStatus();
-        }}
-      />
-    );
-  }
 
   const live = snapshot && snapshot.status !== 'finished' && snapshot.status !== 'aborted';
 
@@ -181,7 +175,11 @@ export function App() {
 
         <div className="rail-foot">
           <span className={`dot${status.keyValid ? '' : ' bad'}`} />{' '}
-          {status.keyValid ? 'OpenRouter connected' : 'Key rejected'}
+          {status.keyValid
+            ? 'OpenRouter connected'
+            : status.hasKey
+              ? 'OpenRouter key rejected'
+              : 'Local seats available'}
         </div>
       </nav>
 
@@ -189,11 +187,13 @@ export function App() {
         {screen === 'table' && (
           <TableSetup
             config={config}
+            status={status}
             models={models}
             modelsError={modelsError}
             games={games}
             onChange={updateConfig}
             onStart={startMatch}
+            onOpenSettings={() => setScreen('settings')}
             resumable={resumable}
             voices={voices}
             onResume={async (matchId) => {
@@ -271,6 +271,11 @@ export function App() {
             status={status}
             config={config}
             onChange={updateConfig}
+            onKeyChanged={refreshStatus}
+            onRestored={async () => {
+              setConfig(await window.gametable.loadConfig());
+              await refreshStatus();
+            }}
             onDisconnect={async () => {
               await window.gametable.clearKey();
               await refreshStatus();
@@ -307,65 +312,5 @@ function RailButton(props: {
       <span className="rail-icon">{props.icon}</span>
       {props.children}
     </button>
-  );
-}
-
-function KeyGate({ onAccepted }: { onAccepted: () => Promise<void> }) {
-  const [key, setKey] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.gametable.setKey(key);
-      if (!result.ok) {
-        setError(result.error ?? 'Could not verify that key');
-        return;
-      }
-      await onAccepted();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="gate">
-      <div className="gate-card">
-        <div className="brand large">
-          <span className="brand-mark">♠</span>
-          <div>
-            <strong>GameTable</strong>
-          </div>
-        </div>
-        <h1>Bring your own OpenRouter key</h1>
-        <p className="muted">
-          Every model at this table is billed to your own key, at OpenRouter's prices. The key is
-          stored on this machine only and never leaves the main process.
-        </p>
-        <form onSubmit={submit}>
-          <label htmlFor="key">API key</label>
-          <input
-            id="key"
-            type="password"
-            autoFocus
-            placeholder="sk-or-v1-…"
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-            spellCheck={false}
-          />
-          {error && <p className="error">{error}</p>}
-          <button type="submit" className="primary" disabled={busy || key.trim().length < 8}>
-            {busy ? 'Verifying…' : 'Connect'}
-          </button>
-        </form>
-        <p className="fineprint">
-          Create a key at <span className="link">openrouter.ai/keys</span>. A key with a spending
-          limit is a good idea.
-        </p>
-      </div>
-    </div>
   );
 }

@@ -1,9 +1,10 @@
 # Security model
 
 GameTable is a local desktop app. There is no GameTable account, server, or
-telemetry endpoint. The only network destination is the OpenRouter API, using
-the key you supply. This document describes what is protected, what is not, and
-where the boundaries are in the code.
+telemetry endpoint. The network destinations are the OpenRouter API, using the
+key you supply, and any local OpenAI-compatible endpoint you configure. This
+document describes what is protected, what is not, and where the boundaries are
+in the code.
 
 ## Credentials
 
@@ -39,7 +40,7 @@ tested without a desktop session.
 
 ### In transit
 
-- All requests go to `https://openrouter.ai` (TLS, certificate verification on).
+- OpenRouter requests go to `https://openrouter.ai` (TLS, certificate verification on).
 - The key travels only in the `Authorization: Bearer …` header. It is never
   placed in a URL, query string, or request body.
 - Requests carry `HTTP-Referer` and `X-Title` for OpenRouter attribution and
@@ -79,7 +80,7 @@ and trimmed to 300 characters before being attached to an exception.
 
 The manifest grants exactly what the app needs:
 
-- `--share=network` for OpenRouter.
+- `--share=network` for OpenRouter and configured local model servers.
 - `--socket=wayland`, `--socket=fallback-x11`, `--socket=pulseaudio`,
   `--device=dri` for the window, audio, and rendering.
 - `--share=ipc` for X11 fallback's shared-memory rendering, as required by the
@@ -156,9 +157,15 @@ Not protected against:
   encryption and OS account hygiene are out of scope.
 - **A locked or unavailable keyring.** If the secret service is missing at
   launch, the fallback is a `0600` file, not encryption. The UI states this.
-- **Metadata visible to OpenRouter.** Model choice, prompt contents, token
-  counts, and timing go to OpenRouter by design. This is the same exposure as
-  using OpenRouter directly.
+- **Metadata visible to OpenRouter or a local endpoint.** Model choice, prompt
+  contents, token counts and timing go to the provider by design. A local
+  endpoint is chosen by you and may be on another machine on your network.
+- **Local endpoint URL validation is not a network firewall.** The main process
+  accepts only http(s) URLs without credentials, queries or fragments, but a
+  user-supplied endpoint can reach LAN hosts. Use endpoints you trust.
+- **Backup contents.** Backups exclude the API key, live sessions and browser
+  state, but contain settings, results and full replays (including hidden roles
+  and private chat). They are written owner-only; review before sharing.
 - **Replay/transcript contents.** They are game records and may contain
   private chat and hidden roles. They are not encrypted at rest, only
   permission-restricted.

@@ -22,6 +22,7 @@ import { generateDebrief } from './debrief.js';
 import type {
   MatchSummary,
   ReplayBundle,
+  SeatHealth,
   SeatIssue,
   StartMatchRequest,
   TableSnapshot,
@@ -113,7 +114,10 @@ export interface SessionDeps {
   def: GameDef<any>;
   seats: Seat[];
   request: StartMatchRequest;
+  /** Default provider used when no per-seat resolver is given. */
   client: CompletionClient | null;
+  /** Per-seat provider selection (OpenRouter vs. a local endpoint). */
+  clientForSeat?: (seat: Seat) => CompletionClient | null;
   store: ResultsStore;
   saveBundle: (bundle: ReplayBundle) => Promise<void>;
   send: (snapshot: TableSnapshot) => void;
@@ -358,7 +362,8 @@ export class MatchSession {
   release(seatId: SeatId): void {
     const seat = this.deps.seats.find((entry) => entry.id === seatId);
     if (!seat || !this.takenOver.has(seatId)) return;
-    if (!this.deps.client || !seat.modelId) return;
+    const client = this.deps.clientForSeat?.(seat) ?? this.deps.client;
+    if (!client || !seat.modelId) return;
     const config: LlmSeatConfig = {
       model: seat.modelId,
       temperature: 0.85,
@@ -366,7 +371,7 @@ export class MatchSession {
       ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
     };
     const controller = new LlmController({
-      client: this.deps.client,
+      client,
       gameName: this.deps.def.name,
       config,
       onPreview: (text) => this.deps.sendPreview(seatId, text),
@@ -415,8 +420,9 @@ export class MatchSession {
         this.controllers.set(seat.id, new HumanController(this));
         continue;
       }
-      if (!this.deps.client) {
-        throw new Error('No OpenRouter key is configured for the AI seats');
+      const client = this.deps.clientForSeat?.(seat) ?? this.deps.client;
+      if (!client) {
+        throw new Error(`No model provider is configured for ${seat.name}`);
       }
       const config: LlmSeatConfig = {
         model: seat.modelId ?? '',
@@ -425,7 +431,7 @@ export class MatchSession {
         ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
       };
       const controller = new LlmController({
-        client: this.deps.client,
+        client,
         gameName: this.deps.def.name,
         config,
         onPreview: (text) => this.deps.sendPreview(seat.id, text),
@@ -468,19 +474,80 @@ export class MatchSession {
     const issues: SeatIssue[] = [];
     for (const seat of this.deps.seats) {
       if (seat.kind !== 'llm') continue;
-      const usage = this.controllers.get(seat.id)?.usage?.();
+      const health = this.healthOf(seat);
       // A seat that recovered from a transient hiccup should not keep a
       // permanent red banner on the table.
-      if (usage?.errors && !usage.recovered) {
+      if (health.status === 'error') {
         issues.push({
           seatId: seat.id,
           name: seat.name,
-          message: usage.lastError ?? 'model call failed',
-          count: usage.errors,
+          message: health.message ?? 'model call failed',
+          count: health.errors,
+          ...(health.kind ? { kind: health.kind } : {}),
         });
       }
     }
     return issues;
+  }
+
+  private healthOf(seat: Seat): SeatHealth {
+    const controller = this.llmControllers.get(seat.id);
+    if (controller) {
+      const health = controller.health();
+      return {
+        seatId: seat.id,
+        name: seat.name,
+        ...(seat.modelId ? { modelId: seat.modelId } : {}),
+        status: health.status,
+        calls: health.calls,
+        errors: health.errors,
+        retries: health.retries,
+        costUsd: health.costUsd,
+        avgLatencyMs: health.avgLatencyMs,
+        ...(health.lastError ? { message: health.lastError } : {}),
+        ...(health.lastErrorKind ? { kind: health.lastErrorKind } : {}),
+      };
+    }
+    const saved = this.seatMemory.get(seat.id);
+    if (!saved) {
+      return {
+        seatId: seat.id,
+        name: seat.name,
+        ...(seat.modelId ? { modelId: seat.modelId } : {}),
+        status: 'idle',
+        calls: 0,
+        errors: 0,
+        retries: 0,
+        costUsd: 0,
+        avgLatencyMs: 0,
+      };
+    }
+    const recovered = saved.lastOkCall > saved.lastErrorCall;
+    const status: SeatHealth['status'] =
+      saved.errors > 0 && !recovered
+        ? 'error'
+        : (saved.retries ?? 0) > 0 || !saved.schemaSupported || !saved.temperatureSupported
+          ? 'degraded'
+          : 'ok';
+    return {
+      seatId: seat.id,
+      name: seat.name,
+      ...(seat.modelId ? { modelId: seat.modelId } : {}),
+      status,
+      calls: saved.calls,
+      errors: saved.errors,
+      retries: saved.retries ?? 0,
+      costUsd: saved.costUsd,
+      avgLatencyMs: saved.calls ? Math.round(saved.latencyMs / saved.calls) : 0,
+      ...(saved.lastError ? { message: saved.lastError } : {}),
+      ...(saved.lastErrorKind ? { kind: saved.lastErrorKind } : {}),
+    };
+  }
+
+  private seatHealth(): SeatHealth[] {
+    return this.deps.seats
+      .filter((seat) => seat.kind === 'llm')
+      .map((seat) => this.healthOf(seat));
   }
 
   private capture(state: unknown, silent = false): void {
@@ -561,6 +628,7 @@ export class MatchSession {
       humanSeatId: this.human?.id ?? null,
       awaitingHuman: this.pendingHuman !== null,
       seatIssues: this.seatIssues(),
+      seatHealth: this.seatHealth(),
       takenOverSeats: [...this.takenOver],
       timeLeftMs:
         this.phaseLimitMs === null
@@ -658,6 +726,7 @@ export class MatchSession {
       totalCostUsd: result.seats.reduce((sum, seat) => sum + seat.usage.costUsd, 0),
       eventCount: result.events.length,
       metrics: result.metrics,
+      debriefExpected: Boolean(this.deps.debriefModel && this.deps.client),
     };
   }
 }

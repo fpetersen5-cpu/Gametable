@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BadRequest, validateArena, validateConfig, validateStartRequest } from './validation.js';
+import {
+  BadRequest,
+  validateArena,
+  validateConfig,
+  validateSeatTests,
+  validateStartRequest,
+} from './validation.js';
 
 const seat = { name: 'Seat 1', kind: 'llm', modelId: 'deepseek/x' };
 
@@ -53,5 +59,46 @@ describe('IPC validation', () => {
     expect(() =>
       validateArena({ gameId: 'buckshot', seats: [seat], matches: 500, budgetPerMatch: 1, totalBudgetUsd: 2, seedBase: 1 }),
     ).toThrow(/matches/);
+  });
+
+  it('accepts local seats and normalizes their endpoint', () => {
+    const request = validateStartRequest({
+      gameId: 'coup',
+      seats: [{ name: 'Local', kind: 'llm', modelId: 'llama3.1:8b', provider: 'local', baseUrl: 'http://127.0.0.1:11434/v1/' }],
+      budgetUsd: 1,
+    });
+    expect(request.seats[0]).toMatchObject({ provider: 'local', baseUrl: 'http://127.0.0.1:11434/v1' });
+    expect(() =>
+      validateStartRequest({
+        gameId: 'coup',
+        seats: [{ name: 'Local', kind: 'llm', modelId: 'x', provider: 'local', baseUrl: 'file:///etc/passwd' }],
+        budgetUsd: 1,
+      }),
+    ).toThrow(BadRequest);
+    expect(() =>
+      validateStartRequest({
+        gameId: 'coup',
+        seats: [{ name: 'x', kind: 'llm', modelId: 'x', provider: 'cloud' }],
+        budgetUsd: 1,
+      }),
+    ).toThrow(/provider/);
+  });
+
+  it('defaults local seat endpoints from config and validates probe requests', () => {
+    const config = validateConfig({
+      humanName: 'You',
+      localEndpoint: 'http://127.0.0.1:11434/v1/',
+      seats: [{ modelId: 'llama3.1:8b', provider: 'local' }],
+      budgetUsd: 1,
+      speed: 1,
+      voice: false,
+    });
+    expect(config.localEndpoint).toBe('http://127.0.0.1:11434/v1');
+    expect(config.seats[0]?.baseUrl).toBe(config.localEndpoint);
+    expect(validateSeatTests([{ name: 'Local', modelId: 'llama3.1:8b', provider: 'local' }])[0]).toMatchObject({
+      provider: 'local',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+    });
+    expect(() => validateSeatTests([])).toThrow();
   });
 });

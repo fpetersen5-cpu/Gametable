@@ -4,3 +4,6 @@ export * from './gateway.js';
 export * from './semaphore.js';
 export * from './redact.js';
 export * from './preview.js';
+export * from './errors.js';
+export * from './local.js';
+export * from './probe.js';

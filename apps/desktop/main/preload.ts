@@ -19,6 +19,8 @@ const api: DesktopApi = {
   setKey: (key) => ipcRenderer.invoke('key:set', key),
   clearKey: () => ipcRenderer.invoke('key:clear'),
   listModels: (refresh) => ipcRenderer.invoke('models:list', refresh === true),
+  listLocalModels: (baseUrl) => ipcRenderer.invoke('models:local', baseUrl),
+  testSeats: (seats) => ipcRenderer.invoke('seats:test', seats),
   loadConfig: () => ipcRenderer.invoke('config:load'),
   saveConfig: (config) => ipcRenderer.invoke('config:save', config),
 
@@ -43,6 +45,8 @@ const api: DesktopApi = {
   loadReplay: (matchId) => ipcRenderer.invoke('matches:replay', matchId),
   replaySeatViews: (matchId, seatId) => ipcRenderer.invoke('replay:seat-views', { matchId, seatId }),
   exportTranscript: (matchId, perspective) => ipcRenderer.invoke('matches:export', matchId, perspective),
+  exportBackup: () => ipcRenderer.invoke('data:export'),
+  importBackup: () => ipcRenderer.invoke('data:import'),
   leaderboard: () => ipcRenderer.invoke('leaderboard'),
   listVoices: () => ipcRenderer.invoke('tts:voices'),
   speak: (text, seatId, voice) =>

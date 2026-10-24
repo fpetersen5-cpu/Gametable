@@ -12,7 +12,14 @@ import { mines } from '@gametable/sdk-conformance';
 import { buckshot, runGauntlet } from '@gametable/games-buckshot';
 import { coup } from '@gametable/games-coup';
 import { mafia } from '@gametable/games-mafia';
-import { OpenRouterClient, LlmController, createLlmControllers, type LlmSeatConfig } from '@gametable/agent';
+import {
+  LlmController,
+  OpenAICompatibleClient,
+  OpenRouterClient,
+  createLlmControllers,
+  listLocalModels,
+  type LlmSeatConfig,
+} from '@gametable/agent';
 import { ResultsStore, bradleyTerry, toRecord } from '@gametable/stats';
 
 const games = new Map<string, GameDef<any>>([
@@ -26,15 +33,15 @@ function usage(): void {
   console.log(`GameTable
 
   run          play a match headlessly
-                 --game <id> --seats <n> [--seed <n>] [--llm --model <id>] [--oracle]
+                 --game <id> --seats <n> [--seed <n>] [--llm --model <id> [--base-url <url>]] [--oracle]
   gauntlet     duel a ladder of opponents (Buckshot)
                  [--models a,b,c] [--oracle] [--seed <n>]
-  models       list models available to your OpenRouter key
+  models       list models from OpenRouter, or from --base-url
   leaderboard  Bradley–Terry ratings from a results file
   games        list installed rule sets
 
 Environment:
-  OPENROUTER_API_KEY   required for --llm, --models and models
+  OPENROUTER_API_KEY   required for cloud --llm and OpenRouter models
 `);
 }
 
@@ -49,6 +56,7 @@ async function main(): Promise<void> {
       oracle: { type: 'boolean', default: false },
       models: { type: 'string' },
       model: { type: 'string' },
+      'base-url': { type: 'string' },
       file: { type: 'string', default: './results.jsonl' },
       help: { type: 'boolean', short: 'h', default: false },
     },
@@ -65,8 +73,9 @@ async function main(): Promise<void> {
   }
 
   if (command === 'models') {
-    const key = requireKey();
-    const models = await new OpenRouterClient({ apiKey: key }).listModels();
+    const models = values['base-url']
+      ? await listLocalModels(values['base-url'])
+      : await new OpenRouterClient({ apiKey: requireKey() }).listModels();
     const free = models.filter((m) => m.free).length;
     console.log(`${models.length} models (${free} free)`);
     for (const model of models.slice(0, 40)) {
@@ -105,7 +114,7 @@ async function main(): Promise<void> {
   if (!Number.isInteger(count) || count < def.minSeats || count > def.maxSeats) {
     throw new Error(`${def.id} needs ${def.minSeats}..${def.maxSeats} seats`);
   }
-  if (values.llm && !values.model) throw new Error('--llm needs --model <openrouter-id>');
+  if (values.llm && !values.model) throw new Error('--llm needs --model <id>');
 
   const seats: Seat[] = Array.from({ length: count }, (_, i) => ({
     id: `s${i + 1}`,
@@ -116,10 +125,9 @@ async function main(): Promise<void> {
 
   const controllers = new Map<string, Controller>();
   if (values.llm) {
-    const client = new OpenRouterClient({
-      apiKey: requireKey(),
-      appName: 'GameTable',
-    });
+    const client = values['base-url']
+      ? new OpenAICompatibleClient({ baseUrl: values['base-url'] })
+      : new OpenRouterClient({ apiKey: requireKey(), appName: 'GameTable' });
     const configs = new Map<string, LlmSeatConfig>(
       seats.map((seat) => [seat.id, { model: values.model as string, temperature: 0.8 }]),
     );

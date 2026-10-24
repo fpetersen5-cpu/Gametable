@@ -62,6 +62,8 @@ export interface CompletionRequest {
    * chunk. The final result is identical to a non-streaming call.
    */
   onText?: (textSoFar: string) => void;
+  /** Called before an automatic retry, with the delay and causal error. */
+  onRetry?: (attempt: number, delayMs: number, error: unknown) => void;
 }
 
 export interface TokenUsage {
@@ -97,6 +99,12 @@ export interface ClientOptions {
   maxRetries?: number;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** False for local OpenAI-compatible servers that do not know `usage`. */
+  includeUsage?: boolean;
+  /** Name used in diagnostics; defaults to OpenRouter. */
+  providerName?: string;
+  /** Local servers commonly accept unauthenticated requests. */
+  allowNoKey?: boolean;
 }
 
 const DEFAULT_BASE = 'https://openrouter.ai/api/v1';
@@ -106,20 +114,24 @@ export class OpenRouterClient {
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxRetries: number;
+  private readonly providerName: string;
 
   constructor(private readonly options: ClientOptions) {
-    if (!options.apiKey.trim()) throw new Error('OpenRouter API key is empty');
+    if (!options.apiKey.trim() && options.allowNoKey !== true) {
+      throw new Error('OpenRouter API key is empty');
+    }
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.maxRetries = options.maxRetries ?? 5;
+    this.providerName = options.providerName ?? 'OpenRouter';
   }
 
   private headers(): Record<string, string> {
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.options.apiKey}`,
       'Content-Type': 'application/json',
     };
+    if (this.options.apiKey.trim()) headers.Authorization = `Bearer ${this.options.apiKey}`;
     if (this.options.referer) headers['HTTP-Referer'] = this.options.referer;
     if (this.options.appName) headers['X-Title'] = this.options.appName;
     return headers;
@@ -162,7 +174,13 @@ export class OpenRouterClient {
 
     if (req.onText) return this.stream(req, payload, started);
 
-    const body = await this.request<RawCompletion>('POST', '/chat/completions', payload, req.signal);
+    const body = await this.request<RawCompletion>(
+      'POST',
+      '/chat/completions',
+      payload,
+      req.signal,
+      req.onRetry,
+    );
     const text = body.choices?.[0]?.message?.content ?? '';
     return {
       text,
@@ -180,8 +198,8 @@ export class OpenRouterClient {
     const payload: Record<string, unknown> = {
       model: req.model,
       messages: req.messages,
-      usage: { include: true },
     };
+    if (this.options.includeUsage !== false) payload.usage = { include: true };
     if (req.temperature !== undefined) payload.temperature = req.temperature;
     if (req.maxTokens !== undefined) payload.max_tokens = req.maxTokens;
     if (req.jsonSchema) {
@@ -225,7 +243,7 @@ export class OpenRouterClient {
           const text = await response.text().catch(() => '');
           const retryable = response.status === 429 || response.status >= 500;
           const error = new OpenRouterError(
-            redact(`OpenRouter POST /chat/completions failed: ${response.status}`),
+            redact(`${this.providerName} POST /chat/completions failed: ${response.status}`),
             response.status,
             retryable,
             redactBody(text),
@@ -241,13 +259,27 @@ export class OpenRouterClient {
           }
           if (attempt === this.maxRetries) throw error;
           lastError = error;
-          await this.sleep(this.retryDelay(response, attempt));
+          const delay = this.retryDelay(response, attempt);
+          req.onRetry?.(attempt, delay, error);
+          await this.sleep(delay);
           continue;
         }
 
         if (!response.body) {
           if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
             console.info('[stream] no body, buffered fallback');
+          }
+          const { onText: _ignored, ...buffered } = req;
+          return this.complete(buffered);
+        }
+
+        // Local OpenAI-compatible servers often ignore `stream: true` and
+        // return a normal JSON completion. Do not parse that as an empty SSE
+        // stream; retry without previews so the action still arrives.
+        const contentType = response.headers.get('content-type') ?? '';
+        if (contentType && !contentType.includes('text/event-stream')) {
+          if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
+            console.info('[stream] non-SSE response, buffered fallback');
           }
           const { onText: _ignored, ...buffered } = req;
           return this.complete(buffered);
@@ -328,7 +360,9 @@ export class OpenRouterClient {
         lastError = error;
         if (textSoFar !== '' || attempt === this.maxRetries) throw error;
         if (error instanceof OpenRouterError && !error.retryable) throw error;
-        await this.sleep(backoff(attempt));
+        const delay = backoff(attempt);
+        req.onRetry?.(attempt, delay, error);
+        await this.sleep(delay);
       }
     }
 
@@ -349,6 +383,7 @@ export class OpenRouterClient {
     path: string,
     payload?: unknown,
     signal?: AbortSignal,
+    onRetry?: (attempt: number, delayMs: number, error: unknown) => void,
   ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
@@ -365,7 +400,7 @@ export class OpenRouterClient {
         const text = await response.text().catch(() => '');
         const retryable = response.status === 429 || response.status >= 500;
         const error = new OpenRouterError(
-          redact(`OpenRouter ${method} ${path} failed: ${response.status}`),
+          redact(`${this.providerName} ${method} ${path} failed: ${response.status}`),
           response.status,
           retryable,
           redactBody(text),
@@ -376,6 +411,7 @@ export class OpenRouterClient {
         const delay = Number.isFinite(retryAfter) && retryAfter > 0
           ? retryAfter * 1000
           : backoff(attempt);
+        onRetry?.(attempt, delay, error);
         await this.sleep(delay + Math.floor(Math.random() * 250));
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') throw error;
@@ -387,7 +423,9 @@ export class OpenRouterClient {
         // Network-level failure: worth retrying.
         lastError = error;
         if (attempt === this.maxRetries) break;
-        await this.sleep(backoff(attempt));
+        const delay = backoff(attempt);
+        onRetry?.(attempt, delay, error);
+        await this.sleep(delay);
       }
     }
     throw lastError instanceof Error

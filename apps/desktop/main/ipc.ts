@@ -1,7 +1,14 @@
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { dialog, ipcMain, safeStorage, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
-import { OpenRouterClient, type CompletionClient } from '@gametable/agent';
+import {
+  OpenAICompatibleClient,
+  OpenRouterClient,
+  Semaphore,
+  listLocalModels,
+  probeModel,
+  type CompletionClient,
+} from '@gametable/agent';
 import type { GameDef, MatchEvent, Seat } from '@gametable/engine';
 import { buckshot } from '@gametable/games-buckshot';
 import { coup } from '@gametable/games-coup';
@@ -9,7 +16,15 @@ import { mafia } from '@gametable/games-mafia';
 import { ResultsStore, bradleyTerry } from '@gametable/stats';
 import { SecretStore } from './secrets.js';
 import { secureWrite, readJsonFile } from './secure-file.js';
-import { validateArena, validateConfig, validateStartRequest, validateTranscriptPerspective, BadRequest } from './validation.js';
+import {
+  validateArena,
+  validateConfig,
+  validateLocalEndpoint,
+  validateSeatTests,
+  validateStartRequest,
+  validateTranscriptPerspective,
+  BadRequest,
+} from './validation.js';
 import { redact } from '@gametable/agent';
 import { ModelCatalogCache } from './catalog.js';
 import { MatchSession } from './session.js';
@@ -20,10 +35,19 @@ import { synthesize, VOICE_PRESETS } from './tts.js';
 import { transcribe } from './stt.js';
 import { projectSeatViews, ReplayIncompatibleError } from './replay.js';
 import {
+  BackupError,
+  createBackup,
+  mergeBackup,
+  readBackup,
+  validateReplayBundle,
+} from './backup.js';
+import {
   DEFAULT_CONFIG,
+  REPLAY_FORMAT_VERSION,
   type AppConfig,
   type AppStatus,
   type ArenaConfig,
+  type BackupImportResult,
   type GameInfo,
   type KeyResult,
   type LeaderboardRow,
@@ -153,6 +177,61 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     return { models, fetchedAt, fromCache: false };
   });
 
+  handle('models:local', async (_event, raw: unknown) => {
+    try {
+      const baseUrl = validateLocalEndpoint(raw);
+      return { models: await listLocalModels(baseUrl) };
+    } catch (error) {
+      return {
+        models: [],
+        error: redact(error instanceof Error ? error.message : String(error)).slice(0, 300),
+      };
+    }
+  });
+
+  handle('seats:test', async (_event, raw: unknown) => {
+    let seats;
+    try {
+      seats = validateSeatTests(raw);
+    } catch (error) {
+      return [{ name: 'Seat', modelId: '', ok: false, latencyMs: 0, costUsd: 0, structured: false,
+        kind: 'unknown' as const, message: error instanceof Error ? error.message : 'invalid request' }];
+    }
+    if (demo) {
+      return seats.map((seat) => ({
+        name: seat.name, modelId: seat.modelId, ok: true, latencyMs: 1,
+        costUsd: 0, structured: true,
+      }));
+    }
+    const key = await secrets.getKey();
+    const openRouter = key ? new OpenRouterClient({ apiKey: key, appName: 'GameTable probe' }) : null;
+    const locals = new Map<string, OpenAICompatibleClient>();
+    const semaphore = new Semaphore(4);
+    return Promise.all(
+      seats.map(async (seat) => {
+        let client: CompletionClient | null = openRouter;
+        if (seat.provider === 'local') {
+          const baseUrl = seat.baseUrl ?? DEFAULT_CONFIG.localEndpoint;
+          client = locals.get(baseUrl) ?? new OpenAICompatibleClient({ baseUrl });
+          locals.set(baseUrl, client as OpenAICompatibleClient);
+        }
+        if (!client) {
+          return {
+            name: seat.name, modelId: seat.modelId, ok: false, latencyMs: 0,
+            costUsd: 0, structured: false, kind: 'auth' as const,
+            message: 'Add an OpenRouter key in Settings, or use a local seat.',
+          };
+        }
+        const result = await semaphore.run(() => probeModel(client as CompletionClient, seat.modelId));
+        return {
+          name: seat.name,
+          modelId: seat.modelId,
+          ...result,
+        };
+      }),
+    );
+  });
+
   handle('config:load', async (): Promise<AppConfig> => {
     const parsed = await readJsonFile<Partial<AppConfig>>(configFile);
     return { ...DEFAULT_CONFIG, ...(parsed ?? {}) };
@@ -195,12 +274,13 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       return { ok: false, error: 'every AI seat needs a model' };
     }
 
+    const llmSeats = request.seats.filter((seat) => seat.kind === 'llm');
+    const needsOpenRouter = llmSeats.some((seat) => seat.provider !== 'local');
     const key = demo ? 'demo' : await secrets.getKey();
-    const needsModel = request.seats.some((seat) => seat.kind === 'llm');
-    if (needsModel && !key) return { ok: false, error: 'Add an OpenRouter key first' };
+    if (needsOpenRouter && !key) return { ok: false, error: 'Add an OpenRouter key first' };
 
-    // Refuse to start a match that can only produce fallback moves.
-    if (needsModel && !demo && key) {
+    // Refuse to start an OpenRouter match that can only produce fallback moves.
+    if (needsOpenRouter && !demo && key) {
       try {
         await new OpenRouterClient({ apiKey: key }).checkKey();
       } catch (error) {
@@ -208,11 +288,14 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       }
       const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
       if (catalogue) {
+        const remote = request.seats.filter(
+          (seat) => seat.kind === 'llm' && seat.provider !== 'local',
+        );
         const known = new Set(catalogue.models.map((model) => model.id));
         const missing = [
           ...new Set(
-            request.seats
-              .filter((seat) => seat.kind === 'llm' && seat.modelId && !known.has(seat.modelId))
+            remote
+              .filter((seat) => seat.modelId && !known.has(seat.modelId))
               .map((seat) => seat.modelId as string),
           ),
         ];
@@ -221,9 +304,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         }
         const unstructured = [
           ...new Set(
-            request.seats
+            remote
               .filter((seat) => {
-                if (seat.kind !== 'llm' || !seat.modelId) return false;
+                if (!seat.modelId) return false;
                 const model = catalogue.models.find((entry) => entry.id === seat.modelId);
                 if (!model) return false;
                 return (
@@ -257,8 +340,29 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }));
 
     const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
+    const openRouter = demo
+      ? new DemoClient()
+      : key
+        ? new OpenRouterClient({ apiKey: key, appName: 'GameTable' })
+        : null;
+    const locals = new Map<string, OpenAICompatibleClient>();
+    const clientForSeat = (seat: Seat): CompletionClient | null => {
+      if (demo) return openRouter;
+      const index = Number(seat.id.replace(/^s/, '')) - 1;
+      const configured = request.seats[index];
+      if (!configured || configured.provider !== 'local') return openRouter;
+      const baseUrl = configured.baseUrl ?? DEFAULT_CONFIG.localEndpoint;
+      const existing = locals.get(baseUrl);
+      if (existing) return existing;
+      const client = new OpenAICompatibleClient({ baseUrl });
+      locals.set(baseUrl, client);
+      return client;
+    };
+
     const seatModels = new Set(
-      request.seats.filter((seat) => seat.kind === 'llm' && seat.modelId).map((seat) => seat.modelId as string),
+      request.seats
+        .filter((seat) => seat.kind === 'llm' && seat.provider !== 'local' && seat.modelId)
+        .map((seat) => seat.modelId as string),
     );
     const cheapest = (catalogue?.models ?? [])
       .filter((model) => seatModels.has(model.id))
@@ -272,7 +376,8 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       def,
       seats,
       request,
-      client: demo ? new DemoClient() : key ? new OpenRouterClient({ apiKey: key, appName: 'GameTable' }) : null,
+      client: openRouter,
+      clientForSeat,
       store: results,
       saveBundle: async (bundle) => {
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
@@ -524,7 +629,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     if (typeof matchId !== 'string' || !/^[am]-[a-z0-9-]+$/i.test(matchId)) return null;
     try {
       const raw = await readFile(join(matchesDir, `${matchId}.json`), 'utf8');
-      return JSON.parse(raw) as ReplayBundle;
+      const bundle = JSON.parse(raw) as ReplayBundle;
+      if (bundle.formatVersion && bundle.formatVersion > REPLAY_FORMAT_VERSION) return null;
+      return bundle;
     } catch {
       return null;
     }
@@ -602,6 +709,113 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     if (result.canceled || !result.filePath) return { ok: false, error: 'cancelled' };
     await writeFile(result.filePath, transcript, { encoding: 'utf8', mode: 0o600 });
     return { ok: true, path: result.filePath };
+  });
+
+  handle('data:export', async () => {
+    const window = getWindow();
+    if (!window) return { ok: false, error: 'No window is available' };
+    let config: AppConfig;
+    try {
+      const stored = await readJsonFile<Partial<AppConfig>>(configFile);
+      config = validateConfig({ ...DEFAULT_CONFIG, ...(stored ?? {}) });
+    } catch {
+      config = DEFAULT_CONFIG;
+    }
+    const resultRecords = await results.all();
+    const matches: ReplayBundle[] = [];
+    try {
+      for (const entry of await readdir(matchesDir)) {
+        if (!entry.endsWith('.json')) continue;
+        try {
+          const bundle = validateReplayBundle(
+            JSON.parse(await readFile(join(matchesDir, entry), 'utf8')),
+          );
+          matches.push(bundle);
+        } catch {
+          // A corrupt replay must not prevent backup of the rest.
+        }
+      }
+    } catch {
+      // No matches directory yet.
+    }
+    const bundle = createBackup(
+      config,
+      resultRecords,
+      matches,
+      process.env.npm_package_version ?? '0.1.0',
+    );
+    const selected = await dialog.showSaveDialog(window, {
+      title: 'Export GameTable backup',
+      defaultPath: `gametable-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'GameTable backup', extensions: ['json'] }],
+    });
+    if (selected.canceled || !selected.filePath) return { ok: false, error: 'cancelled' };
+    try {
+      await secureWrite(selected.filePath, JSON.stringify(bundle));
+      return { ok: true, path: selected.filePath };
+    } catch (error) {
+      return { ok: false, error: describe(error) };
+    }
+  });
+
+  handle('data:import', async (): Promise<BackupImportResult> => {
+    const window = getWindow();
+    if (!window) return { ok: false, error: 'No window is available' };
+    const selected = await dialog.showOpenDialog(window, {
+      title: 'Restore a GameTable backup',
+      properties: ['openFile'],
+      filters: [{ name: 'GameTable backup', extensions: ['json'] }],
+    });
+    if (selected.canceled || selected.filePaths.length === 0) {
+      return { ok: false, error: 'cancelled' };
+    }
+    let bundle;
+    try {
+      bundle = await readBackup(selected.filePaths[0] as string);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof BackupError ? error.message : 'That backup could not be read',
+      };
+    }
+    const legacy = bundle.matches.filter(
+      (match) => !match.formatVersion || match.formatVersion < REPLAY_FORMAT_VERSION,
+    ).length;
+    const confirm = await dialog.showMessageBox(window, {
+      type: 'warning',
+      title: 'Restore GameTable backup',
+      message: `Restore ${bundle.matches.length} replay${bundle.matches.length === 1 ? '' : 's'} and ${bundle.results.length} result${bundle.results.length === 1 ? '' : 's'}?`,
+      detail: [
+        `Backup from ${new Date(bundle.exportedAt).toLocaleString()} (app ${bundle.appVersion}).`,
+        'Existing records with the same match ID are kept; nothing is overwritten.',
+        legacy > 0
+          ? `${legacy} replay${legacy === 1 ? ' is' : 's are'} legacy and may not support filtered seat views.`
+          : '',
+        '“Records only” keeps your current settings. “Restore records + settings” replaces them.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      buttons: ['Cancel', 'Records only', 'Restore records + settings'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (confirm.response === 0) return { ok: false, error: 'cancelled' };
+    const restoreConfig = confirm.response === 2;
+    try {
+      const counts = await mergeBackup(bundle, {
+        matchesDir,
+        configFile,
+        store: results,
+        restoreConfig,
+      });
+      return { ok: true, ...counts, configRestored: restoreConfig };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof BackupError ? error.message : describe(error),
+      };
+    }
   });
 
   handle('leaderboard', async (): Promise<LeaderboardRow[]> => {
