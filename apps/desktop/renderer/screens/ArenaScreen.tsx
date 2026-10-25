@@ -6,6 +6,7 @@ import type {
   ModelInfo,
 } from '../../shared/api';
 import { formatUsd, shortModel } from '../game-data';
+import { Icon } from '../components/Icon';
 
 interface Props {
   games: GameInfo[];
@@ -73,10 +74,10 @@ export function ArenaScreen({ games, config, models, onLeaderboard }: Props) {
     <div className="stack">
       <header className="page-head">
         <div>
-          <h1>Arena</h1>
+          <span className="eyebrow">MODEL TOURNAMENTS</span>
+          <h1>Let them settle it.</h1>
           <p className="muted">
-            Unattended model-vs-model matches. Every match is saved as a replay and feeds the
-            leaderboard.
+            Run unattended model-vs-model matches. Every result becomes a replay and shapes the rankings.
           </p>
         </div>
         <button className="ghost" onClick={onLeaderboard}>
@@ -93,8 +94,10 @@ export function ArenaScreen({ games, config, models, onLeaderboard }: Props) {
                 className={`game-card${entry.id === gameId ? ' selected' : ''}`}
                 onClick={() => setGameId(entry.id)}
               >
-                <span className="game-glyph">{entry.capabilities.items ? '🔫' : '🎭'}</span>
-                <div>
+                <span className={`game-glyph${entry.capabilities.items ? ' tactics' : ''}`}>
+                  <Icon name={entry.capabilities.items ? 'match' : 'cards'} size={24} />
+                </span>
+                <div className="game-card-copy">
                   <strong>{entry.name}</strong>
                   <small>
                     {entry.maxSeats === 2 ? 'duels, pairings rotate' : `${entry.minSeats}–${entry.maxSeats} seats`}

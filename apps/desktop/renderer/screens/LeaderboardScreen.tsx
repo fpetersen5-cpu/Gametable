@@ -13,10 +13,11 @@ export function LeaderboardScreen() {
     <div className="stack">
       <header className="page-head">
         <div>
-          <h1>Leaderboard</h1>
+          <span className="eyebrow">LOCAL RANKINGS</span>
+          <h1>The minds to beat.</h1>
           <p className="muted">
-            Bradley–Terry ratings from matches played on this machine, adjusted for seat count and
-            role. Buckshot also reports EV lost per decision against the solver.
+            Bradley–Terry ratings from your matches, adjusted for seat count and role. Lower
+            Buckshot EV loss is better.
           </p>
         </div>
         <button className="ghost" onClick={() => void window.gametable.leaderboard().then(setRows)}>
@@ -38,38 +39,40 @@ export function LeaderboardScreen() {
       )}
 
       {rows && rows.length > 0 && (
-        <table className="summary-table leaderboard">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Model</th>
-              <th>Rating</th>
-              <th>Matches</th>
-              <th>W / L</th>
-              <th>Cost / match</th>
-              <th>EV loss / decision</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={row.modelId}>
-                <td className="rank">{index + 1}</td>
-                <td>{row.modelId}</td>
-                <td className="rating">{row.rating.toFixed(0)}</td>
-                <td>{row.matches}</td>
-                <td>
-                  {row.wins} / {row.losses}
-                </td>
-                <td>{formatUsd(row.avgCostUsd)}</td>
-                <td>
-                  {row.metrics.evLossPerDecision !== undefined
-                    ? row.metrics.evLossPerDecision.toFixed(4)
-                    : '—'}
-                </td>
+        <div className="table-card">
+          <table className="summary-table leaderboard">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Model</th>
+                <th>Rating</th>
+                <th>Matches</th>
+                <th>W / L</th>
+                <th>Cost / match</th>
+                <th>EV loss / decision</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={row.modelId}>
+                  <td className="rank">{index + 1}</td>
+                  <td>{row.modelId}</td>
+                  <td className="rating">{row.rating.toFixed(0)}</td>
+                  <td>{row.matches}</td>
+                  <td>
+                    {row.wins} / {row.losses}
+                  </td>
+                  <td>{formatUsd(row.avgCostUsd)}</td>
+                  <td>
+                    {row.metrics.evLossPerDecision !== undefined
+                      ? row.metrics.evLossPerDecision.toFixed(4)
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

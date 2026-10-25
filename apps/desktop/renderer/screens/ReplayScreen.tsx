@@ -134,6 +134,7 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
           <>
             <header className="replay-controls">
               <div>
+                <span className="eyebrow">MATCH REPLAY</span>
                 <h1>{bundle.summary.gameName}</h1>
                 <p className="muted">
                   {bundle.summary.winnerNames.join(' & ') || 'no winner'} ·{' '}

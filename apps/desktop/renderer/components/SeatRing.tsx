@@ -43,7 +43,10 @@ export function SeatRing({
             style={{ '--seat-color': color } as CSSProperties}
           >
             <div className="ring-top">
-              <span className="ring-name">{seat.name}</span>
+              <div className="ring-identity">
+                <span className="ring-avatar">{seat.name.trim().charAt(0).toUpperCase() || '?'}</span>
+                <span className="ring-name">{seat.name}</span>
+              </div>
               {seat.kind === 'human' ? (
                 <span className="ring-badge you-badge">YOU</span>
               ) : (

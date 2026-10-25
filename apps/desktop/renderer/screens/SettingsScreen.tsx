@@ -88,11 +88,13 @@ export function SettingsScreen({
     <div className="stack">
       <header className="page-head">
         <div>
-          <h1>Settings</h1>
-          <p className="muted">Key, budget and local data.</p>
+          <span className="eyebrow">PREFERENCES</span>
+          <h1>Make it yours.</h1>
+          <p className="muted">Connections, match defaults, voice, and your local data.</p>
         </div>
       </header>
 
+      <div className="settings-grid">
       <section className="settings-card">
         <h2>OpenRouter key</h2>
         {status.hasKey ? (
@@ -240,6 +242,7 @@ export function SettingsScreen({
         </div>
         {backupNote && <p className="muted">{backupNote}</p>}
       </section>
+      </div>
     </div>
   );
 }

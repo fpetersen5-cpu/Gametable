@@ -19,6 +19,8 @@ import { ReplayScreen } from './screens/ReplayScreen';
 import { LeaderboardScreen } from './screens/LeaderboardScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ArenaScreen } from './screens/ArenaScreen';
+import { Icon } from './components/Icon';
+import type { IconName } from './components/Icon';
 
 type Screen = 'table' | 'match' | 'arena' | 'replays' | 'leaderboard' | 'settings';
 
@@ -133,53 +135,86 @@ export function App() {
 
   return (
     <div className="shell">
-      <nav className="rail">
+      <nav className="rail" aria-label="Main navigation">
         <div className="brand">
-          <span className="brand-mark">♠</span>
+          <span className="brand-mark">
+            <Icon name="brand" size={24} />
+          </span>
           <div>
             <strong>GameTable</strong>
+            <small>AI TABLETOP CLUB</small>
           </div>
         </div>
 
-        <RailButton active={screen === 'table'} onClick={() => setScreen('table')} icon="▦">
-          Table
-        </RailButton>
-        <RailButton
-          active={screen === 'match'}
-          onClick={() => setScreen('match')}
-          icon="✦"
-          disabled={!snapshot}
-        >
-          Match{live ? ' •' : ''}
-        </RailButton>
-        <RailButton active={screen === 'arena'} onClick={() => setScreen('arena')} icon="⚔">
-          Arena
-        </RailButton>
-        <RailButton
-          active={screen === 'replays'}
-          onClick={() => setScreen('replays')}
-          icon="◷"
-        >
-          Replays
-        </RailButton>
-        <RailButton
-          active={screen === 'leaderboard'}
-          onClick={() => setScreen('leaderboard')}
-          icon="★"
-        >
-          Leaderboard
-        </RailButton>
-        <RailButton active={screen === 'settings'} onClick={() => setScreen('settings')} icon="⚙">
-          Settings
-        </RailButton>
+        <div className="rail-section">
+          <span className="rail-label">Play</span>
+          <RailButton active={screen === 'table'} onClick={() => setScreen('table')} icon="table">
+            New table
+          </RailButton>
+          <RailButton
+            active={screen === 'match'}
+            onClick={() => setScreen('match')}
+            icon="match"
+            disabled={!snapshot}
+          >
+            <span>Live match</span>
+            {live && <span className="live-dot" title="Match in progress" />}
+          </RailButton>
+          <RailButton active={screen === 'arena'} onClick={() => setScreen('arena')} icon="arena">
+            Arena
+          </RailButton>
+        </div>
 
-        <div className="rail-foot">
-          <span className={`dot${status.keyValid ? '' : ' bad'}`} />{' '}
-          {status.keyValid
-            ? 'OpenRouter connected'
-            : status.hasKey
-              ? 'OpenRouter key rejected'
-              : 'Local seats available'}
+        <div className="rail-section">
+          <span className="rail-label">Your library</span>
+          <RailButton
+            active={screen === 'replays'}
+            onClick={() => setScreen('replays')}
+            icon="replay"
+          >
+            Replays
+          </RailButton>
+          <RailButton
+            active={screen === 'leaderboard'}
+            onClick={() => setScreen('leaderboard')}
+            icon="leaderboard"
+          >
+            Leaderboard
+          </RailButton>
+        </div>
+
+        <div className="rail-bottom">
+          <RailButton
+            active={screen === 'settings'}
+            onClick={() => setScreen('settings')}
+            icon="settings"
+          >
+            Settings
+          </RailButton>
+          <div
+            className={`rail-foot${status.keyValid ? ' online' : status.hasKey ? ' bad' : ' local'}`}
+          >
+            <span className="status-symbol">
+              <Icon name="shield" size={17} />
+            </span>
+            <div>
+              <strong>
+                {status.keyValid
+                  ? 'OpenRouter connected'
+                  : status.hasKey
+                    ? 'Connection issue'
+                    : 'Local mode ready'}
+              </strong>
+              <small>
+                {status.keyValid
+                  ? 'Cloud and local seats available'
+                  : status.hasKey
+                    ? 'Check your key in Settings'
+                    : 'No API key required'}
+              </small>
+            </div>
+            <span className="dot" />
+          </div>
         </div>
       </nav>
 
@@ -299,7 +334,7 @@ function Splash({ label = 'Laying the table…' }: { label?: string }) {
 function RailButton(props: {
   active: boolean;
   onClick: () => void;
-  icon: string;
+  icon: IconName;
   disabled?: boolean;
   children: ReactNode;
 }) {
@@ -308,9 +343,12 @@ function RailButton(props: {
       className={`rail-button${props.active ? ' active' : ''}`}
       onClick={props.onClick}
       disabled={props.disabled}
+      aria-current={props.active ? 'page' : undefined}
     >
-      <span className="rail-icon">{props.icon}</span>
-      {props.children}
+      <span className="rail-icon">
+        <Icon name={props.icon} size={18} />
+      </span>
+      <span className="rail-button-content">{props.children}</span>
     </button>
   );
 }

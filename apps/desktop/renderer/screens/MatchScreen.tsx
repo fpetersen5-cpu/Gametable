@@ -48,6 +48,7 @@ export function MatchScreen(props: Props) {
     <div className="match-screen">
       <header className="match-head">
         <div className="match-title">
+          <span className="eyebrow">{finished ? 'MATCH COMPLETE' : 'LIVE AT THE TABLE'}</span>
           <h1>{snapshot.gameName}</h1>
           <div className="phase-line">
             <span className="phase-chip">{phase.label}</span>

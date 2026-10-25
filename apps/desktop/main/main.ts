@@ -21,7 +21,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 1024,
     minHeight: 680,
-    backgroundColor: '#0e1116',
+    backgroundColor: '#0b0d11',
     title: 'GameTable',
     show: false,
     autoHideMenuBar: true,

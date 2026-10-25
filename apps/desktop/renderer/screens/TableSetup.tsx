@@ -11,6 +11,7 @@ import type {
   VoicePreset,
 } from '../../shared/api';
 import { shortModel } from '../game-data';
+import { Icon } from '../components/Icon';
 
 interface Props {
   config: AppConfig;
@@ -156,12 +157,13 @@ export function TableSetup(props: Props) {
   };
 
   return (
-    <div className="stack">
+    <div className="stack setup-screen">
       <header className="page-head">
         <div>
-          <h1>The table</h1>
+          <span className="eyebrow">NEW MATCH</span>
+          <h1>Set the table.</h1>
           <p className="muted">
-            One human against up to ten models, using OpenRouter or local OpenAI-compatible seats.
+            Choose your game, seat your rivals, and let the mind games begin.
           </p>
         </div>
         <div className="head-actions">
@@ -170,13 +172,15 @@ export function TableSetup(props: Props) {
             onClick={() => void testSeats()}
             disabled={testing || config.seats.length === 0}
           >
-            {testing ? 'Testing…' : 'Test seats'}
+            <Icon name="shield" size={15} />
+            {testing ? 'Testing seats…' : 'Test connections'}
           </button>
           <button
             className="ghost"
             onClick={() => void props.onRefreshModels(true)}
             disabled={!props.status.hasKey}
           >
+            <Icon name="refresh" size={15} />
             Refresh models
           </button>
         </div>
@@ -212,76 +216,122 @@ export function TableSetup(props: Props) {
         </section>
       )}
 
-      <section className="game-picker">
-        {games.map((entry) => (
-          <button
-            key={entry.id}
-            className={`game-card${entry.id === gameId ? ' selected' : ''}`}
-            onClick={() => setGameId(entry.id)}
-          >
-            <span className="game-glyph">{entry.capabilities.items ? '🔫' : '🎭'}</span>
+      <section className="setup-section game-section">
+        <div className="section-heading">
+          <div className="section-title">
+            <span className="section-step">01</span>
             <div>
-              <strong>{entry.name}</strong>
-              <small>
-                {entry.minSeats === entry.maxSeats
-                  ? `${entry.minSeats} seats`
-                  : `${entry.minSeats}–${entry.maxSeats} seats`}
-                {entry.capabilities.solver ? ' · scored by solver' : ''}
-              </small>
+              <h2>Choose your game</h2>
+              <p className="muted">Every table has its own kind of trouble.</p>
             </div>
-          </button>
-        ))}
-        <label className="spectate-toggle">
-          <input
-            type="checkbox"
-            checked={spectator}
-            onChange={(event) => setSpectator(event.target.checked)}
-          />
-          <span>
-            <strong>Watch AI vs AI</strong>
-            <small>No human seat; the table reveals everything</small>
-          </span>
-        </label>
+          </div>
+          <label className="spectate-toggle">
+            <input
+              type="checkbox"
+              checked={spectator}
+              onChange={(event) => setSpectator(event.target.checked)}
+            />
+            <span className="toggle-track"><span /></span>
+            <span>
+              <strong>Spectator mode</strong>
+              <small>Watch AI vs AI · reveal everything</small>
+            </span>
+          </label>
+        </div>
+        <div className="game-picker">
+          {games.map((entry) => (
+            <button
+              key={entry.id}
+              className={`game-card${entry.id === gameId ? ' selected' : ''}`}
+              onClick={() => setGameId(entry.id)}
+              aria-pressed={entry.id === gameId}
+            >
+              <span className={`game-glyph${entry.capabilities.items ? ' tactics' : ''}`}>
+                <Icon name={entry.capabilities.items ? 'match' : 'cards'} size={24} />
+              </span>
+              <span className="game-card-copy">
+                <span className="game-kind">
+                  {entry.capabilities.items ? 'RISK & TACTICS' : entry.capabilities.chat ? 'SOCIAL DEDUCTION' : 'STRATEGY'}
+                </span>
+                <strong>{entry.name}</strong>
+                <small>
+                  {entry.minSeats === entry.maxSeats
+                    ? `${entry.minSeats} players`
+                    : `${entry.minSeats}–${entry.maxSeats} players`}
+                  {entry.capabilities.solver ? ' · Solver scored' : ''}
+                </small>
+              </span>
+              <span className="game-selected"><Icon name="check" size={13} /></span>
+            </button>
+          ))}
+        </div>
       </section>
 
-      <div className="table-grid">
+      <section className="setup-section seats-section">
+        <div className="section-heading">
+          <div className="section-title">
+            <span className="section-step">02</span>
+            <div>
+              <h2>Fill the seats</h2>
+              <p className="muted">Mix cloud and local models. Give each rival its own personality.</p>
+            </div>
+          </div>
+          <span className="seat-count"><Icon name="users" size={15} /> {totalSeats} at the table</span>
+        </div>
+        <div className="table-grid">
         {!spectator && (
           <div className="seat-card human">
             <div className="seat-top">
-              <span className="badge">YOU</span>
+              <span className="badge">SEAT 01 · YOU</span>
+              <span className="seat-ready"><span /> Ready</span>
             </div>
-            <input
-              className="name-input"
-              value={config.humanName}
-              onChange={(event) => void onChange({ ...config, humanName: event.target.value })}
-              aria-label="Your name"
-            />
-            <small className="seat-sub">Human seat</small>
+            <div className="seat-identity">
+              <span className="seat-avatar">{config.humanName.trim().charAt(0).toUpperCase() || 'Y'}</span>
+              <div>
+                <input
+                  className="name-input"
+                  value={config.humanName}
+                  onChange={(event) => void onChange({ ...config, humanName: event.target.value })}
+                  aria-label="Your name"
+                />
+                <small className="seat-sub">The human at the table</small>
+              </div>
+            </div>
+            <div className="human-note">
+              <Icon name="shield" size={16} />
+              <span>Your seat. Your decisions. No hidden information.</span>
+            </div>
           </div>
         )}
 
         {config.seats.map((seat, index) => (
           <div key={`${seat.modelId}-${index}`} className="seat-card">
             <div className="seat-top">
-              <span className="badge">AI {index + 1}</span>
+              <span className="badge">SEAT {String(index + (spectator ? 1 : 2)).padStart(2, '0')}</span>
               <span className={`pill ${seat.provider === 'local' ? 'free' : ''}`}>
-                {seat.provider === 'local' ? 'local' : 'OpenRouter'}
+                {seat.provider === 'local' ? 'Local' : 'Cloud'}
               </span>
               <button
                 className="icon"
                 aria-label="Remove seat"
+                title="Remove seat"
                 onClick={() => setSeats(config.seats.filter((_, i) => i !== index))}
               >
                 ×
               </button>
             </div>
-            <strong className="seat-name">{seatName(seat)}</strong>
-            <small className="seat-sub">
-              {seat.provider === 'local' ? `${seat.modelId} · ${seat.baseUrl ?? ''}` : seat.modelId}
-            </small>
+            <div className="seat-identity">
+              <span className="seat-avatar">{seatName(seat).trim().charAt(0).toUpperCase() || 'A'}</span>
+              <div>
+                <strong className="seat-name">{seatName(seat)}</strong>
+                <small className="seat-sub" title={seat.modelId}>
+                  {seat.modelId}
+                </small>
+              </div>
+            </div>
             <input
               className="persona-input"
-              placeholder="play style (optional)"
+              placeholder="Personality, e.g. calm and analytical"
               value={seat.persona ?? ''}
               onChange={(event) => {
                 const seats = [...config.seats];
@@ -324,7 +374,8 @@ export function TableSetup(props: Props) {
               type="number"
               min={0}
               step={0.05}
-              placeholder="cap $ (optional)"
+              placeholder="Seat budget cap (USD)"
+              aria-label={`Budget cap for AI seat ${index + 1}`}
               value={seat.budgetUsd ?? ''}
               onChange={(event) => {
                 const seats = [...config.seats];
@@ -350,43 +401,55 @@ export function TableSetup(props: Props) {
 
         {config.seats.length < 10 && (
           <div className="seat-card add">
-            <span className="plus">+</span>
-            <button className="ghost" onClick={() => setPicking(true)}>
-              OpenRouter model
-            </button>
-            <button className="ghost" onClick={() => setLocalPicking(true)}>
-              Local model
-            </button>
-            <small>{10 - config.seats.length} seats left</small>
+            <span className="plus"><Icon name="plus" size={25} /></span>
+            <strong>Add a rival</strong>
+            <small>Choose another mind for the table</small>
+            <div className="add-seat-actions">
+              <button className="ghost" onClick={() => setPicking(true)}>
+                OpenRouter
+              </button>
+              <button className="ghost" onClick={() => setLocalPicking(true)}>
+                Local model
+              </button>
+            </div>
+            <small>{10 - config.seats.length} AI seats left</small>
           </div>
         )}
-      </div>
+        </div>
+      </section>
 
-      <section className="callout">
-        <div>
+      <section className="callout launch-card">
+        <div className="launch-copy">
+          <span className="eyebrow">YOUR TABLE IS WAITING</span>
           <strong>
-            {game ? `${game.name} · ${totalSeats} seats` : 'Choose a game'}
+            {game ? `${game.name} · ${totalSeats} players` : 'Choose a game'}
           </strong>
           <p className="muted">
             {spectator
-              ? 'Spectator mode: every role, hand and chamber is visible.'
-              : `${config.seats.length} model${config.seats.length === 1 ? '' : 's'} at the table.`}{' '}
-            Budget ${config.budgetUsd.toFixed(2)} for this match · estimated ≈ $
-            {estimate.toFixed(2)}.
+              ? 'Every role, hand and chamber will be visible.'
+              : `You versus ${config.seats.length} model${config.seats.length === 1 ? '' : 's'}.`}{' '}
+            Estimated match cost ≈ ${estimate.toFixed(2)}.
             {estimate > config.budgetUsd && (
-              <strong className="estimate-warn"> That estimate exceeds your budget — the match will stop early.</strong>
+              <strong className="estimate-warn"> The estimate exceeds your budget, so the match may stop early.</strong>
             )}
           </p>
           {error && <p className="error">{error}</p>}
           {!error && seatIssue && <p className="error">{seatIssue}</p>}
         </div>
-        <button
-          className="primary"
-          onClick={() => void start()}
-          disabled={starting || !game || Boolean(seatIssue)}
-        >
-          {starting ? 'Dealing…' : spectator ? 'Watch the match' : 'Deal me in'}
-        </button>
+        <div className="launch-action">
+          <div className="launch-budget">
+            <span>Match budget</span>
+            <strong>${config.budgetUsd.toFixed(2)}</strong>
+          </div>
+          <button
+            className="primary"
+            onClick={() => void start()}
+            disabled={starting || !game || Boolean(seatIssue)}
+          >
+            {starting ? 'Dealing…' : spectator ? 'Watch the match' : 'Deal me in'}
+            {!starting && <Icon name="arrow" size={17} />}
+          </button>
+        </div>
       </section>
 
       {picking && (
