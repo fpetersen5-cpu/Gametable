@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { CompletionResult } from '@gametable/agent';
 import { Budget } from './arena.js';
+import { BudgetExceeded } from './budget.js';
 
 describe('arena match budget', () => {
   it('tracks remaining spend and trips exactly once at the cap', () => {
@@ -24,5 +26,23 @@ describe('arena match budget', () => {
     budget.spend(-5);
     budget.spend(Number.NaN);
     expect(budget.spentUsd).toBe(0);
+  });
+
+  it('settles an in-flight charge before admitting another seat', async () => {
+    const budget = new Budget(0.125);
+    let finish!: (result: CompletionResult) => void;
+    const first = budget.client({ complete: () => new Promise((resolve) => { finish = resolve; }) });
+    const secondCall = vi.fn();
+    const second = budget.client({ complete: secondCall });
+    const firstResult = first.complete({ model: 'one', messages: [] });
+    const secondResult = second.complete({ model: 'two', messages: [] });
+    const refused = expect(secondResult).rejects.toBeInstanceOf(BudgetExceeded);
+    await Promise.resolve();
+    expect(secondCall).not.toHaveBeenCalled();
+    finish({ text: '{}', model: 'one', usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.125 }, latencyMs: 1 });
+    await firstResult;
+    await refused;
+    expect(secondCall).not.toHaveBeenCalled();
+    expect(budget.spentUsd).toBe(0.125);
   });
 });

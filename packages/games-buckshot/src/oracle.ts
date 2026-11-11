@@ -129,11 +129,13 @@ function shootValue(
   }
 
   const passes = shell === 'live' || target === 'opponent';
+  // The real game reloads as soon as the chamber is empty, including when the
+  // last shell leaves on a shot that passes the turn.
+  refill(n);
   if (passes) {
     const changed = passTurn(n);
     return changed ? 1 - valueOf(n, memo, budget) : valueOf(n, memo, budget);
   }
-  refill(n);
   return valueOf(n, memo, budget);
 }
 

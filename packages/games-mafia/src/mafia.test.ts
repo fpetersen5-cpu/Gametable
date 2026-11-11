@@ -392,3 +392,16 @@ describe('full matches', () => {
 function buckshotView(state: MafiaState, seatId: string): string {
   return JSON.stringify(mafia.view(state, seatId));
 }
+
+describe('view purity', () => {
+  it('godView copies the roles map', () => {
+    const state = mafia.setup({ seed: 1, seats: roster(5), options: {} });
+    const view = mafia.godView!(state);
+    const roles = (view.data as { god: { roles: Record<string, string> } }).god.roles;
+    expect(roles).not.toBe(state.roles);
+    const first = Object.keys(state.roles)[0]!;
+    const current = state.roles[first]!;
+    roles[first] = current === 'jester' ? 'villager' : 'jester';
+    expect(state.roles[first]).toBe(current);
+  });
+});

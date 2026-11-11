@@ -53,6 +53,13 @@
   </content_rating>
 
   <releases>
+    <release version="0.2.0" date="2026-11-10">
+      <description>
+        <p>Desktop UI overhaul, an optional 3D Mafia council chamber, local-model
+          and resume reliability, budget/save recovery, per-game leaderboard
+          filters and a 3D table toggle.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-24">
       <description>
         <p>First public build: deterministic referee, Mafia / Werewolf, Buckshot Roulette and Coup;

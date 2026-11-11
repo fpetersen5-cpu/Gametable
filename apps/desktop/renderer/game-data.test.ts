@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GameView } from '../shared/api';
-import { buckshotData, coupData, mafiaData } from './game-data';
+import { buckshotData, coupData, mafiaData, roundWinsForViewer } from './game-data';
 
 function view(data: unknown): GameView {
   return {
@@ -55,5 +55,12 @@ describe('game view shape guards', () => {
     expect(mafiaData(mafiaView)?.yourRole).toBe('mafia');
     expect(coupData(mafiaView)).toBeNull();
     expect(buckshotData(mafiaView)).toBeNull();
+  });
+
+  it('shows round wins from the viewing seat', () => {
+    const seats = [{ id: 's1' }, { id: 's2' }];
+    expect(roundWinsForViewer([2, 1], seats, 's1')).toEqual([2, 1]);
+    expect(roundWinsForViewer([2, 1], seats, 's2')).toEqual([1, 2]);
+    expect(roundWinsForViewer([2, 1], seats, '__all__')).toEqual([2, 1]);
   });
 });

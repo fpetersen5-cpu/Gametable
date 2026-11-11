@@ -34,6 +34,7 @@ export interface DesktopApi {
   setSpeed(speed: number): Promise<void>;
   abortMatch(): Promise<void>;
   rewindMatch(): Promise<void>;
+  retrySave(matchId: string): Promise<{ ok: boolean; error?: string }>;
   takeoverSeat(seatId: string): Promise<void>;
   releaseSeat(seatId: string): Promise<void>;
   onTable(handler: (snapshot: TableSnapshot) => void): () => void;
@@ -54,7 +55,7 @@ export interface DesktopApi {
   exportTranscript(matchId: string, perspective?: TranscriptPerspective): Promise<ExportResult>;
   exportBackup(): Promise<ExportResult>;
   importBackup(): Promise<BackupImportResult>;
-  leaderboard(): Promise<LeaderboardRow[]>;
+  leaderboard(gameId?: string): Promise<LeaderboardRow[]>;
   arenaStart(config: ArenaConfig): Promise<{ ok: boolean; error?: string }>;
   arenaPause(paused: boolean): Promise<void>;
   arenaCancel(): Promise<void>;
@@ -121,12 +122,14 @@ export interface AppConfig {
   seats: SeatConfig[];
   /** Default endpoint used when adding a local model seat. */
   localEndpoint: string;
-  /** Hard ceiling for a single match, in USD. */
+  /** Stop starting model calls once reported match spend reaches this amount. */
   budgetUsd: number;
   /** Delay between AI actions, higher is faster. */
   speed: number;
   /** Read model messages aloud, each seat with its own voice. */
   voice: boolean;
+  /** Show Mafia's 3D council chamber; off uses the 2D table only. */
+  scene3d: boolean;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -136,6 +139,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   budgetUsd: 2,
   speed: 1,
   voice: true,
+  scene3d: true,
 };
 
 export interface GameInfo {
@@ -201,6 +205,8 @@ export interface TableSnapshot {
   paused: boolean;
   speed: number;
   budgetUsd: number;
+  /** Persistence of a finished match; absent while playing. */
+  saveState?: { status: 'saving' | 'saved' | 'error'; error?: string };
 }
 
 export interface SeatIssue {

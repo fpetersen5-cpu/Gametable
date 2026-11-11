@@ -366,3 +366,16 @@ describe('Coup elimination, continuation and scoring', () => {
     reject(state, { type: 'pass' });
   });
 });
+
+describe('view purity', () => {
+  it('godView copies the hands map and each hand', () => {
+    const state = coup.setup({ seed: 19, seats: seatRoster(3), options: {} });
+    const view = coup.godView!(state);
+    const hands = (view.data as { god: { hands: Record<string, CoupRole[]> } }).god.hands;
+    expect(hands).not.toBe(state.hands);
+    expect(hands.s1).not.toBe(state.hands.s1);
+    const current = state.hands.s1![0]!;
+    hands.s1![0] = current === 'Duke' ? 'Captain' : 'Duke';
+    expect(state.hands.s1![0]).toBe(current);
+  });
+});

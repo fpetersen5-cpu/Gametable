@@ -3,6 +3,7 @@ dist/
 .vite/
 *.log
 *.flatpak
+*.flatpak.sha256
 *.flatpakref
 flatpak/build/
 flatpak/repo/
@@ -26,3 +27,7 @@ gametable.gpg
 .gnupg/
 flatpak/flathub-build/
 flatpak/flathub-build*/
+
+# Editable Blender character sources (1.9 GB) are kept outside git.
+# Only the runtime exports under assets/mafia/runtime/ are tracked.
+assets/mafia/characters/

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bradleyTerry, type MatchRecord } from './index.js';
+import { bradleyTerry, tableWeight, type MatchRecord } from './index.js';
 
 function record(id: string, winner: string, loser: string): MatchRecord {
   return {
@@ -101,5 +101,43 @@ describe('bradleyTerry', () => {
     const losses = bradleyTerry([duel('a', false), duel('b', false), duel('c', false)]);
     expect(losses[0]?.rating).toBeLessThan(1450);
     expect(losses[0]?.losses).toBe(3);
+  });
+
+  it('normalizes each match to one unit of pairwise evidence', () => {
+    const duel = record('duel', 'a/model', 'b/model');
+    expect(tableWeight(duel)).toBeCloseTo(1);
+
+    const big = record('big', 'a/model', 'b/model');
+    big.seats = Array.from({ length: 10 }, (_, index) => ({
+      seatId: `s${index + 1}`,
+      name: `Seat ${index + 1}`,
+      kind: 'llm' as const,
+      modelId: index === 0 ? 'a/model' : 'b/model',
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      latencyMs: 0,
+      invalidActions: 0,
+      fallbacks: 0,
+    }));
+    big.winnerSeats = ['s1'];
+    expect(tableWeight(big)).toBeCloseTo(1 / 9);
+  });
+
+  it('computes EV loss per decision from totals, not an average of averages', () => {
+    const withMetrics = (id: string, evLoss: number, decisions: number): MatchRecord => {
+      const base = record(id, 'x/model', 'y/model');
+      base.seats = [
+        { ...base.seats[0]!, metrics: { evLoss, decisions, evLossPerDecision: evLoss / decisions } },
+        { ...base.seats[1]!, metrics: { evLoss: 0, decisions: 0, evLossPerDecision: 0 } },
+      ];
+      return base;
+    };
+    const ratings = bradleyTerry(
+      [withMetrics('a', 1, 10), withMetrics('b', 9, 30)],
+      { weight: tableWeight },
+    );
+    const model = ratings.find((rating) => rating.modelId === 'x/model');
+    expect(model?.metrics.evLossPerDecision).toBeCloseTo(10 / 40);
   });
 });

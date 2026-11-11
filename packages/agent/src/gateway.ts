@@ -141,7 +141,8 @@ export class LlmController implements Controller {
   constructor(private readonly deps: LlmControllerDeps) {}
 
   async act(req: ActionRequest): Promise<GameAction> {
-    const { client, gameName, config, semaphore } = this.deps;
+    req.signal?.throwIfAborted();
+    const { gameName, config, semaphore } = this.deps;
     const legal = req.view.legalActions;
     if (legal.length === 0) throw new Error(`no legal actions for ${req.seat.id}`);
 
@@ -177,8 +178,10 @@ export class LlmController implements Controller {
       previewShown = false;
       this.deps.onPreview?.('');
     };
+    req.signal?.addEventListener('abort', clearPreview, { once: true });
     const onText = canPreview
       ? (text: string) => {
+          if (req.signal?.aborted) return;
           const type = actionTypePreview(text);
           const isPublic = type !== null && this.deps.isPreviewPublic?.(req.view, type) === true;
           if (!isPublic) {
@@ -193,7 +196,7 @@ export class LlmController implements Controller {
       : undefined;
     const call = (msgs: typeof messages) =>
       semaphore
-        ? semaphore.run(() => this.callWithFallbacks(msgs, schema, req, onText))
+        ? semaphore.run(() => this.callWithFallbacks(msgs, schema, req, onText), req.signal)
         : this.callWithFallbacks(msgs, schema, req, onText);
 
     let result: CompletionResult;
@@ -220,6 +223,7 @@ export class LlmController implements Controller {
         action = reply ? matchAction(legal, reply.action) : null;
       }
     } finally {
+      req.signal?.removeEventListener('abort', clearPreview);
       clearPreview();
     }
 
@@ -354,6 +358,7 @@ export class LlmController implements Controller {
     try {
       return await attempt();
     } catch (error) {
+      req.signal?.throwIfAborted();
       const message = describeError(error).toLowerCase();
       let degraded = false;
       if (this.schemaSupported && /response_format|json_schema|structured|invalid schema|schema/.test(message)) {
@@ -379,6 +384,7 @@ export class LlmController implements Controller {
     req: ActionRequest,
     onText?: (text: string) => void,
   ): Promise<CompletionResult> {
+    req.signal?.throwIfAborted();
     const { client, config } = this.deps;
     const shared = this.deps.sharedBudget;
     if (shared && shared.remaining() <= 0) {
@@ -392,6 +398,10 @@ export class LlmController implements Controller {
     }
     this.counters.calls += 1;
     const temperature = this.temperatureSupported ? (config.temperature ?? 0.8) : undefined;
+    const timeout = AbortSignal.timeout(
+      Math.max(1_000, Math.min(req.timeoutMs, config.timeoutMs ?? 90_000)),
+    );
+    const signal = req.signal ? AbortSignal.any([req.signal, timeout]) : timeout;
     let result: CompletionResult;
     try {
       result = await client.complete({
@@ -404,30 +414,33 @@ export class LlmController implements Controller {
           allowFallbacks: true,
           ...config.provider,
         },
-        signal: AbortSignal.timeout(
-          Math.max(1_000, Math.min(req.timeoutMs, config.timeoutMs ?? 90_000)),
-        ),
+        signal,
         onRetry: (_attempt, _delay, error) => {
+          if (signal.aborted) return;
           this.counters.retries += 1;
           this.lastError = describeError(error);
           this.lastErrorKind = classifyError(error);
           this.lastErrorCall = this.counters.calls;
         },
-        ...(onText ? { onText } : {}),
+        ...(onText ? { onText: (text: string) => { if (!signal.aborted) onText(text); } } : {}),
       });
     } catch (error) {
+      // A user stopping or rewinding a run is not a provider failure.
+      req.signal?.throwIfAborted();
       this.counters.errors += 1;
       this.lastError = describeError(error);
       this.lastErrorKind = classifyError(error);
       this.lastErrorCall = this.counters.calls;
       throw error;
     }
-    this.lastOkCall = this.counters.calls;
     this.deps.sharedBudget?.spend(result.usage.costUsd);
     this.counters.tokensIn += result.usage.promptTokens;
     this.counters.tokensOut += result.usage.completionTokens;
     this.counters.costUsd += result.usage.costUsd;
     this.counters.latencyMs += result.latencyMs;
+    // Keep any reported spend, but do not repair or remember a cancelled response.
+    signal.throwIfAborted();
+    this.lastOkCall = this.counters.calls;
     return result;
   }
 }

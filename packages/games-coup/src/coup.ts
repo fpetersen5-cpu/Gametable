@@ -702,7 +702,9 @@ export const coup: GameDef<CoupState> = {
         influence: 0,
         exchangeCards: undefined,
         god: {
-          hands: state.hands,
+          hands: Object.fromEntries(
+            Object.entries(state.hands).map(([id, hand]) => [id, [...hand]]),
+          ),
           deck: [...state.deck],
           discard: [...state.discard],
         },

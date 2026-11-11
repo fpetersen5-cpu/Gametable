@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ActionRequest, GameView } from '@gametable/engine';
 import {
   LlmController,
+  Semaphore,
   OpenRouterError,
   actionSchema,
   buildSystemPrompt,
@@ -10,6 +11,7 @@ import {
   parseJsonReply,
   type CompletionClient,
   type CompletionRequest,
+  type CompletionResult,
 } from './index.js';
 
 class FakeClient implements CompletionClient {
@@ -69,6 +71,98 @@ function request(overrides: Partial<GameView> = {}): ActionRequest {
     timeoutMs: 5_000,
   };
 }
+
+describe('cancelled model decisions', () => {
+  it('does not call a model for an already-cancelled decision', async () => {
+    const client = new FakeClient([]);
+    const controller = new LlmController({ client, gameName: 'Mines', config: { model: 'x/y' } });
+    await expect(controller.act({ ...request(), signal: AbortSignal.abort() })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(client.calls).toEqual([]);
+    expect(controller.usage().calls).toBe(0);
+  });
+
+  for (const source of ['match', 'timeout']) {
+    it(`combines match cancellation with the provider timeout: ${source}`, async () => {
+      const match = new AbortController();
+      const timeout = new AbortController();
+      const timer = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+      let sentSignal: AbortSignal | undefined;
+      const client: CompletionClient = {
+        complete: (req) => new Promise((_resolve, reject) => {
+          sentSignal = req.signal;
+          req.signal!.addEventListener('abort', () => reject(req.signal!.reason), { once: true });
+        }),
+      };
+      const controller = new LlmController({ client, gameName: 'Mines', config: { model: 'x/y' } });
+      try {
+        const acting = controller.act({ ...request(), signal: match.signal });
+        const name = source === 'match' ? 'AbortError' : 'TimeoutError';
+        const rejected = expect(acting).rejects.toMatchObject({ name });
+        (source === 'match' ? match : timeout).abort(new DOMException('stopped', name));
+        await rejected;
+        expect(sentSignal?.aborted).toBe(true);
+        expect(controller.usage().errors).toBe(source === 'match' ? 0 : 1);
+      } finally {
+        timer.mockRestore();
+      }
+    });
+  }
+
+  it('removes a cancelled semaphore waiter without starting its model call', async () => {
+    const semaphore = new Semaphore(1);
+    let release!: () => void;
+    const blocker = semaphore.run(() => new Promise<void>((resolve) => { release = resolve; }));
+    const abort = new AbortController();
+    const client = new FakeClient(['{"action":{"type":"probe","target":"s2"}}']);
+    const controller = new LlmController({ client, semaphore, gameName: 'Mines', config: { model: 'x/y' } });
+    const acting = controller.act({ ...request(), signal: abort.signal });
+    const rejected = expect(acting).rejects.toMatchObject({ name: 'AbortError' });
+    expect(semaphore.pending).toBe(1);
+    abort.abort();
+    await rejected;
+    expect(semaphore.pending).toBe(0);
+    expect(client.calls).toEqual([]);
+    release();
+    await blocker;
+    await expect(controller.act(request())).resolves.toEqual({ type: 'probe', target: 's2' });
+    expect(client.calls).toHaveLength(1);
+  });
+
+  it.each(['{"action":{},"notes":"stale"}', '{"action":{"type":"say","text":"old"},"notes":"stale"}'])(
+    'ignores stale callbacks and responses after a new decision starts: %s', async (oldText) => {
+      const abort = new AbortController();
+      const calls: Array<{ req: CompletionRequest; resolve: (reply: CompletionResult) => void }> = [];
+      const client: CompletionClient = { complete: (req) => new Promise((resolve) => calls.push({ req, resolve })) };
+      const preview = vi.fn();
+      const controller = new LlmController({
+        client, gameName: 'Mafia', config: { model: 'x/y' }, onPreview: preview, isPreviewPublic: () => true,
+      });
+      const req = request({ legalActions: [{ type: 'say', text: '' }] });
+      const old = controller.act({ ...req, signal: abort.signal });
+      const rejected = expect(old).rejects.toMatchObject({ name: 'AbortError' });
+      calls[0]!.req.onText?.('{"action":{"type":"say","text":"old');
+      abort.abort();
+      expect(preview.mock.calls.map(([text]) => text)).toEqual(['old', '']);
+      const fresh = controller.act(req);
+      calls[1]!.req.onText?.('{"action":{"type":"say","text":"new');
+      preview.mockClear();
+      calls[0]!.req.onText?.('{"action":{"type":"say","text":"stale');
+      calls[0]!.req.onRetry?.(1, 100, new Error('stale retry'));
+      const result = (text: string): CompletionResult => ({
+        text, model: 'x/y', usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.001 }, latencyMs: 1,
+      });
+      calls[0]!.resolve(result(oldText));
+      await rejected;
+      expect(preview).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(2); // No repair call for the cancelled response.
+      calls[1]!.resolve(result('{"action":{"type":"say","text":"new"},"notes":"fresh"}'));
+      await fresh;
+      expect(controller.privateNotes).toBe('fresh');
+      expect(controller.health()).toMatchObject({ errors: 0, retries: 0 });
+      expect(controller.usage().costUsd).toBeCloseTo(0.002); // Retain any spend actually reported.
+    },
+  );
+});
 
 describe('seat health', () => {
   class RetryClient implements CompletionClient {

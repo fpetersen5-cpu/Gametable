@@ -8,6 +8,10 @@ it as-is.** A human maintainer must independently author/rewrite and review the
 final manifest, own the pull request, and make any required AI-use disclosure
 for the application and documentation.
 
+> **0.2.0 status:** the pinned source is still `2a12e4e`, before the UI overhaul
+> and the 3D Mafia scene. Regenerate with the 0.2.0 commit and replace the
+> screenshots before treating this draft as current.
+
 ## Contents
 
 | File | Purpose |

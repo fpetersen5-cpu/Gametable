@@ -12,18 +12,24 @@ import type {
 } from '../../shared/api';
 import { shortModel } from '../game-data';
 import { Icon } from '../components/Icon';
+import { errorMessage } from '../async';
+import { useDialog } from '../useDialog';
 
 interface Props {
   config: AppConfig;
   status: AppStatus;
   models: ModelInfo[];
   modelsError: string | null;
+  modelsLoading: boolean;
   games: GameInfo[];
   onChange: (config: AppConfig) => Promise<void>;
   onRefreshModels: (refresh: boolean) => Promise<void>;
   onOpenSettings: () => void;
   onStart: (request: StartMatchRequest) => Promise<{ ok: boolean; error?: string }>;
   resumable: ResumableMatch[];
+  resumableLoading: boolean;
+  resumableError: string | null;
+  onRefreshResumable: () => void;
   voices: VoicePreset[];
   onResume: (matchId: string) => Promise<void>;
 }
@@ -35,6 +41,8 @@ export function TableSetup(props: Props) {
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [resuming, setResuming] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [checks, setChecks] = useState<
     Record<number, { testing?: boolean; result?: SeatTestResult }>
@@ -49,7 +57,7 @@ export function TableSetup(props: Props) {
     game && (totalSeats < game.minSeats || totalSeats > game.maxSeats)
       ? `${game.name} needs ${game.minSeats}–${game.maxSeats} seats; you have ${totalSeats}. ` +
         (game.minSeats === game.maxSeats
-          ? `Remove ${Math.abs(totalSeats - game.maxSeats)} seat${
+          ? `${totalSeats < game.minSeats ? 'Add' : 'Remove'} ${Math.abs(totalSeats - game.maxSeats)} seat${
               Math.abs(totalSeats - game.maxSeats) === 1 ? '' : 's'
             }.`
           : '')
@@ -73,14 +81,14 @@ export function TableSetup(props: Props) {
     if (!spectator) seats.push({ name: config.humanName, kind: 'human' });
     for (const seat of config.seats) {
       seats.push({
-        name: seatName(seat),
+        name: seatName(seat).slice(0, 64),
         kind: 'llm',
         modelId: seat.modelId,
         ...(seat.provider ? { provider: seat.provider } : {}),
         ...(seat.baseUrl ? { baseUrl: seat.baseUrl } : {}),
         ...(seat.persona ? { persona: seat.persona } : {}),
         ...(seat.voice === undefined ? {} : { voice: seat.voice }),
-        ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
+        ...(seat.budgetUsd === undefined ? {} : { budgetUsd: seat.budgetUsd }),
       });
     }
     if (seats.length < game.minSeats || seats.length > game.maxSeats) {
@@ -97,14 +105,21 @@ export function TableSetup(props: Props) {
         trackOptimality: game.capabilities.solver,
       });
       if (!result.ok) setError(result.error ?? 'Could not start the match');
+    } catch (error) {
+      setError(errorMessage(error));
     } finally {
       setStarting(false);
     }
   };
 
+  const updateConfig = (next: AppConfig) => {
+    setError(null);
+    void onChange(next).catch((failure) => setError(errorMessage(failure)));
+  };
+
   const setSeats = (seats: SeatConfig[]) => {
     setChecks({});
-    void onChange({ ...config, seats });
+    updateConfig({ ...config, seats });
   };
 
   const testSeats = async () => {
@@ -117,7 +132,7 @@ export function TableSetup(props: Props) {
     try {
       const results = await window.gametable.testSeats(
         config.seats.map((seat) => ({
-          name: seatName(seat),
+          name: seatName(seat).slice(0, 64),
           modelId: seat.modelId,
           ...(seat.provider ? { provider: seat.provider } : {}),
           ...(seat.baseUrl ? { baseUrl: seat.baseUrl } : {}),
@@ -151,6 +166,8 @@ export function TableSetup(props: Props) {
         player.onerror = () => resolve();
         void player.play().catch(() => resolve());
       });
+    } catch (failure) {
+      setError(errorMessage(failure));
     } finally {
       setPreviewing(null);
     }
@@ -178,10 +195,10 @@ export function TableSetup(props: Props) {
           <button
             className="ghost"
             onClick={() => void props.onRefreshModels(true)}
-            disabled={!props.status.hasKey}
+            disabled={!props.status.hasKey || props.modelsLoading}
           >
             <Icon name="refresh" size={15} />
-            Refresh models
+            {props.modelsLoading ? 'Loading models…' : 'Refresh models'}
           </button>
         </div>
       </header>
@@ -201,20 +218,40 @@ export function TableSetup(props: Props) {
         </section>
       )}
 
-      {props.resumable.length > 0 && (
-        <section className="resume-card">
+      {props.modelsError && <p className="banner error-banner" role="alert">{props.modelsError}</p>}
+      <section className="stack" aria-label="Unfinished matches">
+        <div className="head-actions">
+          <h2>Unfinished matches ({props.resumable.length})</h2>
+          <button className="ghost" disabled={props.resumableLoading || resuming !== null || starting}
+            onClick={props.onRefreshResumable}>Refresh</button>
+        </div>
+        {props.resumableLoading && <p className="muted">Loading unfinished matches…</p>}
+        {props.resumableError && <div className="banner error-banner" role="alert">
+          {props.resumableError} <button className="ghost" onClick={props.onRefreshResumable}>Retry</button>
+        </div>}
+        {resumeError && <p className="banner error-banner" role="alert">{resumeError}</p>}
+        {!props.resumableLoading && !props.resumableError && props.resumable.length === 0 &&
+          <p className="muted">No unfinished matches.</p>}
+        {props.resumable.map((match) => <div className="resume-card" key={match.matchId}>
           <div>
-            <strong>Unfinished match</strong>
+            <strong>{match.gameName}</strong>
             <p className="muted">
-              {props.resumable[0]?.gameName} · {props.resumable[0]?.eventCount} actions ·{' '}
-              {new Date(props.resumable[0]?.updatedAt ?? 0).toLocaleString()}
+              {match.eventCount} actions · {match.updatedAt ? new Date(match.updatedAt).toLocaleString() : 'Unknown date'}
             </p>
+            <p className="muted">{match.seats.map((seat) => seat.name).join(' · ')}</p>
+            <small>{match.matchId}</small>
           </div>
-          <button className="primary" onClick={() => void props.onResume(props.resumable[0]?.matchId ?? '')}>
-            Resume
+          <button className="primary" disabled={resuming !== null || starting} onClick={async () => {
+            setResuming(match.matchId);
+            setResumeError(null);
+            try { await props.onResume(match.matchId); }
+            catch (error) { setResumeError(`${match.gameName} (${match.matchId}): ${errorMessage(error)}`); }
+            finally { setResuming(null); }
+          }}>
+            {resuming === match.matchId ? 'Resuming…' : 'Resume'}
           </button>
-        </section>
-      )}
+        </div>)}
+      </section>
 
       <section className="setup-section game-section">
         <div className="section-heading">
@@ -291,7 +328,8 @@ export function TableSetup(props: Props) {
                 <input
                   className="name-input"
                   value={config.humanName}
-                  onChange={(event) => void onChange({ ...config, humanName: event.target.value })}
+                  maxLength={64}
+                  onChange={(event) => updateConfig({ ...config, humanName: event.target.value })}
                   aria-label="Your name"
                 />
                 <small className="seat-sub">The human at the table</small>
@@ -299,7 +337,7 @@ export function TableSetup(props: Props) {
             </div>
             <div className="human-note">
               <Icon name="shield" size={16} />
-              <span>Your seat. Your decisions. No hidden information.</span>
+              <span>Your seat. Your decisions. You see exactly what your seat may see.</span>
             </div>
           </div>
         )}
@@ -332,6 +370,7 @@ export function TableSetup(props: Props) {
             <input
               className="persona-input"
               placeholder="Personality, e.g. calm and analytical"
+              maxLength={200}
               value={seat.persona ?? ''}
               onChange={(event) => {
                 const seats = [...config.seats];
@@ -373,6 +412,7 @@ export function TableSetup(props: Props) {
               className="cap-input"
               type="number"
               min={0}
+              max={1000}
               step={0.05}
               placeholder="Seat budget cap (USD)"
               aria-label={`Budget cap for AI seat ${index + 1}`}
@@ -444,7 +484,7 @@ export function TableSetup(props: Props) {
           <button
             className="primary"
             onClick={() => void start()}
-            disabled={starting || !game || Boolean(seatIssue)}
+            disabled={starting || resuming !== null || !game || Boolean(seatIssue)}
           >
             {starting ? 'Dealing…' : spectator ? 'Watch the match' : 'Deal me in'}
             {!starting && <Icon name="arrow" size={17} />}
@@ -506,6 +546,7 @@ function ModelPicker(props: {
   const [query, setQuery] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
   const [structuredOnly, setStructuredOnly] = useState(true);
+  const dialogRef = useDialog(props.onClose);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -524,7 +565,14 @@ function ModelPicker(props: {
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="modal"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose a model"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="modal-head">
           <h2>Choose a model</h2>
           <button className="icon" onClick={props.onClose} aria-label="Close">
@@ -590,6 +638,7 @@ function LocalModelPicker(props: {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [manual, setManual] = useState('');
+  const dialogRef = useDialog(props.onClose);
 
   const load = async () => {
     setLoading(true);
@@ -618,7 +667,14 @@ function LocalModelPicker(props: {
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="modal"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add a local model"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="modal-head">
           <h2>Add a local model</h2>
           <button className="icon" onClick={props.onClose} aria-label="Close">

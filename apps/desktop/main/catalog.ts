@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import type { ModelInfo } from '@gametable/agent';
+import { secureWrite } from './secure-file.js';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -25,7 +25,6 @@ export class ModelCatalogCache {
   }
 
   async write(entry: CacheFile): Promise<void> {
-    await mkdir(dirname(this.file), { recursive: true });
-    await writeFile(this.file, JSON.stringify(entry), 'utf8');
+    await secureWrite(this.file, JSON.stringify(entry));
   }
 }

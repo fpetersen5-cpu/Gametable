@@ -76,4 +76,11 @@ describe('oracle', () => {
     expect(result.best).toBeLessThan(1);
     expect(elapsed).toBeLessThan(2_000);
   });
+
+  it('reloads after the last shell leaves on a passing shot', () => {
+    const result = evaluate(input({ hp: [4, 4], live: 1, blank: 0 }));
+    expect(result.states).toBeLessThan(150_000);
+    expect(result.best).toBeGreaterThan(0);
+    expect(result.best).toBeLessThan(1);
+  });
 });

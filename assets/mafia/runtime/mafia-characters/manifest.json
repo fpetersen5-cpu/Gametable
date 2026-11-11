@@ -1,0 +1,61 @@
+{
+  "characters": [
+    {
+      "name": "analyst",
+      "triangles": 509664,
+      "geometry_bytes": 18414304
+    },
+    {
+      "name": "courier",
+      "triangles": 499464,
+      "geometry_bytes": 18076744
+    },
+    {
+      "name": "ember",
+      "triangles": 485160,
+      "geometry_bytes": 17575288
+    },
+    {
+      "name": "envoy",
+      "triangles": 503288,
+      "geometry_bytes": 18185760
+    },
+    {
+      "name": "liaison",
+      "triangles": 493088,
+      "geometry_bytes": 17794832
+    },
+    {
+      "name": "navigator",
+      "triangles": 493088,
+      "geometry_bytes": 17815552
+    },
+    {
+      "name": "nightfall",
+      "triangles": 492920,
+      "geometry_bytes": 17836496
+    },
+    {
+      "name": "sentinel",
+      "triangles": 499464,
+      "geometry_bytes": 18032560
+    },
+    {
+      "name": "silver",
+      "triangles": 499464,
+      "geometry_bytes": 18041296
+    },
+    {
+      "name": "vanguard",
+      "triangles": 503352,
+      "geometry_bytes": 18196224
+    },
+    {
+      "name": "veteran",
+      "triangles": 499464,
+      "geometry_bytes": 17969112
+    }
+  ],
+  "texture_size": 2048,
+  "surface_revision": "surfaces-v2"
+}

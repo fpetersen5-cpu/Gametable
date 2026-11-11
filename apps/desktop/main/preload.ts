@@ -31,6 +31,7 @@ const api: DesktopApi = {
   setSpeed: (speed) => ipcRenderer.invoke('match:speed', speed),
   abortMatch: () => ipcRenderer.invoke('match:abort'),
   rewindMatch: () => ipcRenderer.invoke('match:rewind'),
+  retrySave: (matchId) => ipcRenderer.invoke('match:retry-save', matchId),
   takeoverSeat: (seatId) => ipcRenderer.invoke('match:takeover', seatId),
   releaseSeat: (seatId) => ipcRenderer.invoke('match:release', seatId),
   onTable: (handler) => subscribe<TableSnapshot>('match:table', handler),
@@ -47,7 +48,7 @@ const api: DesktopApi = {
   exportTranscript: (matchId, perspective) => ipcRenderer.invoke('matches:export', matchId, perspective),
   exportBackup: () => ipcRenderer.invoke('data:export'),
   importBackup: () => ipcRenderer.invoke('data:import'),
-  leaderboard: () => ipcRenderer.invoke('leaderboard'),
+  leaderboard: (gameId) => ipcRenderer.invoke('leaderboard', gameId),
   listVoices: () => ipcRenderer.invoke('tts:voices'),
   speak: (text, seatId, voice) =>
     ipcRenderer.invoke('tts:speak', { text, seatId, ...(voice === undefined ? {} : { voice }) }),

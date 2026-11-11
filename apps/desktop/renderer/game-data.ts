@@ -153,6 +153,16 @@ export function shortModel(modelId?: string): string {
   return slash === -1 ? modelId : modelId.slice(slash + 1);
 }
 
+/** Round-win counts from the viewing seat's perspective. */
+export function roundWinsForViewer(
+  roundWins: [number, number],
+  seats: Array<{ id: string }>,
+  viewSeatId?: string,
+): [number, number] {
+  const index = seats.findIndex((seat) => seat.id === viewSeatId);
+  return index === 1 ? [roundWins[1], roundWins[0]] : [roundWins[0], roundWins[1]];
+}
+
 export function actionTargetName(action: GameAction, seats: Array<{ id: string; name: string }>): string {
   const target = typeof action.target === 'string' ? action.target : '';
   return seats.find((seat) => seat.id === target)?.name ?? target;

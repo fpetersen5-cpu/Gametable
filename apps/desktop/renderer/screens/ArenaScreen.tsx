@@ -7,6 +7,7 @@ import type {
 } from '../../shared/api';
 import { formatUsd, shortModel } from '../game-data';
 import { Icon } from '../components/Icon';
+import { errorMessage } from '../async';
 
 interface Props {
   games: GameInfo[];
@@ -26,7 +27,9 @@ export function ArenaScreen({ games, config, models, onLeaderboard }: Props) {
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    void window.gametable.arenaState().then(setProgress);
+    void window.gametable.arenaState().then(setProgress).catch((failure) => {
+      setError(errorMessage(failure));
+    });
     return window.gametable.onArena((next) => setProgress(next));
   }, []);
 
@@ -65,6 +68,8 @@ export function ArenaScreen({ games, config, models, onLeaderboard }: Props) {
         totalBudgetUsd: totalBudget,
       });
       if (!result.ok) setError(result.error ?? 'Could not start the arena');
+    } catch (failure) {
+      setError(errorMessage(failure));
     } finally {
       setStarting(false);
     }
@@ -201,10 +206,16 @@ export function ArenaScreen({ games, config, models, onLeaderboard }: Props) {
             <div className="arena-controls">
               {progress.running && (
                 <>
-                  <button className="ghost" onClick={() => void window.gametable.arenaPause(!progress.paused)}>
+                  <button className="ghost" onClick={() => {
+                    void window.gametable.arenaPause(!progress.paused)
+                      .catch((failure) => setError(errorMessage(failure)));
+                  }}>
                     {progress.paused ? 'Resume' : 'Pause'}
                   </button>
-                  <button className="ghost danger" onClick={() => void window.gametable.arenaCancel()}>
+                  <button className="ghost danger" onClick={() => {
+                    void window.gametable.arenaCancel()
+                      .catch((failure) => setError(errorMessage(failure)));
+                  }}>
                     Stop
                   </button>
                 </>

@@ -1,7 +1,7 @@
 {
   "name": "@gametable/desktop",
   "productName": "GameTable",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist/main.cjs",
@@ -16,10 +16,14 @@
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "44.9.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
   }
 }

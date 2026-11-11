@@ -1,54 +1,48 @@
-import { useEffect, useState } from 'react';
-import type { GameView, MatchSummary, ReplayBundle, TranscriptPerspective } from '../../shared/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { TranscriptPerspective } from '../../shared/api';
 import { formatUsd } from '../game-data';
 import { GameTable } from '../components/GameTable';
+import { useResource } from '../useResource';
+import { errorMessage } from '../async';
+import { filterMatches } from '../history';
 
-export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | null }) {
-  const [matches, setMatches] = useState<MatchSummary[] | null>(null);
-  const [bundle, setBundle] = useState<ReplayBundle | null>(null);
+export function ReplayScreen({
+  initialMatchId,
+  scene3dEnabled = true,
+}: {
+  initialMatchId?: string | null;
+  scene3dEnabled?: boolean;
+}) {
+  const history = useResource(useCallback(() => window.gametable.listMatches(), []), 'Replay history');
+  const matches = history.data;
+  const [selectedId, setSelectedId] = useState(initialMatchId ?? null);
+  const selection = useRef(selectedId);
+  selection.current = selectedId;
+  const [query, setQuery] = useState('');
+  const [gameId, setGameId] = useState('');
+  const replay = useResource(useCallback(async () => {
+    if (!selectedId) return null;
+    const loaded = await window.gametable.loadReplay(selectedId);
+    if (!loaded || loaded.views.length === 0) throw new Error('That replay could not be read or has no saved views.');
+    return loaded;
+  }, [selectedId]), 'Replay');
+  const bundle = replay.data;
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [viewAs, setViewAs] = useState<'god' | 'you' | string>('god');
-  const [seatViews, setSeatViews] = useState<Record<string, GameView[]>>({});
-  const [loadingSeat, setLoadingSeat] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-
-  useEffect(() => {
-    void window.gametable.listMatches().then(setMatches);
-  }, []);
-
-  useEffect(() => {
-    const isSeat = viewAs !== 'god' && viewAs !== 'you';
-    if (!bundle || !isSeat || seatViews[viewAs]) return;
-    let cancelled = false;
-    setLoadingSeat(true);
-    void window.gametable
-      .replaySeatViews(bundle.summary.matchId, viewAs)
-      .then((result) => {
-        if (cancelled) return;
-        if (result.views) {
-          setSeatViews((previous) => ({ ...previous, [viewAs]: result.views as GameView[] }));
-        } else {
-          setNote(result.error ?? 'That seat view could not be rebuilt.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSeat(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bundle, viewAs, seatViews]);
+  const isSeat = viewAs !== 'god' && viewAs !== 'you';
+  const perspective = useResource(useCallback(async () => {
+    if (!bundle || !isSeat) return null;
+    const result = await window.gametable.replaySeatViews(bundle.summary.matchId, viewAs);
+    if (!result.views) throw new Error(result.error ?? 'That seat view could not be rebuilt.');
+    return result.views;
+  }, [bundle, isSeat, viewAs]), 'Seat perspective');
 
   useEffect(() => {
     if (!initialMatchId) return;
-    void window.gametable.loadReplay(initialMatchId).then((loaded) => {
-      if (!loaded) return;
-      setBundle(loaded);
-      setIndex(0);
-      setPlaying(false);
-    });
+    setSelectedId(initialMatchId);
   }, [initialMatchId]);
 
   useEffect(() => {
@@ -61,34 +55,37 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
     return () => clearTimeout(timer);
   }, [playing, index, bundle, speed]);
 
-  const open = async (matchId: string) => {
-    const loaded = await window.gametable.loadReplay(matchId);
-    if (!loaded) {
-      setNote('That replay could not be read.');
-      return;
-    }
-    setBundle(loaded);
+  useEffect(() => {
     setIndex(0);
     setPlaying(false);
     setNote(null);
     setViewAs('god');
-    setSeatViews({});
-  };
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!bundle) return;
+    setViewAs(
+      bundle.summary.seats.some((seat) => seat.kind === 'human') ? 'you' : 'god',
+    );
+  }, [bundle?.summary.matchId]);
 
   const exportMatch = async (matchId: string, perspective: TranscriptPerspective) => {
-    const result = await window.gametable.exportTranscript(matchId, perspective);
-    setNote(result.ok ? `Saved to ${result.path}` : result.error ?? 'Export failed');
+    try {
+      const result = await window.gametable.exportTranscript(matchId, perspective);
+      if (selection.current === matchId) setNote(result.ok ? `Saved to ${result.path}` : result.error ?? 'Export failed');
+    } catch (error) {
+      if (selection.current === matchId) setNote(errorMessage(error));
+    }
   };
 
   const views = bundle?.views ?? [];
   const hasHuman = bundle?.summary.seats.some((seat) => seat.kind === 'human') ?? false;
-  const isSeat = viewAs !== 'god' && viewAs !== 'you';
   const display = bundle
     ? viewAs === 'god'
       ? bundle.godViews[index] ?? bundle.views[index]
       : viewAs === 'you'
         ? bundle.views[index]
-        : seatViews[viewAs]?.[index] ?? null
+        : perspective.data?.[index] ?? null
     : null;
   // Raw events may contain private targets or card choices. They are only an
   // omniscient replay feature, not part of any seat's perspective.
@@ -97,25 +94,46 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
   const exportSeat = viewAs === 'you'
     ? bundle?.seats.find((seat) => seat.kind === 'human')?.id
     : isSeat ? viewAs : undefined;
+  const filtered = filterMatches(matches ?? [], gameId, query);
+  const gameOptions = [...new Map((matches ?? []).map((match) => [match.gameId, match.gameName]))];
 
   return (
     <div className="replay-screen">
       <aside className="replay-list">
         <h2>Replays</h2>
-        {matches === null && <p className="muted">Loading…</p>}
+        <div className="history-filters">
+          <label>Search
+            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Player, model, winner or match ID" />
+          </label>
+          <label>Game
+            <select value={gameId} onChange={(event) => setGameId(event.target.value)}>
+              <option value="">All games</option>
+              {gameOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </label>
+          <button className="ghost" disabled={history.loading} onClick={history.retry}>Refresh</button>
+        </div>
+        {history.loading && <p className="muted">Loading…</p>}
+        {history.error && <div className="banner error-banner" role="alert">{history.error}
+          <button className="ghost" onClick={history.retry}>Retry</button>
+        </div>}
         {matches?.length === 0 && (
           <p className="muted">Finished matches will appear here, with a scrubber for every action.</p>
         )}
-        {matches?.map((match) => (
+        {matches && matches.length > 0 && <p className="muted">{filtered.length} of {matches.length} matches</p>}
+        {matches && matches.length > 0 && filtered.length === 0 && <p className="muted">No matches found. Try another search or game.</p>}
+        {filtered.map((match) => (
           <button
             key={match.matchId}
-            className={`replay-item${bundle?.summary.matchId === match.matchId ? ' selected' : ''}`}
-            onClick={() => void open(match.matchId)}
+            className={`replay-item${selectedId === match.matchId ? ' selected' : ''}`}
+            onClick={() => setSelectedId(match.matchId)}
           >
             <strong>{match.gameName}</strong>
             <small>
               {new Date(match.startedAt).toLocaleString()} · {match.eventCount} actions
             </small>
+            <small>{match.seats.map((seat) => seat.name).join(' · ')}</small>
+            <small>{match.matchId}</small>
             <small>
               {match.winnerNames.join(' & ') || 'no winner'} · {formatUsd(match.totalCostUsd)}
             </small>
@@ -124,13 +142,18 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
       </aside>
 
       <main className="replay-viewer">
-        {!bundle || !display ? (
+        {note && <p className="export-note" role="status">{note}</p>}
+        {selectedId && replay.loading && <p className="muted">Loading replay…</p>}
+        {replay.error && <div className="banner error-banner" role="alert">{replay.error}
+          <button className="ghost" onClick={replay.retry}>Retry</button>
+        </div>}
+        {!selectedId ? (
           <div className="empty-state">
             <span className="big">◷</span>
             <h2>Pick a match</h2>
             <p className="muted">Step through every action, or let it play.</p>
           </div>
-        ) : (
+        ) : bundle ? (
           <>
             <header className="replay-controls">
               <div>
@@ -182,7 +205,7 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
                     ))}
                   </select>
                 </label>
-                {loadingSeat && <span className="muted">loading…</span>}
+                {isSeat && perspective.loading && <span className="muted">Loading perspective…</span>}
                 <button className="ghost" onClick={() => void exportMatch(bundle.summary.matchId, { mode: 'public' })}>
                   Export public
                 </button>
@@ -199,7 +222,9 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
               </div>
             </header>
 
-            {note && <p className="export-note">{note}</p>}
+            {isSeat && perspective.error && <div className="banner error-banner" role="alert">{perspective.error}
+              <button className="ghost" onClick={perspective.retry}>Retry perspective</button>
+            </div>}
 
             <div className="scrubber">
               <input
@@ -232,7 +257,7 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
               </p>
             )}
 
-            <GameTable
+            {display && <GameTable
               view={display}
               godView={viewAs === 'god' ? bundle.godViews[index] ?? null : null}
               humanSeatId={
@@ -242,7 +267,8 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
               }
               spectator={viewAs === 'god'}
               awaiting={false}
-            />
+              scene3dEnabled={scene3dEnabled}
+            />}
 
             <div className="replay-meta">
               {bundle.summary.seats.map((seat) => (
@@ -252,7 +278,7 @@ export function ReplayScreen({ initialMatchId }: { initialMatchId?: string | nul
               ))}
             </div>
           </>
-        )}
+        ) : null}
       </main>
     </div>
   );

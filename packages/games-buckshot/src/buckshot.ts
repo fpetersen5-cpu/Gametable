@@ -291,7 +291,10 @@ function useItemEffect(
       const top = state.chamber[0];
       if (top) {
         state.chamber[0] = top === 'live' ? 'blank' : 'live';
-        if (state.knowledge[p].top) state.knowledge[p].top = state.chamber[0] ?? null;
+        // Anyone who had peeked the old top now knows the inverted value.
+        for (const knowledge of state.knowledge) {
+          if (knowledge.top) knowledge.top = state.chamber[0] ?? null;
+        }
       }
       pushLog(state, `${seatName(state, p)} inverts the current shell.`);
       break;
@@ -485,7 +488,7 @@ export const buckshot: GameDef<BuckshotState> = {
         shells: state.chamber.length,
         live: countShells(state.chamber, 'live'),
         blank: countShells(state.chamber, 'blank'),
-        youPeeked: state.knowledge[p],
+        youPeeked: structuredClone(state.knowledge[p]),
         sawed: state.sawed,
         youAreHandcuffed: state.skip[p],
         roundWins: [state.roundWins[0], state.roundWins[1]],

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { OpenRouterClient } from './openrouter.js';
 
 function sse(chunks: string[]): Response {
@@ -88,5 +88,38 @@ describe('streaming completions', () => {
       onText: () => controller.abort(),
     });
     await expect(promise).rejects.toThrow(/aborted/i);
+  });
+
+  it('cancels a pending stream read and releases its reader on abort', async () => {
+    const abort = new AbortController();
+    const cancel = vi.fn();
+    const pull = vi.fn();
+    const body = new ReadableStream({ pull, cancel });
+    const fetchImpl = vi.fn(async () => new Response(body, {
+      headers: { 'content-type': 'text/event-stream' },
+    }));
+    const client = new OpenRouterClient({ apiKey: 'test', fetchImpl });
+    const result = client.complete({ model: 'x/y', messages: [], signal: abort.signal, onText: () => undefined });
+    const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(body.locked).toBe(true), { interval: 5 });
+    abort.abort();
+    await rejected;
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(body.locked).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  }, 2_000);
+
+  it('stops publishing buffered deltas immediately when cancelled', async () => {
+    const abort = new AbortController();
+    const fetchImpl = vi.fn(async () => sse([
+      'data: {"choices":[{"delta":{"content":"first"}}]}\n\ndata: {"choices":[{"delta":{"content":"stale"}}]}\n\n',
+    ]));
+    const client = new OpenRouterClient({ apiKey: 'test', fetchImpl });
+    const seen: string[] = [];
+    await expect(client.complete({
+      model: 'x/y', messages: [], signal: abort.signal,
+      onText: (text) => { seen.push(text); abort.abort(); },
+    })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(seen).toEqual(['first']);
   });
 });

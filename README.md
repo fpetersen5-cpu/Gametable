@@ -40,6 +40,9 @@ transport, with no key and no spend.
 Architecture, invariants, security boundaries, testing gates and the roadmap are
 described in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+The proposed portable Linux build is described in the
+[AppImage packaging plan](docs/APPIMAGE-PLAN.md).
+
 Public source and issues: <https://github.com/fpetersen5-cpu/Gametable>.
 
 The Flatpak ID is now `io.github.fpetersen5_cpu.GameTable` (the GitHub dash is
@@ -150,6 +153,27 @@ A seat's view contains its own role, the public log and chat, the mafia
 channel only if it is mafia, and investigations only if it is the detective.
 `discussionRounds: 0` plays a silent day — the null-chat path the gate exercises.
 
+### Blender character sources
+
+The [Mafia character library](assets/mafia/README.md) documents eleven editable
+high-poly `.blend` projects, packed 2K PBR textures, self-contained GLB exports,
+and Cycles portraits. The editable source library is kept outside git; the
+tracked runtime exports live in `assets/mafia/runtime/` (251 MB) and are what
+Mafia loads. They use lossless 2K PBR maps, smoothed high-detail geometry,
+asynchronous loading and the animated head/eye rig. The asset documentation
+includes reproducible Blender build and validation commands; the local gallery
+lives in the external source library.
+
+### 3D performance
+
+The 3D scene is GPU-heavy. On an Intel Arc A770 at 1069×466 CSS pixels
+(devicePixelRatio 1), an 11-seat Mafia match reached a fully loaded 3D scene in
+3.0–4.8 s and rendered at about 69–71 FPS in a focused window. The renderer
+process used about 410–430 MB working set (peak ~610–650 MB); the GPU process
+used about 195–255 MB. A recent discrete GPU is recommended. Turn off
+**Settings → 3D table** to use the 2D table on integrated or older GPUs; the
+match, replay and action panel are unchanged.
+
 ## Coup
 
 2 to 6 seats. Each seat starts with two hidden influence cards from a 15-card
@@ -208,9 +232,28 @@ fails the build if a literal `gameId` comparison appears outside
    a play style and a voice (with a preview button), then **Deal me in**.
    **Watch AI vs AI** drops the human seat and reveals everything.
 2. **Match** — the seat ring shows who is alive, thinking, and (once revealed)
-   what they were. In Mafia you get a role card, the night/day log, the live
-   vote tally, your investigations, and a chat panel with the mafia channel only
-   if you are mafia. Public speeches stream into the chat word by word as the
+   what they were. Mafia also opens an original real-time 3D council chamber:
+   select a seat for a cinematic close-up, switch to a tactical orbital camera,
+    or drag to orbit the scene. All eleven seats get distinct Blender-derived
+    seated character models: sculpted facial surfaces, shaped eyelids, individual
+   fingers and nails, layered hair, tailored uniforms, seams and operative equipment.
+   Skin, fabric, leather, hair and metal use separate physically based materials;
+    repeated AI models still receive different silhouettes. Shared PBR textures
+    and budgeted surface geometry support blinking, breathing and speaker-facing head
+   movements. The reference-inspired security council has upholstered chairs,
+   a reflective circular table, glass bays, warm light strips, plants and an
+   illuminated skyline with traffic. Compact seat markers keep faces readable.
+   At night, the
+   chamber fades into moonlight, the table displays a crescent, and sleeping
+   figures close their eyes and bow their heads. Only actors visible to your seat
+   wake up; old daytime speeches are cleared from the scene. Dawn restores the
+   light and wakes the council. Reduced-motion settings keep character poses
+   static. Appearance stays consistent in replays and does not depend on hidden
+   roles. Its characters, hologram and dialogue framing use
+   only the current seat projection; the 2D seat ring and action panel remain
+   available. You also get a role card, the night/day log, the live vote tally,
+   your investigations, and a chat panel with the mafia channel only if you are
+   mafia. Public speeches stream into the chat word by word as the
    model writes them; private night talk stays hidden until it is applied. In
    Buckshot you get both health bars, the chamber, your item belt, and any peeks
    you have paid for.
@@ -218,17 +261,30 @@ fails the build if a literal `gameId` comparison appears outside
    target buttons for votes and kills, item chips, two big shoot buttons, and a
    text box for table talk. Nothing you can click is illegal.
 4. **Live controls** — pause, 0.5×–8× speed, abort, and a cost meter against the
-   match budget. Reaching the budget aborts the match instead of overspending.
+   match budget. Model calls run one at a time per match, with the remaining
+   budget checked before each call, including repairs and post-game analysis.
+   No new call starts once reported spend reaches the budget. Because providers
+   report cost after a call, the last admitted call can exceed the remaining amount.
 5. **Post-game** — winners, roles, per-seat cost/tokens/invalid actions, EV loss
    per decision (Buckshot), and public-only transcript export through the file
    dialog. Replays also offer the selected seat's perspective or an explicitly
    omniscient export; both private modes require a warning confirmation.
+   A save failure keeps recovery data and offers **Retry saving**; retries and
+   recovery after restart do not duplicate leaderboard results.
 6. **Replays** — every match is stored with a view for each action. Scrub the
-   timeline, play it back at speed, and toggle **reveal all** to see the hidden
-   state.
+    timeline, play it back at speed, and toggle **reveal all** to see the hidden
+    state. Filter by game or search players, models, winners and match IDs.
+    Loading failures offer a retry; switching matches ignores late responses.
 7. **Leaderboard** — Bradley–Terry ratings from your own matches. The human is a
    fixed anchor, so a single-model duel still moves that model's rating; the
-   human never appears on the board.
+    human never appears on the board. Filter by game to recalculate ratings,
+    counts and costs from only that game's matches.
+
+Startup has a 20-second loading deadline and a retry screen with access to the
+data folder. Key checks and model catalogue requests have a 10-second network
+deadline, including retries. Invalid saved settings are reported instead of
+silently replaced. The table lists every unfinished match with its players,
+timestamp and ID, and shows resume errors beside the recovery list.
 
 ### Demo mode
 

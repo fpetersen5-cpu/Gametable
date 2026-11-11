@@ -11,6 +11,7 @@ import type { StartMatchRequest, TableSnapshot } from '../shared/api.js';
 
 interface Saved {
   matchId: string;
+  seed: number;
   state: unknown;
   events: MatchEvent[];
   controllers?: Record<string, unknown>;
@@ -62,6 +63,7 @@ describe('resumable seat memory', () => {
 
     const saved = latest as Saved | null;
     expect(saved).not.toBeNull();
+    if (!saved) throw new Error('No live match was saved');
     const savedStates = Object.values(saved?.controllers ?? {}) as Array<{
       notes?: string;
       costUsd?: number;
@@ -88,6 +90,7 @@ describe('resumable seat memory', () => {
       sendDebrief: () => undefined,
       debriefModel: null,
       resume: {
+        seed: saved.seed,
         state: saved?.state,
         events: saved?.events ?? [],
         controllers: saved?.controllers ?? {},

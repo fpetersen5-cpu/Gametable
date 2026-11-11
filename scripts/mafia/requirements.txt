@@ -1,0 +1,4 @@
+# Python packages used by the Mafia asset pipeline outside Blender.
+# Blender's bundled NumPy is used for the in-Blender scripts.
+Pillow>=10.0
+numpy>=1.24

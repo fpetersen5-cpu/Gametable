@@ -810,7 +810,7 @@ export const mafia: GameDef<MafiaState> = {
         teammates: [],
         checks: [],
         god: {
-          roles: state.roles,
+          roles: { ...state.roles },
           mafia: aliveWithRole(state, 'mafia'),
           checks: Object.entries(state.checks).flatMap(([owner, results]) =>
             Object.entries(results).map(([target, result]) => ({ owner, target, result })),

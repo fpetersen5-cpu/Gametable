@@ -1,54 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { runMatch, type Controller, type GameAction, type GameDef, type GameView, type MatchEvent, type Seat } from '@gametable/engine';
-import { LlmController, type CompletionClient, type SharedBudget } from '@gametable/agent';
+import { LlmController, type CompletionClient } from '@gametable/agent';
+import { Budget } from './budget.js';
+export { Budget } from './budget.js';
 import { ResultsStore, toRecord } from '@gametable/stats';
-import type {
-  ArenaConfig,
-  ArenaProgress,
-  ArenaResult,
-  ReplayBundle,
+import {
+  REPLAY_FORMAT_VERSION,
+  type ArenaConfig,
+  type ArenaProgress,
+  type ArenaResult,
+  type ReplayBundle,
 } from '../shared/api.js';
 
-/**
- * A cap shared by every seat of one arena match. `capUsd` is the smaller of the
- * per-match allowance and what is left of the run's total budget, so the arena
- * cannot overspend between matches.
- */
 /** Small arena budgets need more than two decimals to be legible. */
 function money(value: number): string {
   return `$${value >= 0.1 ? value.toFixed(2) : value.toFixed(4)}`;
-}
-
-export class Budget implements SharedBudget {
-  private spent = 0;
-  private hit = false;
-
-  constructor(
-    readonly capUsd: number,
-    private readonly onExhausted: () => void = () => undefined,
-  ) {}
-
-  remaining(): number {
-    return Math.max(0, this.capUsd - this.spent);
-  }
-
-  spend(costUsd: number): void {
-    if (Number.isFinite(costUsd) && costUsd > 0) this.spent += costUsd;
-  }
-
-  exhausted(): void {
-    if (this.hit) return;
-    this.hit = true;
-    this.onExhausted();
-  }
-
-  get spentUsd(): number {
-    return this.spent;
-  }
-
-  get hitCap(): boolean {
-    return this.hit;
-  }
 }
 
 /** A controller that waits while the arena is paused and dies on cancel. */
@@ -177,7 +143,7 @@ export class ArenaRunner {
         return;
       }
 
-      const lineup = rotate(config.seats, index);
+      const lineup = def.maxSeats === 2 ? config.seats : rotate(config.seats, index);
       const seats = this.seatsFor(def, lineup, index);
       const matchId = `a-${randomUUID().slice(0, 8)}`;
       const seed = config.seedBase + index;
@@ -194,14 +160,14 @@ export class ArenaRunner {
       const matchAbort = new AbortController();
       const perMatch = config.budgetPerMatch > 0 ? config.budgetPerMatch : remaining;
       const budget = new Budget(Math.min(remaining, perMatch), () => matchAbort.abort());
+      const client = budget.client(this.deps.client);
 
       const controllers = new Map<string, Controller>();
       for (const seat of seats) {
         const inner = new LlmController({
-          client: this.deps.client,
+          client,
           gameName: def.name,
           config: { model: seat.modelId as string, temperature: 0.9 },
-          sharedBudget: budget,
         });
         controllers.set(seat.id, new Pausable(inner, this, this.abort.signal));
       }
@@ -265,7 +231,7 @@ export class ArenaRunner {
 
         await this.deps.store.append(toRecord(result));
         await this.deps.saveBundle({
-          formatVersion: 2,
+          formatVersion: REPLAY_FORMAT_VERSION,
           summary,
           options: { trackOptimality: def.capabilities.solver, discussionRounds: 1 },
           seats,
@@ -340,18 +306,25 @@ export class ArenaRunner {
                 matchId,
                 gameName: def.name,
                 winnerNames: [],
-                costUsd: 0,
+                costUsd: budget.spentUsd,
                 eventCount: 0,
                 seats: seats.map((seat) => ({ name: seat.name, modelId: seat.modelId })),
               },
             ],
+            costUsd: this.progress.costUsd + budget.spentUsd,
             currentPhase: undefined,
           };
           this.deps.emit(this.progress);
           continue;
         }
         if (this.abort.signal.aborted) {
-          this.progress = { ...this.progress, running: false, paused: false, error: 'Run cancelled.' };
+          this.progress = {
+            ...this.progress,
+            running: false,
+            paused: false,
+            costUsd: this.progress.costUsd + budget.spentUsd,
+            error: 'Run cancelled.',
+          };
         } else {
           this.progress = {
             ...this.progress,
@@ -372,8 +345,7 @@ export class ArenaRunner {
   private seatsFor(def: GameDef<any>, lineup: ArenaConfig['seats'], index: number): Seat[] {
     if (def.maxSeats === 2) {
       // Duels: rotate pairings so every model plays both sides.
-      const first = lineup[index % lineup.length] as ArenaConfig['seats'][number];
-      const second = lineup[(index + 1) % lineup.length] as ArenaConfig['seats'][number];
+      const [first, second] = duelPair(lineup, index);
       return [first, second].map((entry, seatIndex) => ({
         id: `s${seatIndex + 1}`,
         name: entry.name,
@@ -388,6 +360,12 @@ export class ArenaRunner {
       modelId: entry.modelId,
     }));
   }
+}
+
+/** Adjacent pairs that wrap: A-B, B-C, C-D, D-A. */
+export function duelPair<T>(items: T[], index: number): [T, T] {
+  if (items.length < 2) throw new Error('A duel needs at least two seats');
+  return [items[index % items.length]!, items[(index + 1) % items.length]!];
 }
 
 function rotate<T>(items: T[], by: number): T[] {

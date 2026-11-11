@@ -7,6 +7,7 @@
  */
 
 import { redact, redactBody } from './redact.js';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export interface ModelInfo {
   id: string;
@@ -112,7 +113,7 @@ const DEFAULT_BASE = 'https://openrouter.ai/api/v1';
 export class OpenRouterClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep?: (ms: number) => Promise<void>;
   private readonly maxRetries: number;
   private readonly providerName: string;
 
@@ -122,7 +123,7 @@ export class OpenRouterClient {
     }
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.sleep = options.sleep;
     this.maxRetries = options.maxRetries ?? 5;
     this.providerName = options.providerName ?? 'OpenRouter';
   }
@@ -137,8 +138,8 @@ export class OpenRouterClient {
     return headers;
   }
 
-  async listModels(): Promise<ModelInfo[]> {
-    const body = (await this.request<{ data: RawModel[] }>('GET', '/models')) ;
+  async listModels(signal = AbortSignal.timeout(10_000)): Promise<ModelInfo[]> {
+    const body = await this.request<{ data: RawModel[] }>('GET', '/models', undefined, signal);
     return body.data.map((m) => ({
       id: m.id,
       name: m.name ?? m.id,
@@ -151,10 +152,10 @@ export class OpenRouterClient {
     }));
   }
 
-  async checkKey(): Promise<KeyInfo> {
+  async checkKey(signal = AbortSignal.timeout(10_000)): Promise<KeyInfo> {
     for (const path of ['/auth/key', '/key']) {
       try {
-        const body = await this.request<{ data: RawKey }>('GET', path);
+        const body = await this.request<{ data: RawKey }>('GET', path, undefined, signal);
         return {
           label: body.data?.label,
           limit: body.data?.limit ?? null,
@@ -169,6 +170,7 @@ export class OpenRouterClient {
   }
 
   async complete(req: CompletionRequest): Promise<CompletionResult> {
+    req.signal?.throwIfAborted();
     const started = Date.now();
     const payload = this.payload(req);
 
@@ -225,6 +227,7 @@ export class OpenRouterClient {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      req.signal?.throwIfAborted();
       let textSoFar = '';
       const report = (value: string) => {
         textSoFar = value;
@@ -261,7 +264,7 @@ export class OpenRouterClient {
           lastError = error;
           const delay = this.retryDelay(response, attempt);
           req.onRetry?.(attempt, delay, error);
-          await this.sleep(delay);
+          await this.wait(delay, req.signal);
           continue;
         }
 
@@ -294,48 +297,59 @@ export class OpenRouterClient {
         let full = '';
         let finished = false;
 
-        while (!finished) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let newline = buffer.indexOf('\n');
-          while (newline !== -1) {
-            const line = buffer.slice(0, newline).replace(/\r$/, '');
-            buffer = buffer.slice(newline + 1);
-            newline = buffer.indexOf('\n');
-            if (!line.startsWith('data:')) continue;
-            const data = line.slice(5).trim();
-            if (data === '[DONE]') {
-              finished = true;
-              break;
-            }
-            if (!data) continue;
-            let chunk: RawStreamChunk;
-            try {
-              chunk = JSON.parse(data) as RawStreamChunk;
-            } catch {
-              continue;
-            }
-            if (chunk.error) {
-              throw new OpenRouterError(
-                redact(chunk.error.message ?? 'stream failed'),
-                chunk.error.code ?? 0,
-                false,
-              );
-            }
-            if (chunk.model) model = chunk.model;
-            const delta = chunk.choices?.[0]?.delta?.content ?? '';
-            if (delta) report(full + delta);
-            full += delta;
-            if (chunk.usage) {
-              sawUsage = true;
-              usage = {
-                promptTokens: chunk.usage.prompt_tokens ?? 0,
-                completionTokens: chunk.usage.completion_tokens ?? 0,
-                costUsd: Number(chunk.usage.cost ?? 0),
-              };
+        const cancelReader = () => { void reader.cancel().catch(() => undefined); };
+        req.signal?.addEventListener('abort', cancelReader, { once: true });
+        try {
+          while (!finished) {
+            req.signal?.throwIfAborted();
+            const { done, value } = await reader.read();
+            req.signal?.throwIfAborted();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let newline = buffer.indexOf('\n');
+            while (newline !== -1) {
+              req.signal?.throwIfAborted();
+              const line = buffer.slice(0, newline).replace(/\r$/, '');
+              buffer = buffer.slice(newline + 1);
+              newline = buffer.indexOf('\n');
+              if (!line.startsWith('data:')) continue;
+              const data = line.slice(5).trim();
+              if (data === '[DONE]') {
+                finished = true;
+                break;
+              }
+              if (!data) continue;
+              let chunk: RawStreamChunk;
+              try {
+                chunk = JSON.parse(data) as RawStreamChunk;
+              } catch {
+                continue;
+              }
+              if (chunk.error) {
+                throw new OpenRouterError(
+                  redact(chunk.error.message ?? 'stream failed'),
+                  chunk.error.code ?? 0,
+                  false,
+                );
+              }
+              if (chunk.model) model = chunk.model;
+              const delta = chunk.choices?.[0]?.delta?.content ?? '';
+              if (delta) report(full + delta);
+              full += delta;
+              if (chunk.usage) {
+                sawUsage = true;
+                usage = {
+                  promptTokens: chunk.usage.prompt_tokens ?? 0,
+                  completionTokens: chunk.usage.completion_tokens ?? 0,
+                  costUsd: Number(chunk.usage.cost ?? 0),
+                };
+              }
             }
           }
+        } finally {
+          req.signal?.removeEventListener('abort', cancelReader);
+          cancelReader();
+          reader.releaseLock();
         }
 
         if (!sawUsage) {
@@ -356,13 +370,14 @@ export class OpenRouterClient {
           latencyMs: Date.now() - started,
         };
       } catch (error) {
+        req.signal?.throwIfAborted();
         if ((error as { name?: string }).name === 'AbortError') throw error;
         lastError = error;
         if (textSoFar !== '' || attempt === this.maxRetries) throw error;
         if (error instanceof OpenRouterError && !error.retryable) throw error;
         const delay = backoff(attempt);
         req.onRetry?.(attempt, delay, error);
-        await this.sleep(delay);
+        await this.wait(delay, req.signal);
       }
     }
 
@@ -374,8 +389,24 @@ export class OpenRouterClient {
   private retryDelay(response: Response, attempt: number): number {
     const retryAfter = Number(response.headers.get('retry-after'));
     return Number.isFinite(retryAfter) && retryAfter > 0
-      ? retryAfter * 1000
+      ? Math.min(retryAfter * 1000, MAX_RETRY_AFTER_MS)
       : backoff(attempt);
+  }
+
+  private async wait(ms: number, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    if (!this.sleep) return delay(ms, undefined, { signal });
+    if (!signal) return this.sleep(ms);
+    let onAbort: () => void = () => undefined;
+    const stopped = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      await Promise.race([this.sleep(ms), stopped]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
   }
 
   private async request<T>(
@@ -387,6 +418,7 @@ export class OpenRouterClient {
   ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      signal?.throwIfAborted();
       try {
         const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
           method,
@@ -409,11 +441,12 @@ export class OpenRouterClient {
 
         const retryAfter = Number(response.headers.get('retry-after'));
         const delay = Number.isFinite(retryAfter) && retryAfter > 0
-          ? retryAfter * 1000
+          ? Math.min(retryAfter * 1000, MAX_RETRY_AFTER_MS)
           : backoff(attempt);
         onRetry?.(attempt, delay, error);
-        await this.sleep(delay + Math.floor(Math.random() * 250));
+        await this.wait(delay + Math.floor(Math.random() * 250), signal);
       } catch (error) {
+        signal?.throwIfAborted();
         if ((error as { name?: string }).name === 'AbortError') throw error;
         if (error instanceof OpenRouterError) {
           lastError = error;
@@ -425,7 +458,7 @@ export class OpenRouterClient {
         if (attempt === this.maxRetries) break;
         const delay = backoff(attempt);
         onRetry?.(attempt, delay, error);
-        await this.sleep(delay);
+        await this.wait(delay, signal);
       }
     }
     throw lastError instanceof Error
@@ -433,6 +466,8 @@ export class OpenRouterClient {
       : new OpenRouterError('request failed', 0, true);
   }
 }
+
+const MAX_RETRY_AFTER_MS = 30_000;
 
 function backoff(attempt: number): number {
   return Math.min(600 * 2 ** attempt, 10_000);

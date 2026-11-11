@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { Debrief, GameAction, MatchSummary, TableSnapshot } from '../../shared/api';
 import { formatUsd } from '../game-data';
 import { GameTable } from '../components/GameTable';
 import { useSeatVoices } from '../voice';
+import { useDialog } from '../useDialog';
 
 interface Props {
   snapshot: TableSnapshot;
@@ -12,6 +14,7 @@ interface Props {
   debrief: Debrief | null;
   previews: Record<string, string>;
   voiceEnabled: boolean;
+  scene3dEnabled: boolean;
   onVoiceChange: (enabled: boolean) => void;
   onAction: (action: GameAction) => void;
   onTakeover: (seatId: string) => void;
@@ -127,6 +130,7 @@ export function MatchScreen(props: Props) {
       </header>
 
       {props.error && <div className="banner error-banner">{props.error}</div>}
+      <SaveStatus matchId={snapshot.matchId} state={snapshot.saveState} />
       {snapshot.seatIssues.length > 0 && (
         <div className="banner error-banner">
           <strong>Model calls are failing — moves are being skipped.</strong>
@@ -176,13 +180,15 @@ export function MatchScreen(props: Props) {
         ]}
         onTakeover={finished ? undefined : props.onTakeover}
         onRelease={finished ? undefined : props.onRelease}
+        scene3dEnabled={props.scene3dEnabled}
       />
 
       {summary && showSummary && (
-        <div className="postgame-overlay" onClick={() => setShowSummary(false)}>
+        <PostGameOverlay onClose={() => setShowSummary(false)}>
           <div className="postgame" onClick={(event) => event.stopPropagation()}>
             <PostGame
               summary={summary}
+              saveState={snapshot.saveState}
               debrief={props.debrief}
               exportNote={props.exportNote}
               onExit={props.onExit}
@@ -191,14 +197,37 @@ export function MatchScreen(props: Props) {
               onClose={() => setShowSummary(false)}
             />
           </div>
-        </div>
+        </PostGameOverlay>
       )}
+    </div>
+  );
+}
+
+function PostGameOverlay({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const ref = useDialog(onClose);
+  return (
+    <div
+      className="postgame-overlay"
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Match summary"
+      onClick={onClose}
+    >
+      {children}
     </div>
   );
 }
 
 function PostGame(props: {
   summary: MatchSummary;
+  saveState: TableSnapshot['saveState'];
   debrief: Debrief | null;
   exportNote: string | null;
   onExit: () => void;
@@ -226,10 +255,10 @@ function PostGame(props: {
           <button className="primary" onClick={props.onExit}>
             New match
           </button>
-          <button className="ghost" onClick={props.onReplay}>
+          <button className="ghost" onClick={props.onReplay} disabled={props.saveState?.status !== 'saved'}>
             Watch replay
           </button>
-          <button className="ghost" onClick={props.onExport}>
+          <button className="ghost" onClick={props.onExport} disabled={props.saveState?.status !== 'saved'}>
           Export public transcript
           </button>
           <button className="ghost" onClick={props.onClose}>
@@ -238,6 +267,7 @@ function PostGame(props: {
         </div>
       </header>
 
+      <SaveStatus matchId={summary.matchId} state={props.saveState} />
       {props.exportNote && <p className="export-note">{props.exportNote}</p>}
 
       <table className="summary-table">
@@ -280,7 +310,9 @@ function PostGame(props: {
         {props.debrief ? (
           <p>{props.debrief.text}</p>
         ) : summary.debriefExpected === false ? (
-          <p className="muted">No debrief model is configured for this match.</p>
+          <p className="muted">No after-match analysis is available.</p>
+        ) : props.saveState?.status !== 'saved' ? (
+          <p className="muted">The match must be saved before analysis can start.</p>
         ) : (
           <p className="muted">Analysing the match…</p>
         )}
@@ -301,6 +333,34 @@ function PostGame(props: {
         </div>
       )}
     </section>
+  );
+}
+
+function SaveStatus({ matchId, state }: { matchId: string; state: TableSnapshot['saveState'] }) {
+  const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  if (!state || state.status === 'saved') return null;
+  const retry = async () => {
+    setRetrying(true);
+    setError(null);
+    try {
+      const result = await window.gametable.retrySave(matchId);
+      if (!result.ok) setError(result.error ?? 'Could not save the match.');
+    } catch {
+      setError('Could not retry saving. Please try again.');
+    } finally {
+      setRetrying(false);
+    }
+  };
+  return (
+    <div className={`banner ${state.status === 'error' ? 'error-banner' : ''}`} role="status">
+      <span>{error ?? (state.status === 'saving' ? 'Saving match…' : state.error)}</span>
+      {state.status === 'error' && (
+        <button className="ghost" disabled={retrying} onClick={() => void retry()}>
+          {retrying ? 'Saving…' : 'Retry saving'}
+        </button>
+      )}
+    </div>
   );
 }
 

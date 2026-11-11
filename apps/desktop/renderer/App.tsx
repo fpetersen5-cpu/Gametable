@@ -6,8 +6,6 @@ import type {
   GameInfo,
   Debrief,
   MatchSummary,
-  ResumableMatch,
-  ModelInfo,
   SeatPreview,
   StartMatchRequest,
   TableSnapshot,
@@ -21,14 +19,16 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { ArenaScreen } from './screens/ArenaScreen';
 import { Icon } from './components/Icon';
 import type { IconName } from './components/Icon';
+import { version } from '../package.json';
+import { useResource } from './useResource';
+import { withTimeout } from './async';
 
 type Screen = 'table' | 'match' | 'arena' | 'replays' | 'leaderboard' | 'settings';
 
 export function App() {
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelRefresh, setModelRefresh] = useState(0);
   const [games, setGames] = useState<GameInfo[]>([]);
   const [screen, setScreen] = useState<Screen>('table');
 
@@ -37,31 +37,35 @@ export function App() {
   const [matchError, setMatchError] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [debrief, setDebrief] = useState<Debrief | null>(null);
-  const [resumable, setResumable] = useState<ResumableMatch[]>([]);
   const [replayMatchId, setReplayMatchId] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [voices, setVoices] = useState<VoicePreset[]>([]);
 
   const refreshStatus = useCallback(async () => {
-    setStatus(await window.gametable.status());
+    setStatus(await withTimeout(window.gametable.status(), 'Connection check'));
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      const [initialStatus, initialConfig, initialGames, initialVoices] = await Promise.all([
-        window.gametable.status(),
-        window.gametable.loadConfig(),
-        window.gametable.listGames(),
-        window.gametable.listVoices(),
-      ]);
-      setStatus(initialStatus);
-      setConfig(initialConfig);
-      setGames(initialGames);
-      setVoices(initialVoices);
-    })();
-  }, []);
+  const startup = useResource(useCallback(async () => {
+    if (!window.gametable) throw new Error('The desktop connection is unavailable. Restart GameTable.');
+    return Promise.all([
+      window.gametable.status(),
+      window.gametable.loadConfig(),
+      window.gametable.listGames(),
+      window.gametable.listVoices(),
+    ]);
+  }, []), 'Startup');
 
   useEffect(() => {
+    if (!startup.data) return;
+    const [initialStatus, initialConfig, initialGames, initialVoices] = startup.data;
+    setStatus(initialStatus);
+    setConfig(initialConfig);
+    setGames(initialGames);
+    setVoices(initialVoices);
+  }, [startup.data]);
+
+  useEffect(() => {
+    if (!window.gametable) return;
     const offTable = window.gametable.onTable((next) => setSnapshot(next));
     const offFinished = window.gametable.onFinished((next) => setSummary(next));
     const offError = window.gametable.onMatchError((message) => setMatchError(message));
@@ -84,33 +88,16 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (screen !== 'table') return;
-    void window.gametable.listResumable().then(setResumable).catch(() => setResumable([]));
-  }, [screen]);
+  const resumable = useResource(useCallback(async () => {
+    if (screen !== 'table' || !status) return [];
+    return window.gametable.listResumable();
+  }, [screen, status]), 'Recovery history');
 
-  useEffect(() => {
-    if (!status?.hasKey) {
-      setModels([]);
-      setModelsError(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const result = await window.gametable.listModels(false);
-        if (!cancelled) {
-          setModels(result.models);
-          setModelsError(null);
-        }
-      } catch (error) {
-        if (!cancelled) setModelsError(error instanceof Error ? error.message : String(error));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [status?.hasKey]);
+  const catalogue = useResource(useCallback(async () => {
+    if (!status?.hasKey) return [];
+    return (await window.gametable.listModels(modelRefresh > 0)).models;
+  }, [status?.hasKey, modelRefresh]), 'Model catalogue');
+  const models = catalogue.data ?? [];
 
   const updateConfig = useCallback(async (next: AppConfig) => {
     setConfig(next);
@@ -129,7 +116,22 @@ export function App() {
     return result;
   }, []);
 
-  if (!status || !config) return <Splash />;
+  const runMatchCommand = useCallback((work: Promise<void>) => {
+    void work.catch((failure) => {
+      setMatchError(failure instanceof Error ? failure.message : 'Match command failed');
+    });
+  }, []);
+
+  if (!status || !config) return startup.error ? (
+    <div className="splash">
+      <h1>Could not start GameTable</h1>
+      <p role="alert">{startup.error}</p>
+      <button className="primary" onClick={startup.retry}>Retry startup</button>
+      {window.gametable && <button className="ghost" onClick={() => {
+        void window.gametable.openDataFolder().catch(() => undefined);
+      }}>Open data folder</button>}
+    </div>
+  ) : <Splash />;
 
   const live = snapshot && snapshot.status !== 'finished' && snapshot.status !== 'aborted';
 
@@ -141,7 +143,9 @@ export function App() {
             <Icon name="brand" size={24} />
           </span>
           <div>
-            <strong>GameTable</strong>
+            <strong>
+              GameTable <span className="brand-version">v{version}</span>
+            </strong>
             <small>AI TABLETOP CLUB</small>
           </div>
         </div>
@@ -224,12 +228,16 @@ export function App() {
             config={config}
             status={status}
             models={models}
-            modelsError={modelsError}
+            modelsError={catalogue.error}
+            modelsLoading={catalogue.loading}
             games={games}
             onChange={updateConfig}
             onStart={startMatch}
             onOpenSettings={() => setScreen('settings')}
-            resumable={resumable}
+            resumable={resumable.data ?? []}
+            resumableLoading={resumable.loading}
+            resumableError={resumable.error}
+            onRefreshResumable={resumable.retry}
             voices={voices}
             onResume={async (matchId) => {
               setSummary(null);
@@ -240,12 +248,10 @@ export function App() {
               if (result.ok) {
                 setPreviews({});
                 setScreen('match');
-              } else setMatchError(result.error ?? 'Could not resume that match');
+              } else throw new Error(result.error ?? 'Could not resume that match');
             }}
-            onRefreshModels={async (refresh) => {
-              const result = await window.gametable.listModels(refresh);
-              setModels(result.models);
-              setModelsError(null);
+            onRefreshModels={async () => {
+              setModelRefresh((value) => value + 1);
             }}
           />
         )}
@@ -260,19 +266,28 @@ export function App() {
               debrief={debrief}
               previews={previews}
               voiceEnabled={config.voice}
-              onVoiceChange={(voice) => void updateConfig({ ...config, voice })}
-              onAction={(action) => void window.gametable.submitAction(action)}
-              onTakeover={(seatId) => void window.gametable.takeoverSeat(seatId)}
-              onRelease={(seatId) => void window.gametable.releaseSeat(seatId)}
-              onPause={(paused) => void window.gametable.setPaused(paused)}
-              onSpeed={(speed) => void window.gametable.setSpeed(speed)}
-              onAbort={() => void window.gametable.abortMatch()}
-              onRewind={() => void window.gametable.rewindMatch()}
+              scene3dEnabled={config.scene3d}
+              onVoiceChange={(voice) => runMatchCommand(updateConfig({ ...config, voice }))}
+              onAction={(action) => runMatchCommand(window.gametable.submitAction(action))}
+              onTakeover={(seatId) => runMatchCommand(window.gametable.takeoverSeat(seatId))}
+              onRelease={(seatId) => runMatchCommand(window.gametable.releaseSeat(seatId))}
+              onPause={(paused) => runMatchCommand(window.gametable.setPaused(paused))}
+              onSpeed={(speed) => runMatchCommand(window.gametable.setSpeed(speed))}
+              onAbort={() => runMatchCommand(window.gametable.abortMatch())}
+              onRewind={() => runMatchCommand(window.gametable.rewindMatch())}
               onExit={() => {
                 setScreen('table');
-                setSnapshot(null);
-                setSummary(null);
-                setPreviews({});
+                if (snapshot && snapshot.status === 'running') {
+                  // Keep the live snapshot so the rail can return to it, but do
+                  // not let a hidden match keep spending.
+                  if (!snapshot.paused) {
+                    void window.gametable.setPaused(true).catch(() => undefined);
+                  }
+                } else {
+                  setSnapshot(null);
+                  setSummary(null);
+                  setPreviews({});
+                }
               }}
               onReplay={() => {
                 setReplayMatchId(summary?.matchId ?? null);
@@ -280,8 +295,12 @@ export function App() {
               }}
               onExport={async () => {
                 if (!summary) return;
-                const result = await window.gametable.exportTranscript(summary.matchId);
-                setExportNote(result.ok ? `Saved to ${result.path}` : result.error ?? 'Export failed');
+                try {
+                  const result = await window.gametable.exportTranscript(summary.matchId);
+                  setExportNote(result.ok ? `Saved to ${result.path}` : result.error ?? 'Export failed');
+                } catch (failure) {
+                  setExportNote(failure instanceof Error ? failure.message : 'Export failed');
+                }
               }}
             />
           ) : (
@@ -297,9 +316,11 @@ export function App() {
           />
         )}
 
-        {screen === 'replays' && <ReplayScreen initialMatchId={replayMatchId} />}
+        {screen === 'replays' && (
+          <ReplayScreen initialMatchId={replayMatchId} scene3dEnabled={config.scene3d} />
+        )}
 
-        {screen === 'leaderboard' && <LeaderboardScreen />}
+        {screen === 'leaderboard' && <LeaderboardScreen games={games} />}
 
         {screen === 'settings' && (
           <SettingsScreen

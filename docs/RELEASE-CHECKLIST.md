@@ -1,6 +1,6 @@
 # Release hardening checklist
 
-The app is still version `0.1.0`. These checks prepare a release; they do not
+The app is version `0.2.0`. These checks prepare a release; they do not
 declare 1.0 or imply Flathub approval.
 
 ## Automated gates
@@ -16,6 +16,17 @@ declare 1.0 or imply Flathub approval.
   synthesis with LibriTTS-R speakers 21, 318 and 903, checked for non-silent
   mono 22050 Hz WAV (current Piper's 32-bit float or legacy 16-bit PCM), bounded
   duration and distinct output. Non-finite samples and silent output fail.
+
+## Mafia 3D assets
+
+- Only `assets/mafia/runtime/` is tracked (251 MB, 68 files). The editable
+  `characters/` source library (1.9 GB) is external and ignored by git.
+- `npm run build` fails if the runtime manifest is missing or a listed
+  character lacks its `.gltf`/`.bin` pair.
+- The Flatpak installs `three`'s MIT license; the AppImage plan includes it.
+- Manual GPU smoke test: 11-seat Mafia on a discrete GPU; all characters load,
+  ~60 FPS, and **Settings → 3D table** off falls back to 2D. Arc A770 baseline:
+  3.0–4.8 s to a fully loaded scene, ~69–71 FPS, ~410–430 MB renderer working set.
 
 ## Source-built speech stack
 

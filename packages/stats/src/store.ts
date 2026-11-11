@@ -7,7 +7,18 @@ import type { MatchRecord } from './record.js';
  * inspectable with `grep`. A few thousand matches is a few megabytes.
  */
 export class ResultsStore {
+  private saving: Promise<void> = Promise.resolve();
   constructor(private readonly file: string) {}
+
+  /** Idempotent completion/recovery, serialized across sessions using this store. */
+  appendOnce(record: MatchRecord): Promise<void> {
+    const saving = this.saving.then(async () => {
+      if ((await this.all()).some((existing) => existing.matchId === record.matchId)) return;
+      await this.append(record);
+    });
+    this.saving = saving.catch(() => undefined);
+    return saving;
+  }
 
   async append(record: MatchRecord): Promise<void> {
     await this.appendMany([record]);

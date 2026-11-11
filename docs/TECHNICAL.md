@@ -6,7 +6,7 @@ Flatpak and talks to OpenRouter or a local OpenAI-compatible endpoint. The app o
 state; each seat — human or model — receives only the projection the rules
 allow it to see.
 
-Application version: `0.1.0`. Milestones M0–M7 are implemented; release hardening
+Application version: `0.2.0`. Milestones M0–M7 are implemented; release hardening
 is ongoing. Run `npm run check` for current test results and `npm run audit:deps`
 for the full dependency audit. The roadmap below describes the remaining work.
 
@@ -291,7 +291,7 @@ requests at all.
   match from any seat's perspective.
 - **Leaderboard** — Bradley–Terry ratings from local matches; the human is a
   fixed anchor and never appears on the board.
-- **Settings** — key storage mode, budget, voice, local data folder.
+- **Settings** — key storage mode, budget, voice, 3D table toggle, local data folder.
 
 ### Sessions and persistence
 
@@ -331,9 +331,12 @@ speech-to-text, tried in order so one unavailable model does not break it.
 The full threat model is in [SECURITY.md](../SECURITY.md); the essentials:
 
 - **Key at rest**: encrypted with Electron `safeStorage` (libsecret/KWallet)
-  into `secrets.enc` when a keyring is available; falls back to a plaintext
-  `0600` file only when it is not. A plaintext key from an older build is
-  migrated on first read and deleted. The settings screen shows the active mode.
+  into `secrets.enc` when a real keyring backend is selected; the Linux
+  `basic_text` backend is treated as the plaintext fallback because it uses a
+  hardcoded password. The fallback is a `0600` file, and a key written by
+  `basic_text` is migrated to it on first read. A plaintext key from an older
+  build is migrated on first read and deleted. The settings screen shows the
+  active mode.
 - **Key boundary**: the key is read, decrypted and used only in the main
   process. It is never sent to the renderer or written to replays, transcripts,
   logs or crash messages.

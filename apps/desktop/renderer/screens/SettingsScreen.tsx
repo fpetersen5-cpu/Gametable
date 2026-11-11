@@ -29,10 +29,18 @@ export function SettingsScreen({
   const [backupNote, setBackupNote] = useState<string | null>(null);
   const [endpointDraft, setEndpointDraft] = useState(config.localEndpoint);
   const [endpointError, setEndpointError] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
 
   useEffect(() => {
     setEndpointDraft(config.localEndpoint);
   }, [config.localEndpoint]);
+
+  const update = (next: AppConfig) => {
+    setConfigError(null);
+    void onChange(next).catch((failure) => {
+      setConfigError(failure instanceof Error ? failure.message : 'Could not save settings');
+    });
+  };
 
   const saveKey = async (event: FormEvent) => {
     event.preventDefault();
@@ -48,6 +56,8 @@ export function SettingsScreen({
       setKey('');
       setKeyNote('Key verified and stored.');
       await onKeyChanged();
+    } catch (failure) {
+      setKeyError(failure instanceof Error ? failure.message : 'Could not verify that key');
     } finally {
       setKeyBusy(false);
     }
@@ -59,6 +69,8 @@ export function SettingsScreen({
     try {
       const result = await window.gametable.exportBackup();
       setBackupNote(result.ok ? `Saved to ${result.path}` : result.error ?? 'Export failed');
+    } catch (failure) {
+      setBackupNote(failure instanceof Error ? failure.message : 'Export failed');
     } finally {
       setBackupBusy(false);
     }
@@ -79,6 +91,8 @@ export function SettingsScreen({
           `${result.legacyMatches ? `; ${result.legacyMatches} legacy replay(s)` : ''}` +
           `${result.configRestored ? '; settings replaced' : '; current settings kept'}.`,
       );
+    } catch (failure) {
+      setBackupNote(failure instanceof Error ? failure.message : 'Restore failed');
     } finally {
       setBackupBusy(false);
     }
@@ -93,6 +107,8 @@ export function SettingsScreen({
           <p className="muted">Connections, match defaults, voice, and your local data.</p>
         </div>
       </header>
+
+      {configError && <p className="banner error-banner" role="alert">{configError}</p>}
 
       <div className="settings-grid">
       <section className="settings-card">
@@ -135,7 +151,11 @@ export function SettingsScreen({
         {keyError && <p className="error">{keyError}</p>}
         {keyNote && <p className="muted">{keyNote}</p>}
         {status.hasKey && (
-          <button className="ghost danger" onClick={() => void onDisconnect()}>
+          <button className="ghost danger" onClick={() => {
+            void onDisconnect().catch((failure) => {
+              setKeyError(failure instanceof Error ? failure.message : 'Could not remove the key');
+            });
+          }}>
             Forget key
           </button>
         )}
@@ -179,15 +199,20 @@ export function SettingsScreen({
       <section className="settings-card">
         <h2>Match defaults</h2>
         <p className="muted">Applied to new matches; each match can still be adjusted live.</p>
+        <p className="muted">
+          Model calls are serialized so the budget is checked before every call; large tables
+          take longer.
+        </p>
         <label className="budget">
           <span>$</span>
           <input
             type="number"
             min={0}
+            max={1000}
             step={0.25}
             value={config.budgetUsd}
             onChange={(event) =>
-              void onChange({ ...config, budgetUsd: Number(event.target.value) })
+              update({ ...config, budgetUsd: Number(event.target.value) })
             }
           />
           <span className="muted">budget per match</span>
@@ -196,7 +221,7 @@ export function SettingsScreen({
           <span className="muted">AI speed</span>
           <select
             value={config.speed}
-            onChange={(event) => void onChange({ ...config, speed: Number(event.target.value) })}
+            onChange={(event) => update({ ...config, speed: Number(event.target.value) })}
           >
             {[0.5, 1, 2, 4, 8].map((value) => (
               <option key={value} value={value}>
@@ -216,9 +241,25 @@ export function SettingsScreen({
           <input
             type="checkbox"
             checked={config.voice}
-            onChange={(event) => void onChange({ ...config, voice: event.target.checked })}
+            onChange={(event) => update({ ...config, voice: event.target.checked })}
           />
           Read model messages aloud
+        </label>
+      </section>
+
+      <section className="settings-card">
+        <h2>3D table</h2>
+        <p className="muted">
+          Mafia’s council chamber loads about 251 MB of character assets and uses the GPU.
+          Turn it off to use the 2D table only.
+        </p>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={config.scene3d}
+            onChange={(event) => update({ ...config, scene3d: event.target.checked })}
+          />
+          Show the 3D Mafia council chamber
         </label>
       </section>
 

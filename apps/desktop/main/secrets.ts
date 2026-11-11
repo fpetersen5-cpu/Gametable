@@ -8,6 +8,8 @@ export interface CryptoBackend {
   isAvailable(): boolean;
   encryptString(plain: string): Buffer;
   decryptString(encrypted: Buffer): string;
+  /** Linux backend name, e.g. gnome-libsecret or basic_text. */
+  backend?(): string | undefined;
 }
 
 /**
@@ -28,7 +30,11 @@ export class SecretStore {
 
   private get canEncrypt(): boolean {
     try {
-      return this.crypto.isAvailable();
+      if (!this.crypto.isAvailable()) return false;
+      // Electron's basic_text backend encrypts with a hardcoded password. Treat
+      // it as the documented plaintext fallback, not as keyring protection.
+      const backend = this.crypto.backend?.();
+      return backend !== 'basic_text' && backend !== 'unknown';
     } catch {
       return false;
     }
@@ -41,13 +47,22 @@ export class SecretStore {
 
   async getKey(): Promise<string | null> {
     const encrypted = await secureRead(this.encryptedFile);
-    if (encrypted && this.canEncrypt) {
+    if (encrypted && this.crypto.isAvailable()) {
       try {
         const key = this.crypto.decryptString(encrypted).trim();
-        return key.length > 0 ? key : null;
+        if (key.length > 0) {
+          if (!this.canEncrypt) {
+            // A key written by the basic_text backend is effectively plaintext.
+            // Migrate it to the explicit 0600 fallback and remove the misleading
+            // encrypted file.
+            await secureWrite(this.plainFile, JSON.stringify({ apiKey: key }));
+            await rm(this.encryptedFile, { force: true }).catch(() => undefined);
+          }
+          return key;
+        }
       } catch {
         // A different keyring session (or a wiped keyring) cannot decrypt it.
-        return null;
+        if (this.canEncrypt) return null;
       }
     }
 
@@ -68,6 +83,7 @@ export class SecretStore {
       return 'keyring';
     }
     await secureWrite(this.plainFile, JSON.stringify({ apiKey }));
+    await rm(this.encryptedFile, { force: true }).catch(() => undefined);
     return 'file';
   }
 

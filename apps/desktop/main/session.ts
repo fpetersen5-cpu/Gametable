@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   runMatch,
   type ActionRequest,
@@ -17,8 +18,9 @@ import {
   type LlmSeatConfig,
   type LlmSeatState,
 } from '@gametable/agent';
-import { ResultsStore, toRecord } from '@gametable/stats';
+import { ResultsStore, toRecord, type MatchRecord } from '@gametable/stats';
 import { generateDebrief } from './debrief.js';
+import { Budget, BudgetExceeded } from './budget.js';
 import type {
   MatchSummary,
   ReplayBundle,
@@ -29,8 +31,6 @@ import type {
 } from '../shared/api.js';
 import { REPLAY_FORMAT_VERSION } from '../shared/api.js';
 
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 /**
  * Paces AI seats and implements pause. The human seat is never gated: when it
  * is your turn, the table waits for you regardless of the speed setting.
@@ -40,12 +40,23 @@ class Gate {
   speed = 1;
   private waiting: Array<() => void> = [];
 
-  async wait(): Promise<void> {
-    if (this.paused) {
-      await new Promise<void>((resolve) => this.waiting.push(resolve));
+  async wait(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    while (this.paused) {
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          signal.removeEventListener('abort', abort);
+          this.waiting = this.waiting.filter((entry) => entry !== resume);
+        };
+        const resume = () => { cleanup(); resolve(); };
+        const abort = () => { cleanup(); reject(signal.reason); };
+        this.waiting.push(resume);
+        signal.addEventListener('abort', abort, { once: true });
+      });
+      signal.throwIfAborted();
     }
     if (this.speed >= 6) return;
-    await delay(Math.round(700 / this.speed));
+    await delay(Math.round(700 / this.speed), undefined, { signal });
   }
 
   setPaused(paused: boolean): void {
@@ -54,29 +65,18 @@ class Gate {
   }
 }
 
-class PacedController implements Controller {
-  constructor(
-    private readonly inner: Controller,
-    private readonly gate: Gate,
-  ) {}
+/** Internal handoff: retry with the model without consuming an engine attempt. */
+class SeatReleased extends Error {}
 
-  get kind() {
-    return this.inner.kind;
-  }
-
-  usage() {
-    return this.inner.usage?.() ?? {};
-  }
-
-  async act(req: ActionRequest): Promise<GameAction> {
-    await this.gate.wait();
-    return this.inner.act(req);
-  }
+interface HumanRequest {
+  req: ActionRequest;
+  resolve: (action: GameAction) => void;
+  reject: (error: Error) => void;
 }
 
 /**
- * Races a controller against the run's abort signal, so a rewind or abort does
- * not have to wait for a slow model call to finish.
+ * Forwards cancellation and races it against the controller, so a rewind or
+ * abort also stops promptly if a custom controller ignores the signal.
  */
 class Abortable implements Controller {
   constructor(
@@ -92,12 +92,20 @@ class Abortable implements Controller {
     return this.inner.usage?.() ?? {};
   }
 
-  act(req: ActionRequest): Promise<GameAction> {
-    if (this.signal.aborted) return Promise.reject(new Error('aborted'));
+  async act(req: ActionRequest): Promise<GameAction> {
+    const signal = req.signal && req.signal !== this.signal
+      ? AbortSignal.any([req.signal, this.signal]) : this.signal;
+    signal.throwIfAborted();
+    let onAbort: () => void = () => undefined;
     const stopped = new Promise<never>((_, reject) => {
-      this.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
     });
-    return Promise.race([this.inner.act(req), stopped]);
+    try {
+      return await Promise.race([this.inner.act({ ...req, signal }), stopped]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
   }
 }
 
@@ -139,12 +147,17 @@ export interface SessionDeps {
     request: StartMatchRequest;
     seats: Seat[];
     seed: number;
+    spentUsd: number;
     state: unknown;
     events: MatchEvent[];
     controllers?: Record<string, LlmSeatState>;
   }) => Promise<void>;
   clearLive?: (matchId: string) => Promise<void>;
   resume?: {
+    /** The actual setup seed, including when the original request omitted it. */
+    seed: number;
+    /** Includes charges settled before a cancelled action was applied. */
+    spentUsd?: number;
     state: unknown;
     events: MatchEvent[];
     /** Per-seat memories and counters saved with the live match. */
@@ -157,17 +170,19 @@ export class MatchSession {
   readonly matchId: string;
 
   private readonly gate = new Gate();
+  private readonly budget: Budget;
   private abort = new AbortController();
   private readonly controllers = new Map<SeatId, Controller>();
   private readonly human: Seat | null;
   private readonly seed: number;
   private readonly startedAt = Date.now();
 
-  private pendingHuman: ((action: GameAction) => void) | null = null;
-  private pendingReject: ((error: Error) => void) | null = null;
+  /** Simultaneous phases may ask the user to cover more than one seat. */
+  private humanRequests: HumanRequest[] = [];
   private snapshots: GameView[] = [];
   private godSnapshots: GameView[] = [];
   private latest: { view: GameView; god: GameView | null } | null = null;
+  private latestState: unknown;
   private events: MatchEvent[] = [];
   private costUsd = 0;
   private status: TableSnapshot['status'] = 'running';
@@ -179,20 +194,33 @@ export class MatchSession {
   private rewinding = false;
   private takenOver = new Set<SeatId>();
   private readonly seatVoices = new Map<SeatId, number>();
-  /** The live LLM controller per seat (absent while the human covers a seat). */
+  /** Retained while covered, including memory and spend from an in-flight call. */
   private readonly llmControllers = new Map<SeatId, LlmController>();
   /** Last known seat memory, kept across takeover and resume. */
   private readonly seatMemory = new Map<SeatId, LlmSeatState>();
   private phaseKey = '';
   private phaseStartedAt = Date.now();
   private phaseLimitMs: number | null = null;
+  private liveWrites: Promise<void> = Promise.resolve();
+  private liveSaveFailed = false;
+  private completed: { record: MatchRecord; bundle: ReplayBundle } | null = null;
+  private saving: Promise<{ ok: boolean; error?: string }> | null = null;
+  private saveState: TableSnapshot['saveState'];
+  private debriefStarted = false;
 
   constructor(private readonly deps: SessionDeps) {
     this.matchId = deps.matchId ?? `m-${randomUUID().slice(0, 8)}`;
     this.human = deps.seats.find((seat) => seat.kind === 'human') ?? null;
     this.speed = deps.request.speed ?? 1;
     this.gate.speed = this.speed;
-    this.seed = deps.request.seed ?? Math.floor(Math.random() * 1e9);
+    this.seed = deps.resume?.seed ?? deps.request.seed ?? Math.floor(Math.random() * 1e9);
+    this.budget = new Budget(deps.request.budgetUsd, () => {
+      if (this.status === 'finished') return;
+      const amount = deps.request.budgetUsd.toFixed(deps.request.budgetUsd < 0.1 ? 4 : 2);
+      this.fatalError = `Match budget of $${amount} reached.`;
+      this.abortMatch();
+    });
+    this.budget.spend(deps.resume?.spentUsd ?? 0);
     if (deps.resume) this.events = [...deps.resume.events];
     for (const [seatId, state] of Object.entries(deps.resume?.controllers ?? {})) {
       const seat = deps.seats.find((entry) => entry.id === seatId);
@@ -228,13 +256,11 @@ export class MatchSession {
    * rewound match is exactly the one that would have happened.
    */
   async rewind(steps = 1): Promise<void> {
-    if (!this.running || this.events.length === 0) return;
+    if (!this.running || this.status !== 'running' || this.events.length === 0) return;
     this.rewinding = true;
     this.clearPreviews();
     this.abort.abort();
-    this.pendingReject?.(new Error('rewound'));
-    this.pendingHuman = null;
-    this.pendingReject = null;
+    this.rejectHumanRequests(new Error('rewound'));
     await this.stopped;
 
     this.events = this.events.slice(0, Math.max(0, this.events.length - steps));
@@ -259,14 +285,18 @@ export class MatchSession {
       const resumed = initial ?? (this.deps.resume
         ? { state: this.deps.resume.state, events: this.deps.resume.events }
         : undefined);
-      const state0 = resumed
-        ? this.replayAndCapture(resumed.events)
-        : this.setupAndCapture();
+      const state0 = resumed ? this.restoreState(resumed) : this.setupAndCapture();
       this.push();
 
       const runtime = new Map<SeatId, Controller>();
-      for (const [id, controller] of this.controllers) {
-        runtime.set(id, new Abortable(controller, this.abort.signal));
+      const signal = this.abort.signal;
+      for (const seat of this.deps.seats) {
+        // Resolve the controller for each decision, rather than freezing it at start.
+        runtime.set(seat.id, new Abortable({
+          kind: seat.kind,
+          act: (req) => this.actForSeat(req, signal),
+          usage: () => this.llmControllers.get(seat.id)?.usage() ?? {},
+        }, signal));
       }
 
       const result = await runMatch(this.deps.def, this.deps.seats, runtime, {
@@ -295,6 +325,7 @@ export class MatchSession {
         this.push();
       }
     } finally {
+      await this.liveWrites;
       this.running = false;
       resolveStopped();
     }
@@ -327,62 +358,81 @@ export class MatchSession {
     return state;
   }
 
+  /**
+   * Resume from the saved event log, but refuse to silently continue if the
+   * rebuilt state differs from the snapshot written beside it.
+   */
+  private restoreState(resumed: { state: unknown; events: MatchEvent[] }): unknown {
+    const replayed = this.replayAndCapture(resumed.events);
+    if (
+      resumed.state !== undefined &&
+      JSON.stringify(replayed) !== JSON.stringify(resumed.state)
+    ) {
+      throw new Error('Saved recovery state does not match its event log.');
+    }
+    return replayed;
+  }
+
+  private async actForSeat(req: ActionRequest, signal: AbortSignal): Promise<GameAction> {
+    while (!signal.aborted) {
+      const controller = this.controllers.get(req.seat.id)!;
+      if (controller.kind !== 'human') {
+        await this.gate.wait(signal);
+        if (signal.aborted) throw new Error('aborted');
+        // A cover click during pause/pacing must take effect before calling the model.
+        if (controller !== this.controllers.get(req.seat.id)) continue;
+      }
+      try {
+        return await controller.act(req);
+      } catch (error) {
+        if (!(error instanceof SeatReleased)) throw error;
+      }
+    }
+    throw new Error('aborted');
+  }
+
   askHuman(req: ActionRequest): Promise<GameAction> {
-    this.latest = { view: req.view, god: null };
-    this.status = 'running';
+    const current = this.deps.def.view(this.latestState, req.seat.id);
+    if (
+      this.abort.signal.aborted || current.legalActions.length === 0 ||
+      current.phase.id !== req.view.phase.id || current.phase.round !== req.view.phase.round
+    ) {
+      return Promise.reject(new Error('turn ended'));
+    }
     return new Promise<GameAction>((resolve, reject) => {
-      this.pendingHuman = resolve;
-      this.pendingReject = reject;
-      // Push *after* the pending action exists, so the UI knows it is your turn.
+      this.humanRequests.push({ req, resolve, reject });
       this.push();
     });
   }
 
   submit(action: GameAction): void {
-    const resolve = this.pendingHuman;
-    this.pendingHuman = null;
-    this.pendingReject = null;
+    const pending = this.humanRequests.shift();
     this.push();
-    resolve?.(action);
+    pending?.resolve(action);
   }
 
+  private rejectHumanRequests(error: Error, seatId?: SeatId): void {
+    const rejected = this.humanRequests.filter((entry) => !seatId || entry.req.seat.id === seatId);
+    this.humanRequests = this.humanRequests.filter((entry) => !rejected.includes(entry));
+    rejected.forEach((entry) => entry.reject(error));
+  }
+
+  /** Changes the next decision; an already-started model call finishes normally. */
   takeover(seatId: SeatId): void {
-    const seat = this.deps.seats.find((entry) => entry.id === seatId);
-    if (!seat || seat.kind !== 'llm') return;
-    // Keep the model's memory and spend so releasing the seat restores both.
-    const current = this.llmControllers.get(seatId);
-    if (current) {
-      this.seatMemory.set(seatId, current.snapshot());
-      this.llmControllers.delete(seatId);
-    }
+    if (!this.running || this.status !== 'running' || this.takenOver.has(seatId)) return;
+    if (!this.llmControllers.has(seatId)) return;
     this.controllers.set(seatId, new HumanController(this));
     this.takenOver.add(seatId);
     this.push();
   }
 
   release(seatId: SeatId): void {
-    const seat = this.deps.seats.find((entry) => entry.id === seatId);
-    if (!seat || !this.takenOver.has(seatId)) return;
-    const client = this.deps.clientForSeat?.(seat) ?? this.deps.client;
-    if (!client || !seat.modelId) return;
-    const config: LlmSeatConfig = {
-      model: seat.modelId,
-      temperature: 0.85,
-      ...(seat.persona ? { persona: seat.persona } : {}),
-      ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
-    };
-    const controller = new LlmController({
-      client,
-      gameName: this.deps.def.name,
-      config,
-      onPreview: (text) => this.deps.sendPreview(seatId, text),
-      isPreviewPublic: (view, type) => this.deps.def.previewIsPublic?.(view, type) ?? false,
-    });
-    const saved = this.seatMemory.get(seatId);
-    if (saved) controller.restore(saved);
-    this.llmControllers.set(seatId, controller);
-    this.controllers.set(seatId, new PacedController(controller, this.gate));
+    if (!this.running || this.status !== 'running' || !this.takenOver.has(seatId)) return;
+    const controller = this.llmControllers.get(seatId);
+    if (!controller) return;
+    this.controllers.set(seatId, controller);
     this.takenOver.delete(seatId);
+    this.rejectHumanRequests(new SeatReleased('seat released'), seatId);
     this.push();
   }
 
@@ -399,12 +449,16 @@ export class MatchSession {
   }
 
   abortMatch(): void {
+    if (this.status === 'finished') {
+      this.abort.abort();
+      return;
+    }
     this.status = 'aborted';
     this.clearPreviews();
     this.abort.abort();
-    this.pendingReject?.(new Error('aborted'));
-    this.pendingHuman = null;
-    this.pendingReject = null;
+    this.rejectHumanRequests(new Error('aborted'));
+    this.refreshCost();
+    if (this.latest) this.persistLive(this.latestState);
     this.push();
   }
 
@@ -429,10 +483,10 @@ export class MatchSession {
         model: seat.modelId ?? '',
         temperature: 0.85,
         ...(seat.persona ? { persona: seat.persona } : {}),
-        ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
+        ...(seat.budgetUsd === undefined ? {} : { budgetUsd: seat.budgetUsd }),
       };
       const controller = new LlmController({
-        client,
+        client: this.budget.client(client),
         gameName: this.deps.def.name,
         config,
         onPreview: (text) => this.deps.sendPreview(seat.id, text),
@@ -441,8 +495,12 @@ export class MatchSession {
       const saved = this.seatMemory.get(seat.id);
       if (saved) controller.restore(saved);
       this.llmControllers.set(seat.id, controller);
-      this.controllers.set(seat.id, new PacedController(controller, this.gate));
+      this.controllers.set(seat.id, controller);
     }
+    const restored = [...this.llmControllers.values()].reduce(
+      (total, controller) => total + (controller.usage().costUsd ?? 0), 0,
+    );
+    this.budget.spend(Math.max(0, restored - this.budget.spentUsd));
   }
 
   private onEvent(event: MatchEvent, state: unknown): void {
@@ -450,15 +508,16 @@ export class MatchSession {
     this.capture(state);
     this.push();
 
-    if (this.costUsd > this.deps.request.budgetUsd) {
-      this.fatalError = `Match budget of $${this.deps.request.budgetUsd.toFixed(2)} reached.`;
-      this.abortMatch();
+    if (this.budget.remaining() <= 0 && !this.deps.def.terminal(state)) {
+      this.budget.exhausted();
       return;
     }
 
     // If every model seat is failing, a "match" would just be fallback moves.
     const issues = this.seatIssues();
-    const modelSeats = this.deps.seats.filter((seat) => seat.kind === 'llm').length;
+    const modelSeats = this.deps.seats.filter(
+      (seat) => seat.kind === 'llm' && !this.takenOver.has(seat.id),
+    ).length;
     if (
       modelSeats > 0 &&
       issues.length === modelSeats &&
@@ -474,7 +533,7 @@ export class MatchSession {
   private seatIssues(): SeatIssue[] {
     const issues: SeatIssue[] = [];
     for (const seat of this.deps.seats) {
-      if (seat.kind !== 'llm') continue;
+      if (seat.kind !== 'llm' || this.takenOver.has(seat.id)) continue;
       const health = this.healthOf(seat);
       // A seat that recovered from a transient hiccup should not keep a
       // permanent red banner on the table.
@@ -552,6 +611,7 @@ export class MatchSession {
   }
 
   private capture(state: unknown, silent = false): void {
+    this.latestState = state;
     const view: GameView = this.human
       ? this.deps.def.view(state, this.human.id)
       : (this.deps.def.godView?.(state) ??
@@ -564,11 +624,13 @@ export class MatchSession {
       this.phaseStartedAt = Date.now();
       this.phaseLimitMs = this.deps.def.phaseTimeoutMs?.(state) ?? null;
     }
-    // If the phase moved on (for example a deadline fired), the human is no
-    // longer being waited on.
-    if (this.pendingHuman && view.legalActions.length === 0) {
-      this.pendingHuman = null;
-      this.pendingReject = null;
+    // A deadline may move the phase on while human decisions are still queued.
+    for (const { req } of this.humanRequests) {
+      const current = this.deps.def.view(state, req.seat.id);
+      if (current.legalActions.length === 0 || current.phase.id !== req.view.phase.id ||
+          current.phase.round !== req.view.phase.round) {
+        this.rejectHumanRequests(new Error('turn ended'), req.seat.id);
+      }
     }
 
     this.latest = { view, god };
@@ -580,24 +642,29 @@ export class MatchSession {
 
   private persistLive(state: unknown): void {
     if (!this.deps.saveLive) return;
-    void this.deps
-      .saveLive({
-        matchId: this.matchId,
-        gameId: this.deps.def.id,
-        gameName: this.deps.def.name,
-        request: this.deps.request,
-        seats: this.deps.seats,
-        seed: this.seed,
-        state,
-        events: this.events,
-        controllers: this.controllerSnapshots(),
-      })
-      .catch(() => undefined);
+    const snapshot = structuredClone({
+      matchId: this.matchId,
+      gameId: this.deps.def.id,
+      gameName: this.deps.def.name,
+      request: this.deps.request,
+      seats: this.deps.seats,
+      seed: this.seed,
+      spentUsd: this.budget.spentUsd,
+      state,
+      events: this.events,
+      controllers: this.controllerSnapshots(),
+    });
+    this.liveWrites = this.liveWrites.then(async () => {
+      await this.deps.saveLive!(snapshot);
+      this.liveSaveFailed = false;
+    }).catch(() => {
+      if (!this.liveSaveFailed) this.deps.sendError('Could not save recovery data. Check available disk space.');
+      this.liveSaveFailed = true;
+    });
   }
 
   /**
-   * Freeze every live seat's memory into the persisted map. A seat the human
-   * is covering has no live controller, so its last snapshot is kept.
+   * Freeze every model's memory into the persisted map, including covered seats.
    */
   private controllerSnapshots(): Record<string, LlmSeatState> {
     for (const [seatId, controller] of this.llmControllers) {
@@ -607,27 +674,24 @@ export class MatchSession {
   }
 
   private refreshCost(): void {
-    let total = 0;
-    for (const seat of this.deps.seats) {
-      const live = this.llmControllers.get(seat.id);
-      total += live ? (live.usage?.().costUsd ?? 0) : (this.seatMemory.get(seat.id)?.costUsd ?? 0);
-    }
-    this.costUsd = total;
+    this.costUsd = this.budget.spentUsd;
   }
 
   private push(): void {
     if (!this.latest) return;
+    const pending = this.humanRequests[0];
+    const spectator = this.human === null && !pending;
     this.deps.send({
       matchId: this.matchId,
       gameId: this.deps.def.id,
       gameName: this.deps.def.name,
-      spectator: this.human === null,
+      spectator,
       status: this.status,
-      view: this.latest.view,
+      view: pending?.req.view ?? this.latest.view,
       // Keep omniscient snapshots on disk for replays, never in a live player's IPC payload.
-      godView: this.human === null ? this.latest.god : null,
-      humanSeatId: this.human?.id ?? null,
-      awaitingHuman: this.pendingHuman !== null,
+      godView: spectator ? this.latest.god : null,
+      humanSeatId: pending?.req.seat.id ?? this.human?.id ?? null,
+      awaitingHuman: Boolean(pending),
       seatIssues: this.seatIssues(),
       seatHealth: this.seatHealth(),
       takenOverSeats: [...this.takenOver],
@@ -640,25 +704,24 @@ export class MatchSession {
       paused: this.paused,
       speed: this.speed,
       budgetUsd: this.deps.request.budgetUsd,
+      ...(this.saveState ? { saveState: this.saveState } : {}),
     });
   }
 
   private async finish(result: MatchResult): Promise<void> {
     this.clearPreviews();
     this.status = 'finished';
+    this.saveState = { status: 'saving' };
     this.refreshCost();
     this.push();
 
     const summary = this.summarise(result);
     this.deps.sendFinished(summary);
-
-    try {
-      const personas: Record<string, string> = {};
-      for (const seat of this.deps.seats) {
-        if (seat.persona) personas[seat.id] = seat.persona;
-      }
-      await this.deps.store.append(toRecord(result, personas));
-      await this.deps.saveBundle({
+    const personas = Object.fromEntries(this.deps.seats.filter((seat) => seat.persona)
+      .map((seat) => [seat.id, seat.persona!]));
+    this.completed = {
+      record: toRecord(result, personas),
+      bundle: {
         formatVersion: REPLAY_FORMAT_VERSION,
         summary,
         options: this.gameOptions(),
@@ -667,17 +730,46 @@ export class MatchSession {
         events: result.events,
         views: this.snapshots,
         godViews: this.godSnapshots,
-      });
-    } catch (error) {
-      console.error('[session] could not persist match', error);
-    }
+      },
+    };
+    await this.retrySave();
+  }
 
-    void this.deps.clearLive?.(summary.matchId);
-    void this.runDebrief(summary);
+  retrySave(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.completed) return Promise.resolve({ ok: false, error: 'No finished match to save.' });
+    if (this.saving) return this.saving;
+    if (this.saveState?.status === 'saved') return Promise.resolve({ ok: true });
+    this.saving = Promise.resolve().then(() => this.saveCompleted()).finally(() => { this.saving = null; });
+    return this.saving;
+  }
+
+  private async saveCompleted(): Promise<{ ok: boolean; error?: string }> {
+    const { record, bundle } = this.completed!;
+    this.saveState = { status: 'saving' };
+    this.push();
+    try {
+      // Never let an older autosave recreate or overwrite recovery data after cleanup.
+      await this.liveWrites;
+      await this.deps.store.appendOnce(record);
+      await this.deps.saveBundle(bundle);
+      await this.deps.clearLive?.(this.matchId);
+    } catch {
+      const error = 'Could not save the match. Recovery data has not been deleted. Free disk space or check permissions, then retry saving.';
+      this.saveState = { status: 'error', error };
+      this.push();
+      return { ok: false, error };
+    }
+    this.saveState = { status: 'saved' };
+    this.push();
+    if (!this.debriefStarted) {
+      this.debriefStarted = true;
+      void this.runDebrief(bundle.summary);
+    }
+    return { ok: true };
   }
 
   private async runDebrief(summary: MatchSummary): Promise<void> {
-    if (!this.deps.client || !this.deps.debriefModel) return;
+    if (!this.deps.client || !this.deps.debriefModel || !summary.debriefExpected || this.abort.signal.aborted) return;
     try {
       const bundle: ReplayBundle = {
         summary,
@@ -689,15 +781,29 @@ export class MatchSession {
         godViews: this.godSnapshots,
       };
       const debrief = await generateDebrief({
-        client: this.deps.client,
+        client: {
+          complete: (req) => this.budget.client(this.deps.client!).complete({
+            ...req, signal: AbortSignal.any([this.abort.signal, AbortSignal.timeout(90_000)]),
+          }),
+        },
         model: this.deps.debriefModel,
         bundle,
       });
-      if (!debrief) return;
+      if (!debrief) {
+        summary.debriefExpected = false;
+        this.deps.sendFinished(summary);
+        return;
+      }
       this.deps.sendDebrief({ matchId: summary.matchId, ...debrief });
       await this.deps.saveDebrief?.(summary.matchId, debrief);
     } catch (error) {
-      console.error('[session] debrief failed', error);
+      if (this.abort.signal.aborted) return;
+      summary.debriefExpected = false;
+      this.deps.sendFinished(summary);
+      if (!(error instanceof BudgetExceeded)) this.deps.sendError('The after-match analysis could not be completed.');
+    } finally {
+      this.refreshCost();
+      if (!this.abort.signal.aborted) this.push();
     }
   }
 
@@ -727,7 +833,7 @@ export class MatchSession {
       totalCostUsd: result.seats.reduce((sum, seat) => sum + seat.usage.costUsd, 0),
       eventCount: result.events.length,
       metrics: result.metrics,
-      debriefExpected: Boolean(this.deps.debriefModel && this.deps.client),
+      debriefExpected: Boolean(this.deps.debriefModel && this.deps.client && this.budget.remaining() > 0),
     };
   }
 }

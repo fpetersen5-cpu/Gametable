@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, safeStorage, session, shell } from 'electron';
 import { redact } from '@gametable/agent';
 import { registerIpc } from './ipc.js';
@@ -46,7 +47,10 @@ function createWindow(): void {
     return { action: 'deny' };
   });
   window.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://')) event.preventDefault();
+    const allowed = isDev
+      ? url.startsWith('http://localhost:5173')
+      : url === pathToFileURL(path.join(__dirname, 'renderer', 'index.html')).href;
+    if (!allowed) event.preventDefault();
   });
 
   if (isDev) {
@@ -67,7 +71,10 @@ function retryWithLibsecret(): boolean {
   if (process.argv.some((arg) => arg.startsWith('--password-store'))) return false;
   if (!existsSync(path.join(app.getPath('userData'), 'secrets.enc'))) return false;
   try {
-    if (safeStorage.isEncryptionAvailable()) return false;
+    const backend = safeStorage.getSelectedStorageBackend();
+    const usable =
+      safeStorage.isEncryptionAvailable() && backend !== 'basic_text' && backend !== 'unknown';
+    if (usable) return false;
   } catch {
     return false;
   }

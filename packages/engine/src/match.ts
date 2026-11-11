@@ -16,6 +16,8 @@ export interface ActionRequest {
   /** The seat's entire knowledge. Prompt building must use nothing else. */
   view: GameView;
   timeoutMs: number;
+  /** Cancels work belonging to this run, including provider requests. */
+  signal?: AbortSignal;
 }
 
 export interface SeatUsage {
@@ -80,7 +82,7 @@ export interface RunOptions<S = unknown> {
   /** Resume: events already played, kept in the result log. */
   initialEvents?: MatchEvent[];
   onEvent?: (event: MatchEvent, state: S) => void;
-  /** Cooperative abort, checked between actions. */
+  /** Cancels controller requests and is checked before applying actions. */
   signal?: AbortSignal;
   now?: () => number;
 }
@@ -161,6 +163,7 @@ async function obtainAction<S>(
   usage: SeatUsage,
   opts: Required<Pick<RunOptions, 'actionTimeoutMs' | 'maxInvalidActions'>>,
   matchId: string,
+  signal?: AbortSignal,
 ): Promise<{ action: GameAction; view: GameView }> {
   const view = def.view(state, seat.id);
   const legal = view.legalActions;
@@ -169,16 +172,18 @@ async function obtainAction<S>(
   }
 
   for (let attempt = 0; attempt < opts.maxInvalidActions; attempt++) {
+    signal?.throwIfAborted();
     const started = Date.now();
     usage.calls += 1;
     let submitted: unknown;
     try {
       submitted = await withTimeout(
-        controller.act({ matchId, seat, view, timeoutMs: opts.actionTimeoutMs }),
+        controller.act({ matchId, seat, view, timeoutMs: opts.actionTimeoutMs, signal }),
         opts.actionTimeoutMs,
         seat.id,
       );
     } catch (err) {
+      signal?.throwIfAborted();
       // Timeouts and transport failures consume an attempt; the seat may recover.
       if (attempt === opts.maxInvalidActions - 1) break;
       usage.latencyMs += Date.now() - started;
@@ -279,6 +284,7 @@ export async function runMatch<S>(
         seatUsage,
         { actionTimeoutMs, maxInvalidActions },
         matchId,
+        options.signal,
       );
       return { seatId, ...result };
     });

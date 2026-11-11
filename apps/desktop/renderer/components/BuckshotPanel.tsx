@@ -1,5 +1,5 @@
 import type { BuckshotData } from '../game-data';
-import { ITEM_LABEL } from '../game-data';
+import { ITEM_LABEL, roundWinsForViewer } from '../game-data';
 
 interface Props {
   data: BuckshotData;
@@ -25,6 +25,7 @@ export function BuckshotPanel({ data, spectator, seats, viewSeatId, humanSeatId 
   const [yourHp, theirHp] = data.god?.hp ?? [data.yourHp, data.theirHp];
   const [yourItems, theirItems] = data.god?.items ?? [data.yourItems, []];
   const maxHp = data.maxHp || 1;
+  const [yourWins, theirWins] = roundWinsForViewer(data.roundWins, seats, viewSeatId);
 
   return (
     <div className="buckshot-panel">
@@ -33,7 +34,7 @@ export function BuckshotPanel({ data, spectator, seats, viewSeatId, humanSeatId 
           label={you}
           hp={yourHp}
           maxHp={maxHp}
-          wins={data.roundWins[0]}
+          wins={yourWins}
           items={yourItems ?? []}
           showItems
         />
@@ -70,7 +71,7 @@ export function BuckshotPanel({ data, spectator, seats, viewSeatId, humanSeatId 
           label={them}
           hp={theirHp}
           maxHp={maxHp}
-          wins={data.roundWins[1]}
+          wins={theirWins}
           items={theirItems}
           showItems={Boolean(data.god)}
           itemCount={data.theirItemCount}

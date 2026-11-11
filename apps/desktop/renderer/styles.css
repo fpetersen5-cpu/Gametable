@@ -9,7 +9,7 @@
   --text: #f1f3ee;
   --text-soft: #d5d9d2;
   --muted: #8d96a3;
-  --faint: #626c79;
+  --faint: #7d8796;
   --accent: #c6ef72;
   --accent-strong: #d5fa8b;
   --accent-dim: #8cae50;
@@ -214,11 +214,21 @@ code {
   letter-spacing: -0.035em;
 }
 
+.brand-version {
+  margin-left: 3px;
+  color: var(--faint);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 .brand small {
   display: block;
   margin-top: 2px;
   color: var(--faint);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.13em;
 }
@@ -699,7 +709,7 @@ select {
 
 .game-kind {
   color: var(--faint);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -955,7 +965,7 @@ select {
   overflow: hidden;
   color: var(--faint);
   font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 9px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1662,6 +1672,314 @@ select {
 
 .seat-health-item.error .health-dot {
   background: var(--danger);
+}
+
+/* Mafia 3D council chamber ------------------------------------------------ */
+
+.mafia-scene {
+  position: relative;
+  height: clamp(420px, 52vh, 620px);
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid #2b3645;
+  border-radius: 16px;
+  background: #05080e;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.28), inset 0 0 60px rgba(100, 130, 190, 0.035);
+  isolation: isolate;
+}
+
+.scene-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #9aa8c1;
+  font-size: 11px;
+}
+
+.mafia-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.mafia-scene canvas:active {
+  cursor: grabbing;
+}
+
+.scene-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(3, 6, 11, 0.55), transparent 28%, transparent 62%, rgba(3, 6, 10, 0.72)),
+    linear-gradient(90deg, rgba(3, 6, 10, 0.22), transparent 28%, transparent 75%, rgba(3, 6, 10, 0.2));
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.35);
+}
+
+.scene-topbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 19px 20px;
+  pointer-events: none;
+}
+
+.scene-location {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-shadow: 0 2px 10px #000;
+}
+
+.scene-kicker {
+  margin-bottom: 5px;
+  color: #a9b8e8;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+}
+
+.scene-location strong {
+  overflow: hidden;
+  color: #f3f5f4;
+  font-size: 19px;
+  font-weight: 570;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-location small {
+  margin-top: 3px;
+  color: #9aa6b8;
+  font-size: 9px;
+}
+
+.scene-phase-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  margin-top: 12px;
+  padding: 5px 9px;
+  border: 1px solid rgba(206, 190, 139, 0.3);
+  border-radius: 20px;
+  background: rgba(15, 22, 30, 0.8);
+  color: #e2d7b5;
+  font-size: 10px;
+}
+
+.mafia-scene.is-night {
+  border-color: #45547c;
+}
+
+.is-night .scene-phase-badge {
+  border-color: rgba(148, 166, 228, 0.35);
+  color: #b9caff;
+  background: rgba(12, 18, 43, 0.88);
+}
+
+.is-night .scene-dialogue.quiet {
+  border-color: rgba(140, 161, 224, 0.28);
+  background: rgba(7, 12, 29, 0.88);
+}
+
+.scene-camera {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(151, 169, 205, 0.2);
+  border-radius: 10px;
+  background: rgba(7, 11, 18, 0.68);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.scene-camera button,
+.scene-follow {
+  border: 0;
+  border-radius: 7px;
+  color: #96a3b7;
+  background: transparent;
+  font-size: 9px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.scene-camera button {
+  min-height: 29px;
+  padding: 6px 11px;
+}
+
+.scene-camera button:hover,
+.scene-follow:hover {
+  color: #eef2f6;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.scene-camera button.active {
+  color: #e8edff;
+  background: rgba(137, 158, 220, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(166, 184, 235, 0.14);
+}
+
+.scene-seat-select {
+  width: 112px;
+  min-height: 29px;
+  margin-left: 3px;
+  padding: 4px 22px 4px 8px;
+  border: 0;
+  border-left: 1px solid rgba(151, 169, 205, 0.16);
+  border-radius: 7px;
+  color: #b2bdd0;
+  background: #111927;
+  font-size: 9px;
+}
+
+.scene-follow {
+  position: absolute;
+  top: 73px;
+  right: 20px;
+  padding: 6px 10px;
+  border: 1px solid rgba(151, 169, 205, 0.16);
+  background: rgba(7, 11, 18, 0.62);
+  backdrop-filter: blur(10px);
+}
+
+.scene-dialogue {
+  position: absolute;
+  bottom: 31px;
+  left: 20px;
+  width: min(650px, calc(100% - 40px));
+  padding: 13px 16px 14px;
+  border: 1px solid rgba(151, 169, 205, 0.17);
+  border-left: 2px solid #94a9e8;
+  border-radius: 4px 11px 11px 4px;
+  background: linear-gradient(100deg, rgba(6, 10, 17, 0.91), rgba(9, 14, 23, 0.76));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.scene-dialogue-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.scene-dialogue-meta > span {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #94a9e8;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.scene-dialogue-meta strong {
+  color: #eef1f5;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.scene-dialogue-meta small {
+  color: #7f8da3;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scene-dialogue p {
+  display: -webkit-box;
+  margin: 7px 0 0;
+  overflow: hidden;
+  color: #e1e6ec;
+  font-size: 13px;
+  line-height: 1.5;
+  text-shadow: 0 1px 6px #000;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.scene-dialogue.quiet {
+  opacity: 0.78;
+}
+
+.scene-caret {
+  margin-left: 3px;
+  color: #b8c8ff;
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+
+.scene-help {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  color: rgba(164, 176, 198, 0.52);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+.scene-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border: 1px solid #53647b;
+  border-radius: 8px;
+  background: rgba(10, 17, 28, 0.92);
+  color: #e5edf8;
+  font-size: 13px;
+}
+
+.scene-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  color: var(--text-soft);
+  background: radial-gradient(circle at 50% 35%, #172131, #080d14 65%);
+  text-align: center;
+}
+
+.scene-error p {
+  margin: 7px 0;
+  color: var(--muted);
+}
+
+.scene-error small {
+  max-width: 540px;
+  color: var(--faint);
+}
+
+.mafia-scene.unavailable canvas,
+.mafia-scene.unavailable .scene-topbar,
+.mafia-scene.unavailable .scene-dialogue,
+.mafia-scene.unavailable .scene-help,
+.mafia-scene.unavailable .scene-follow {
+  display: none;
 }
 
 /* Seats and shared game table -------------------------------------------- */
@@ -2567,6 +2885,28 @@ button.mic.recording {
   text-transform: uppercase;
 }
 
+.history-filters {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 16px;
+}
+
+.history-filters label {
+  display: grid;
+  gap: 6px;
+}
+
+.history-filters input,
+.history-filters select {
+  width: 100%;
+  min-width: 0;
+}
+
+.replay-item small,
+.resume-card small {
+  overflow-wrap: anywhere;
+}
+
 .replay-list > .muted {
   padding: 5px;
   font-size: 11px;
@@ -3023,6 +3363,14 @@ button.mic.recording {
     grid-template-columns: minmax(0, 1fr) 285px;
   }
 
+  .mafia-scene {
+    height: 350px;
+  }
+
+  .scene-help {
+    display: none;
+  }
+
   .match-controls {
     justify-content: flex-start;
   }
@@ -3036,7 +3384,7 @@ button.mic.recording {
   }
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1100px) {
   .settings-grid {
     grid-template-columns: minmax(0, 1fr);
   }

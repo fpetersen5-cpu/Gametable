@@ -21,6 +21,20 @@ export interface RatingOptions {
 }
 
 /**
+ * Normalize each match to one unit of pairwise evidence. A ten-player winner
+ * should not count nine times as much as a duel winner, and a two-model mafia
+ * team should not count twice as much as a solo winner. Each winner-vs-loser
+ * pair receives `1 / (winners * losers)`.
+ */
+export function tableWeight(record: MatchRecord): number {
+  const models = record.seats.filter((seat) => seat.kind === 'llm' && seat.modelId);
+  const winners = models.filter((seat) => record.winnerSeats.includes(seat.seatId)).length;
+  const losers = models.length - winners;
+  if (winners === 0 || losers === 0) return 0;
+  return 1 / (winners * losers);
+}
+
+/**
  * Bradley–Terry over pairwise wins, fitted with the standard MM algorithm.
  *
  * Every match is expanded into winner-vs-loser pairs, so multi-player games
@@ -160,6 +174,12 @@ export function bradleyTerry(records: MatchRecord[], options: RatingOptions = {}
     .map((id) => {
       const total = totals.get(id) as NonNullable<ReturnType<typeof totals.get>>;
       const rating = 400 * Math.log10(strength.get(id) as number) + 1500;
+      const metrics = Object.fromEntries(
+        [...total.metrics.entries()].map(([k, v]) => [k, total.matches ? v / total.matches : 0]),
+      );
+      const evLoss = total.metrics.get('evLoss') ?? 0;
+      const decisions = total.metrics.get('decisions') ?? 0;
+      if (decisions > 0) metrics.evLossPerDecision = evLoss / decisions;
       return {
         modelId: id,
         rating: Math.max(800, Math.min(2400, rating)),
@@ -169,9 +189,7 @@ export function bradleyTerry(records: MatchRecord[], options: RatingOptions = {}
         invalidActions: total.invalidActions,
         avgCostUsd: total.matches ? total.cost / total.matches : 0,
         avgLatencyMs: total.matches ? total.latency / total.matches : 0,
-        metrics: Object.fromEntries(
-          [...total.metrics.entries()].map(([k, v]) => [k, total.matches ? v / total.matches : 0]),
-        ),
+        metrics,
       };
     })
     .sort((a, b) => b.rating - a.rating);

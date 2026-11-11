@@ -135,6 +135,17 @@ describe('items', () => {
     expect(next.chamber[0]).not.toBe(before);
   });
 
+  it('the inverter updates both seats’ peek knowledge', () => {
+    const state = withItems(['inverter']);
+    state.chamber = ['live', 'blank', 'live', 'blank'];
+    state.knowledge[0].top = 'live';
+    state.knowledge[1].top = 'live';
+    const next = buckshot.apply(state, 's1', { type: 'use', item: 'inverter' });
+    expect(next.chamber[0]).toBe('blank');
+    expect(next.knowledge[0].top).toBe('blank');
+    expect(next.knowledge[1].top).toBe('blank');
+  });
+
   it('adrenaline opens a steal phase and copies the effect', () => {
     const state = withItems(['adrenaline'], ['cigarette', 'beer']);
     state.hp = [2, 3];
@@ -217,5 +228,15 @@ describe('knowledge and leaks', () => {
     expect(mine.youPeeked.top).toBe('live');
     expect(theirs.youPeeked.top).toBeNull();
     expect(JSON.stringify(buckshot.view(next, 's2'))).not.toContain('#hidden');
+  });
+
+  it('view knowledge is a copy, not live state', () => {
+    const state = stateWith({
+      chamber: ['live', 'blank'],
+      knowledge: [{ top: 'live', future: [] }, { top: null, future: [] }],
+    });
+    const view = buckshot.view(state, 's1');
+    (view.data as { youPeeked: { top: string | null } }).youPeeked.top = 'blank';
+    expect(state.knowledge[0].top).toBe('live');
   });
 });

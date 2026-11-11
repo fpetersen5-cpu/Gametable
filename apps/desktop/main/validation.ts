@@ -171,6 +171,7 @@ export function validateConfig(raw: unknown): AppConfig {
     budgetUsd: asNumber(config.budgetUsd ?? 2, 'budgetUsd', 0, 1000),
     speed: asNumber(config.speed ?? 1, 'speed', 0.5, 8),
     voice: config.voice === undefined ? true : asBoolean(config.voice, 'voice'),
+    scene3d: config.scene3d === undefined ? true : asBoolean(config.scene3d, 'scene3d'),
   };
 }
 

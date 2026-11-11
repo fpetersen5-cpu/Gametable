@@ -88,6 +88,8 @@ modules:
         /app/share/licenses/io.github.fpetersen5_cpu.GameTable/electron/LICENSE
       - install -Dm644 node_modules/electron/dist/LICENSES.chromium.html
         /app/share/licenses/io.github.fpetersen5_cpu.GameTable/electron/LICENSES.chromium.html
+      - install -Dm644 node_modules/three/LICENSE
+        /app/share/licenses/io.github.fpetersen5_cpu.GameTable/three/LICENSE
     sources:
       # build.sh rewrites this to the local checkout for local builds.
       - type: git

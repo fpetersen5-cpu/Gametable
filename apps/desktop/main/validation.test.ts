@@ -54,7 +54,11 @@ describe('IPC validation', () => {
   });
 
   it('validates saved config and arena settings', () => {
-    expect(validateConfig({ humanName: 'You', seats: [], budgetUsd: 2, speed: 1, voice: true }).voice).toBe(true);
+    const defaults = validateConfig({ humanName: 'You', seats: [], budgetUsd: 2, speed: 1, voice: true });
+    expect(defaults.voice).toBe(true);
+    expect(defaults.scene3d).toBe(true);
+    expect(validateConfig({ ...defaults, scene3d: false }).scene3d).toBe(false);
+    expect(() => validateConfig({ ...defaults, scene3d: 'yes' })).toThrow(/scene3d/);
     expect(() => validateConfig({ seats: new Array(11).fill({ modelId: 'x' }) })).toThrow();
     expect(() =>
       validateArena({ gameId: 'buckshot', seats: [seat], matches: 500, budgetPerMatch: 1, totalBudgetUsd: 2, seedBase: 1 }),

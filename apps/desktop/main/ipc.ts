@@ -8,12 +8,14 @@ import {
   listLocalModels,
   probeModel,
   type CompletionClient,
+  type KeyInfo,
+  type ModelInfo,
 } from '@gametable/agent';
 import type { GameDef, MatchEvent, Seat } from '@gametable/engine';
 import { buckshot } from '@gametable/games-buckshot';
 import { coup } from '@gametable/games-coup';
 import { mafia } from '@gametable/games-mafia';
-import { ResultsStore, bradleyTerry } from '@gametable/stats';
+import { ResultsStore, bradleyTerry, tableWeight } from '@gametable/stats';
 import { SecretStore } from './secrets.js';
 import { secureWrite, readJsonFile } from './secure-file.js';
 import {
@@ -70,6 +72,13 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       isAvailable: () => safeStorage.isEncryptionAvailable(),
       encryptString: (plain) => safeStorage.encryptString(plain),
       decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+      backend: () => {
+        try {
+          return process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : undefined;
+        } catch {
+          return undefined;
+        }
+      },
     },
   );
   const catalog = new ModelCatalogCache(join(userDataDir, 'models.json'));
@@ -95,6 +104,13 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   };
 
   let current: MatchSession | null = null;
+  let launchGeneration = 0;
+  let keyStatus: { key: string; at: number; info: KeyInfo | null } | null = null;
+  const sendForSession = (session: MatchSession, channel: string, payload: unknown): void => {
+    if (current !== session) return;
+    const window = getWindow();
+    if (window && !window.isDestroyed()) window.webContents.send(channel, payload);
+  };
   let arenaClient: CompletionClient | null = null;
   const arena = new ArenaRunner({
     games,
@@ -112,26 +128,31 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   });
 
   handle('app:status', async (): Promise<AppStatus> => {
-    const key = await secrets.getKey();
-    let keyInfo = null;
-    if (key) {
-      try {
-        keyInfo = await new OpenRouterClient({ apiKey: key }).checkKey();
-      } catch {
-        keyInfo = null;
-      }
-    }
     if (demo) {
       return {
-        version: process.env.npm_package_version ?? '0.1.0',
+        version: process.env.npm_package_version ?? '0.2.0',
         hasKey: true,
         keyValid: true,
         keyInfo: { label: 'demo key', usage: 0.42, limit: 5, isFreeTier: false },
         storage: 'file',
       };
     }
+    const key = await secrets.getKey();
+    let keyInfo = null;
+    if (key) {
+      if (keyStatus && keyStatus.key === key && Date.now() - keyStatus.at < 60_000) {
+        keyInfo = keyStatus.info;
+      } else {
+        try {
+          keyInfo = await new OpenRouterClient({ apiKey: key }).checkKey();
+        } catch {
+          keyInfo = null;
+        }
+        keyStatus = { key, at: Date.now(), info: keyInfo };
+      }
+    }
     return {
-      version: process.env.npm_package_version ?? '0.1.0',
+      version: process.env.npm_package_version ?? '0.2.0',
       hasKey: key !== null,
       keyValid: keyInfo !== null,
       keyInfo,
@@ -152,6 +173,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       const client = new OpenRouterClient({ apiKey: key });
       const keyInfo = await client.checkKey();
       await secrets.setKey(key);
+      keyStatus = { key, at: Date.now(), info: keyInfo };
       return { ok: true, keyInfo };
     } catch (error) {
       return { ok: false, error: describe(error) };
@@ -160,6 +182,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
 
   handle('key:clear', async () => {
     await secrets.clear();
+    keyStatus = null;
   });
 
   handle('models:list', async (_event, refresh: unknown): Promise<ModelCatalogResult> => {
@@ -233,8 +256,20 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   });
 
   handle('config:load', async (): Promise<AppConfig> => {
-    const parsed = await readJsonFile<Partial<AppConfig>>(configFile);
-    return { ...DEFAULT_CONFIG, ...(parsed ?? {}) };
+    let raw: string;
+    try {
+      raw = await readFile(configFile, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return DEFAULT_CONFIG;
+      throw error;
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Expected an object');
+      return validateConfig({ ...DEFAULT_CONFIG, ...parsed });
+    } catch {
+      throw new Error('Saved settings are invalid. Open the data folder and repair or rename config.json, then retry.');
+    }
   });
 
   handle('config:save', async (_event, config: unknown) => {
@@ -276,6 +311,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
 
     const llmSeats = request.seats.filter((seat) => seat.kind === 'llm');
     const needsOpenRouter = llmSeats.some((seat) => seat.provider !== 'local');
+    const generation = ++launchGeneration;
     const key = demo ? 'demo' : await secrets.getKey();
     if (needsOpenRouter && !key) return { ok: false, error: 'Add an OpenRouter key first' };
 
@@ -328,71 +364,38 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       }
     }
 
-    current?.abortMatch();
-    const window = getWindow();
     const seats: Seat[] = request.seats.map((seat, index) => ({
       id: `s${index + 1}`,
       name: seat.name.trim() || `Seat ${index + 1}`,
       kind: seat.kind,
       ...(seat.modelId ? { modelId: seat.modelId } : {}),
       ...(seat.persona ? { persona: seat.persona } : {}),
-      ...(seat.budgetUsd ? { budgetUsd: seat.budgetUsd } : {}),
+      ...(seat.budgetUsd === undefined ? {} : { budgetUsd: seat.budgetUsd }),
     }));
 
     const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
-    const openRouter = demo
-      ? new DemoClient()
-      : key
-        ? new OpenRouterClient({ apiKey: key, appName: 'GameTable' })
-        : null;
-    const locals = new Map<string, OpenAICompatibleClient>();
-    const clientForSeat = (seat: Seat): CompletionClient | null => {
-      if (demo) return openRouter;
-      const index = Number(seat.id.replace(/^s/, '')) - 1;
-      const configured = request.seats[index];
-      if (!configured || configured.provider !== 'local') return openRouter;
-      const baseUrl = configured.baseUrl ?? DEFAULT_CONFIG.localEndpoint;
-      const existing = locals.get(baseUrl);
-      if (existing) return existing;
-      const client = new OpenAICompatibleClient({ baseUrl });
-      locals.set(baseUrl, client);
-      return client;
-    };
+    if (generation !== launchGeneration) return { ok: false, error: 'Match launch cancelled.' };
+    const providers = createMatchProviders(request, seats, key, catalogue?.models ?? []);
 
-    const seatModels = new Set(
-      request.seats
-        .filter((seat) => seat.kind === 'llm' && seat.provider !== 'local' && seat.modelId)
-        .map((seat) => seat.modelId as string),
-    );
-    const cheapest = (catalogue?.models ?? [])
-      .filter((model) => seatModels.has(model.id))
-      .sort(
-        (a, b) =>
-          a.promptPrice + a.completionPrice - (b.promptPrice + b.completionPrice),
-      )[0];
-    const debriefModel = cheapest?.id ?? [...seatModels][0] ?? null;
-
-    const session = new MatchSession({
+    const session: MatchSession = new MatchSession({
       def,
       seats,
       request,
-      client: openRouter,
-      clientForSeat,
+      ...providers,
       store: results,
       saveBundle: async (bundle) => {
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
-      send: (snapshot) => window?.webContents.send('match:table', snapshot),
+      send: (snapshot) => sendForSession(session, 'match:table', snapshot),
       sendPreview: (seatId, text) => {
         if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
           console.info('[preview]', seatId, text.length);
         }
-        window?.webContents.send('match:preview', { seatId, text });
+        sendForSession(session, 'match:preview', { seatId, text });
       },
-      sendFinished: (summary) => window?.webContents.send('match:finished', summary),
-      sendError: (message) => window?.webContents.send('match:error', message),
-      sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
-      debriefModel,
+      sendFinished: (summary) => sendForSession(session, 'match:finished', summary),
+      sendError: (message) => sendForSession(session, 'match:error', message),
+      sendDebrief: (debrief) => sendForSession(session, 'match:debrief', debrief),
       saveLive: async (snapshot) => {
         await secureWrite(
           join(liveDir, `${snapshot.matchId}.json`),
@@ -413,7 +416,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         }
       },
     });
+    const previous = current;
     current = session;
+    previous?.abortMatch();
     void session.start();
     return { ok: true, matchId: session.matchId };
   });
@@ -422,7 +427,13 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     if (typeof action !== 'object' || action === null) return;
     const type = (action as { type?: unknown }).type;
     if (typeof type !== 'string' || type.length > 64) return;
-    if (JSON.stringify(action).length > 4000) return;
+    let size: number;
+    try {
+      size = JSON.stringify(action).length;
+    } catch {
+      return;
+    }
+    if (size > 4000) return;
     current?.submit(action as never);
   });
 
@@ -437,11 +448,19 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   });
 
   handle('match:abort', async () => {
+    ++launchGeneration;
     current?.abortMatch();
   });
 
   handle('match:rewind', async () => {
     await current?.rewind(1);
+  });
+
+  handle('match:retry-save', async (_event, matchId: unknown) => {
+    if (typeof matchId !== 'string' || !current || current.matchId !== matchId) {
+      return { ok: false, error: 'That match is no longer open. Resume it from the table to recover it.' };
+    }
+    return current.retrySave();
   });
 
   handle('match:takeover', async (_event, seatId: unknown) => {
@@ -481,8 +500,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     let entries: string[];
     try {
       entries = await readdir(liveDir);
-    } catch {
-      return [];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
     }
     const out: Array<{
       matchId: string;
@@ -526,12 +546,14 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     if (typeof matchId !== 'string' || !/^[am]-[a-z0-9-]+$/i.test(matchId)) {
       return { ok: false, error: 'invalid match' };
     }
+    const generation = ++launchGeneration;
     let saved: {
       matchId: string;
       gameId: string;
       request: StartMatchRequest;
       seats: Seat[];
       seed: number;
+      spentUsd?: number;
       state: unknown;
       events: MatchEvent[];
       controllers?: Record<string, unknown>;
@@ -543,25 +565,44 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
     const def = games.find((game) => game.id === saved.gameId);
     if (!def) return { ok: false, error: `unknown game: ${saved.gameId}` };
+    if (
+      !saved.request ||
+      !Array.isArray(saved.request.seats) ||
+      !Array.isArray(saved.seats) ||
+      saved.seats.length === 0 ||
+      !Array.isArray(saved.events)
+    ) {
+      return { ok: false, error: 'That saved match is incomplete or corrupt.' };
+    }
+    if (
+      saved.controllers !== undefined &&
+      (typeof saved.controllers !== 'object' ||
+        saved.controllers === null ||
+        Array.isArray(saved.controllers))
+    ) {
+      return { ok: false, error: 'That saved match has invalid seat memory.' };
+    }
 
     const key = demo ? 'demo' : await secrets.getKey();
-    if (saved.request.seats.some((seat) => seat.kind === 'llm') && !key) {
+    const needsOpenRouter = saved.request.seats.some(
+      (seat) => seat.kind === 'llm' && seat.provider !== 'local',
+    );
+    if (needsOpenRouter && !key) {
       return { ok: false, error: 'Add an OpenRouter key first' };
     }
-    current?.abortMatch();
-    const window = getWindow();
-    const session = new MatchSession({
+    const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
+    if (generation !== launchGeneration) return { ok: false, error: 'Match launch cancelled.' };
+    const providers = createMatchProviders(saved.request, saved.seats, key, catalogue?.models ?? []);
+    const session: MatchSession = new MatchSession({
       def,
       seats: saved.seats,
       request: saved.request,
-      client: demo
-        ? new DemoClient()
-        : key
-          ? new OpenRouterClient({ apiKey: key, appName: 'GameTable' })
-          : null,
+      ...providers,
       store: results,
       matchId: saved.matchId,
       resume: {
+        seed: saved.seed,
+        spentUsd: saved.spentUsd,
         state: saved.state,
         events: saved.events,
         controllers: saved.controllers ?? {},
@@ -569,17 +610,16 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       saveBundle: async (bundle) => {
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
       },
-      send: (snapshot) => window?.webContents.send('match:table', snapshot),
+      send: (snapshot) => sendForSession(session, 'match:table', snapshot),
       sendPreview: (seatId, text) => {
         if (process.env.GAMETABLE_DEBUG_STREAM === '1') {
           console.info('[preview]', seatId, text.length);
         }
-        window?.webContents.send('match:preview', { seatId, text });
+        sendForSession(session, 'match:preview', { seatId, text });
       },
-      sendFinished: (summary) => window?.webContents.send('match:finished', summary),
-      sendError: (message) => window?.webContents.send('match:error', message),
-      sendDebrief: (debrief) => window?.webContents.send('match:debrief', debrief),
-      debriefModel: saved.seats.find((seat) => seat.kind === 'llm')?.modelId ?? null,
+      sendFinished: (summary) => sendForSession(session, 'match:finished', summary),
+      sendError: (message) => sendForSession(session, 'match:error', message),
+      sendDebrief: (debrief) => sendForSession(session, 'match:debrief', debrief),
       saveLive: async (snapshot) => {
         await secureWrite(
           join(liveDir, `${snapshot.matchId}.json`),
@@ -600,7 +640,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         }
       },
     });
+    const previous = current;
     current = session;
+    previous?.abortMatch();
     void session.start();
     return { ok: true, matchId: session.matchId };
   });
@@ -609,8 +651,9 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     let entries: string[];
     try {
       entries = await readdir(matchesDir);
-    } catch {
-      return [];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
     }
     const summaries: MatchSummary[] = [];
     for (const entry of entries) {
@@ -745,7 +788,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
       config,
       resultRecords,
       matches,
-      process.env.npm_package_version ?? '0.1.0',
+      process.env.npm_package_version ?? '0.2.0',
     );
     const selected = await dialog.showSaveDialog(window, {
       title: 'Export GameTable backup',
@@ -821,9 +864,14 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     }
   });
 
-  handle('leaderboard', async (): Promise<LeaderboardRow[]> => {
+  handle('leaderboard', async (_event, filter: unknown): Promise<LeaderboardRow[]> => {
+    if (filter !== undefined && (typeof filter !== 'string' || !games.some((game) => game.id === filter))) {
+      throw new BadRequest('Unknown game');
+    }
     const records = await results.all();
-    return bradleyTerry(records).map((rating) => ({
+    return bradleyTerry(filter === undefined ? records : records.filter((record) => record.gameId === filter), {
+      weight: tableWeight,
+    }).map((rating) => ({
       modelId: rating.modelId,
       rating: rating.rating,
       matches: rating.matches,
@@ -850,7 +898,10 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     ) {
       return { error: 'invalid speech request' };
     }
-    if (voice !== undefined && (typeof voice !== 'number' || voice < 0 || voice > 903)) {
+    if (
+      voice !== undefined &&
+      (typeof voice !== 'number' || !Number.isInteger(voice) || voice < 0 || voice > 903)
+    ) {
       return { error: 'invalid speech request' };
     }
     const speaker = typeof voice === 'number' ? voice : current?.voiceForSeat(seatId);
@@ -886,6 +937,47 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
   handle('app:open-data', async () => {
     await shell.openPath(userDataDir);
   });
+}
+
+/** Starting and resuming must use the same per-seat providers and debrief selection. */
+function createMatchProviders(
+  request: StartMatchRequest,
+  seats: Seat[],
+  key: string | null,
+  models: ModelInfo[],
+) {
+  const client = demo
+    ? new DemoClient()
+    : key
+      ? new OpenRouterClient({ apiKey: key, appName: 'GameTable' })
+      : null;
+  const configuredSeats = new Map(seats.map((seat, index) => [seat.id, request.seats[index]]));
+  const locals = new Map<string, OpenAICompatibleClient>();
+  const clientForSeat = (seat: Seat): CompletionClient | null => {
+    if (demo) return client;
+    const configured = configuredSeats.get(seat.id);
+    if (!configured || configured.provider !== 'local') return client;
+    const baseUrl = configured.baseUrl ?? DEFAULT_CONFIG.localEndpoint;
+    let local = locals.get(baseUrl);
+    if (!local) {
+      local = new OpenAICompatibleClient({ baseUrl });
+      locals.set(baseUrl, local);
+    }
+    return local;
+  };
+  const seatModels = new Set(
+    request.seats
+      .filter((seat) => seat.kind === 'llm' && seat.provider !== 'local' && seat.modelId)
+      .map((seat) => seat.modelId as string),
+  );
+  const cheapest = models
+    .filter((model) => seatModels.has(model.id))
+    .sort((a, b) => a.promptPrice + a.completionPrice - (b.promptPrice + b.completionPrice))[0];
+  return {
+    client,
+    clientForSeat,
+    debriefModel: cheapest?.id ?? [...seatModels][0] ?? null,
+  };
 }
 
 function describe(error: unknown): string {

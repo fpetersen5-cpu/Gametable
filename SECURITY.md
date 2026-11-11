@@ -22,10 +22,11 @@ log line, or a crash message.
 
 `safeStorage` is used because it is the same battle-tested path Electron uses
 for its own cookie encryption on Linux, and because it works inside the Flatpak
-sandbox through `org.freedesktop.secrets` (granted in the manifest). If the
-host has no running secret service, `safeStorage.isEncryptionAvailable()`
-returns false and the app falls back instead of failing to start. The settings
-screen shows which mode is active.
+sandbox through `org.freedesktop.secrets` (granted in the manifest). The app
+also checks `safeStorage.getSelectedStorageBackend()`: the Linux `basic_text`
+backend encrypts with a hardcoded password, so it is treated as the plaintext
+fallback, and a key already written that way is migrated to the explicit `0600`
+file. The settings screen shows which mode is active.
 
 Electron picks the keyring backend from the desktop environment. If that guess
 is wrong for your session (for example a KDE desktop whose only secret service

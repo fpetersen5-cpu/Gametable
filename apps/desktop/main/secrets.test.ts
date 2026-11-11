@@ -20,6 +20,11 @@ const unavailable: CryptoBackend = {
   },
 };
 
+const basicText: CryptoBackend = {
+  ...working,
+  backend: () => 'basic_text',
+};
+
 async function store(backend: CryptoBackend) {
   const dir = await mkdtemp(join(tmpdir(), 'gt-secrets-'));
   return {
@@ -68,5 +73,27 @@ describe('secret storage', () => {
     });
     await secrets.setKey('sk-or-v1-x');
     expect(await secrets.getKey()).toBeNull();
+  });
+
+  it('treats the Linux basic_text backend as the plaintext fallback', async () => {
+    const { dir, store: secrets } = await store(basicText);
+    expect(await secrets.setKey('sk-or-v1-basic')).toBe('file');
+    expect(await secrets.getKey()).toBe('sk-or-v1-basic');
+    expect(await secrets.storageKind()).toBe('file');
+    expect((await stat(join(dir, 'secrets.json'))).mode & 0o777).toBe(0o600);
+    await expect(readFile(join(dir, 'secrets.enc'))).rejects.toThrow();
+  });
+
+  it('migrates a basic_text encrypted key to the plaintext fallback', async () => {
+    const { dir, store: workingStore } = await store(working);
+    await workingStore.setKey('sk-or-v1-migrate');
+    const secrets = new SecretStore(
+      join(dir, 'secrets.enc'),
+      join(dir, 'secrets.json'),
+      { ...working, backend: () => 'basic_text' },
+    );
+    expect(await secrets.getKey()).toBe('sk-or-v1-migrate');
+    expect(await readFile(join(dir, 'secrets.json'), 'utf8')).toContain('sk-or-v1-migrate');
+    await expect(readFile(join(dir, 'secrets.enc'))).rejects.toThrow();
   });
 });

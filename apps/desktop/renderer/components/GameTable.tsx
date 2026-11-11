@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import type { GameAction, GameView } from '../../shared/api';
 import { buckshotData, coupData, mafiaData } from '../game-data';
 import { ActionPanel } from './ActionPanel';
@@ -6,6 +7,8 @@ import { ChatLog } from './ChatLog';
 import { CoupPanel } from './CoupPanel';
 import { MafiaLog, MafiaPanel } from './MafiaPanel';
 import { SeatRing } from './SeatRing';
+
+const MafiaScene = lazy(() => import('./MafiaScene'));
 
 interface Props {
   view: GameView;
@@ -18,6 +21,8 @@ interface Props {
   controlledSeats?: string[];
   onTakeover?: (seatId: string) => void;
   onRelease?: (seatId: string) => void;
+  /** When false, skip the 3D Mafia scene and keep the 2D table. */
+  scene3dEnabled?: boolean;
 }
 
 /**
@@ -35,6 +40,7 @@ export function GameTable({
   controlledSeats,
   onTakeover,
   onRelease,
+  scene3dEnabled = true,
 }: Props) {
   const shown = spectator && godView ? godView : view;
   const mafia = mafiaData(shown);
@@ -49,6 +55,25 @@ export function GameTable({
 
   return (
     <div className="game-table">
+      {mafia && scene3dEnabled && (
+        <Suspense
+          fallback={
+            <div className="mafia-scene scene-loading">
+              <span className="spinner" />
+              <span>Opening the council chamber…</span>
+            </div>
+          }
+        >
+          <MafiaScene
+            seats={shown.seats}
+            phase={shown.phase}
+            humanSeatId={humanSeatId}
+            chat={shown.chat}
+            previews={previews}
+            snapCamera={!onAction}
+          />
+        </Suspense>
+      )}
       <SeatRing
         seats={shown.seats}
         phase={shown.phase}

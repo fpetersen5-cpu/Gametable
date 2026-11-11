@@ -119,4 +119,27 @@ describe('backup and restore', () => {
       }),
     ).toThrow(/not supported/);
   });
+
+  it('rejects result records the leaderboard cannot read', () => {
+    const base = {
+      format: 'gametable-backup' as const,
+      formatVersion: BACKUP_FORMAT_VERSION,
+      appVersion: 'x',
+      exportedAt: 1,
+      config: DEFAULT_CONFIG,
+      matches: [],
+    };
+    expect(() =>
+      validateBackup({ ...base, results: [{ ...result('m-x'), winnerSeats: undefined }] }),
+    ).toThrow(/winner list/);
+    expect(() =>
+      validateBackup({ ...base, results: [{ ...result('m-x'), metrics: { days: 'many' } }] }),
+    ).toThrow(/metric/);
+    expect(() =>
+      validateBackup({
+        ...base,
+        results: [{ ...result('m-x'), seats: [{ seatId: 's1', kind: 'llm', modelId: 'm' }] }],
+      }),
+    ).toThrow(/non-numeric/);
+  });
 });

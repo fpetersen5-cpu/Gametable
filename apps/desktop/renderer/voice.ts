@@ -18,13 +18,15 @@ export function useSeatVoices({ matchId, chat, humanSeatId, enabled }: Options):
   const pending = useRef(0);
   const chain = useRef<Promise<void>>(Promise.resolve());
   const audio = useRef<HTMLAudioElement | null>(null);
-  const wasEnabled = useRef(enabled);
+  const wasEnabled = useRef(false);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   useEffect(() => {
     if (matchRef.current !== matchId) {
       matchRef.current = matchId;
       spoken.current = new Set();
-      wasEnabled.current = enabled;
+      wasEnabled.current = false;
     }
 
     if (!enabled) {
@@ -33,7 +35,7 @@ export function useSeatVoices({ matchId, chat, humanSeatId, enabled }: Options):
       return;
     }
 
-    // Turning voice on mid-match should not replay the backlog.
+    // Turning voice on (or opening a match) should not replay the backlog.
     if (!wasEnabled.current) {
       for (const line of chat) spoken.current.add(line.id);
       wasEnabled.current = true;
@@ -52,8 +54,9 @@ export function useSeatVoices({ matchId, chat, humanSeatId, enabled }: Options):
       pending.current += 1;
       chain.current = chain.current.then(async () => {
         try {
+          if (!enabledRef.current) return;
           const result = await window.gametable.speak(text, seatId);
-          if (!result.audio) return;
+          if (!result.audio || !enabledRef.current) return;
           await new Promise<void>((resolve) => {
             const player = new Audio(`data:audio/wav;base64,${result.audio}`);
             audio.current = player;
@@ -61,6 +64,8 @@ export function useSeatVoices({ matchId, chat, humanSeatId, enabled }: Options):
             player.onerror = () => resolve();
             void player.play().catch(() => resolve());
           });
+        } catch {
+          // One failed clip must not poison the rest of the queue.
         } finally {
           pending.current -= 1;
         }

@@ -28,6 +28,21 @@ function isText(value: unknown): value is string {
   return typeof value === 'string';
 }
 
+function finiteNumber(value: unknown, field: string): void {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new BackupError(`Backup contains a non-numeric ${field}`);
+  }
+}
+
+function metricRecord(raw: unknown): void {
+  const metrics = object(raw);
+  for (const [name, value] of Object.entries(metrics)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new BackupError(`Backup metric "${name}" is not a finite number`);
+    }
+  }
+}
+
 function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new BackupError('Backup contains a malformed object');
@@ -77,9 +92,29 @@ export function validateReplayBundle(raw: unknown): ReplayBundle {
 function validateResult(raw: unknown): MatchRecord {
   const value = object(raw);
   matchId(value.matchId);
-  if (!isText(value.gameId) || !Array.isArray(value.seats)) {
+  if (!isText(value.gameId)) {
     throw new BackupError('Backup contains a malformed result record');
   }
+  if (!Array.isArray(value.seats)) {
+    throw new BackupError('Backup result has no seat list');
+  }
+  for (const rawSeat of value.seats) {
+    const seat = object(rawSeat);
+    if (!isText(seat.seatId) || !isText(seat.kind)) {
+      throw new BackupError('Backup result contains a malformed seat');
+    }
+    if (seat.modelId !== undefined && !isText(seat.modelId)) {
+      throw new BackupError('Backup result contains a malformed model ID');
+    }
+    for (const field of ['tokensIn', 'tokensOut', 'costUsd', 'latencyMs', 'invalidActions']) {
+      finiteNumber(seat[field], field);
+    }
+    if (seat.metrics !== undefined) metricRecord(seat.metrics);
+  }
+  if (!Array.isArray(value.winnerSeats) || !value.winnerSeats.every(isText)) {
+    throw new BackupError('Backup result has a malformed winner list');
+  }
+  metricRecord(value.metrics);
   return value as unknown as MatchRecord;
 }
 
