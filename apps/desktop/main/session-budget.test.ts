@@ -46,7 +46,7 @@ describe('live match budget', () => {
       saveBundle: async () => undefined,
       send: (snapshot) => { latest = snapshot; },
       sendPreview: () => undefined, sendFinished: (summary) => summaries.push(summary),
-      sendError: (message) => errors.push(message), sendDebrief: () => undefined, debriefModel: null,
+      sendError: (message) => errors.push(message), sendDebrief: () => undefined, debriefModel: null, pacing: false,
       ...overrides,
     });
   }

@@ -295,6 +295,16 @@ function finishStep(state: MafiaState): void {
   settle(state);
 }
 
+/** A seat with nothing to add leaves the rotation until someone addresses it. */
+function passDayTalk(state: MafiaState, seatId: SeatId): void {
+  state.talkQueue = state.talkQueue.filter((id) => id !== seatId);
+  state.passesInRow += 1;
+  if (state.talkQueue.length === 0 || state.passesInRow >= Math.max(1, state.alive.length)) {
+    pushLog(state, 'Everyone has had their say.');
+    finishStep(state);
+  }
+}
+
 function resolveVotes(state: MafiaState): void {
   const step = state.steps[0];
   const { top } = tally(state.votes);
@@ -598,15 +608,17 @@ export const mafia: GameDef<MafiaState> = {
 
       if (action.type !== 'say') throw new IllegalAction(seatId, action, 'illegal action');
       const spoken = String(action.text ?? '').trim().slice(0, 600);
-      next.chat.push({
-        id: `c${next.chat.length + 1}`,
-        seatId,
-        channel: 'mafia',
-        text: spoken || '…',
-        phaseId: step,
-        round: next.day,
-      });
-      next.stats.speeches += 1;
+      if (spoken) {
+        next.chat.push({
+          id: `c${next.chat.length + 1}`,
+          seatId,
+          channel: 'mafia',
+          text: spoken,
+          phaseId: step,
+          round: next.day,
+        });
+        next.stats.speeches += 1;
+      }
       next.nightSpeaker = null;
       next.nightSpeeches += 1;
       if (next.nightSpeeches >= Math.max(6, aliveWithRole(next, 'mafia').length * 3)) {
@@ -618,17 +630,17 @@ export const mafia: GameDef<MafiaState> = {
 
     if (step === 'day-talk') {
       if (action.type === 'pass') {
-        next.talkQueue = [...next.talkQueue.filter((id) => id !== seatId), seatId];
-        next.passesInRow += 1;
-        if (next.passesInRow >= Math.max(1, next.alive.length)) {
-          pushLog(next, 'Everyone has had their say.');
-          finishStep(next);
-        }
+        passDayTalk(next, seatId);
         return next;
       }
       if (action.type !== 'say') throw new IllegalAction(seatId, action, 'only speech is allowed');
       const spoken = String(action.text ?? '').trim().slice(0, 600);
-      const text = spoken || '…'; // silence is a legal, if unhelpful, turn
+      if (!spoken) {
+        // An empty say is a pass in disguise; do not create a "…" line.
+        passDayTalk(next, seatId);
+        return next;
+      }
+      const text = spoken;
       const to = typeof action.to === 'string' && next.alive.includes(action.to) ? action.to : undefined;
       next.chat.push({
         id: `c${next.chat.length + 1}`,
@@ -772,7 +784,7 @@ export const mafia: GameDef<MafiaState> = {
       '- Then the mafia kill one townsperson; the doctor may save one; the detective checks one alignment.',
       '- Day: discussion runs for up to five minutes. Seats speak in turn and may keep taking turns.',
       '- You can address someone by choosing a "say" action with a `to` target; they speak next.',
-      '- Choose "pass" when you have nothing to add. When everyone passes in a row, the vote begins.',
+      '- Choose "pass" when you have nothing to add. Passing leaves the rotation until someone addresses you; when the floor is empty, the vote begins.',
       '- A tied vote goes to a runoff between the tied seats; a tied runoff kills nobody.',
       '- The town wins when every mafia is gone. The mafia win when they equal or outnumber the town.',
       '- Roles are revealed when a seat dies. Seats may lie about anything they say.',

@@ -171,6 +171,41 @@ describe('day', () => {
     expect(state.chat.filter((line) => line.seatId === 's1')).toHaveLength(2);
   });
 
+  it('a passing seat leaves the rotation until someone addresses it', () => {
+    let state = position(five, ['day-talk', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'pass' });
+    expect(state.talkQueue).not.toContain('s1');
+    expect(mafia.phase(state).actor).toBe('s2');
+
+    state = mafia.apply(state, 's2', { type: 'say', text: 's1, anything to add?', to: 's1' });
+    expect(mafia.phase(state).actor).toBe('s1');
+  });
+
+  it('an empty say is a pass and adds no chat line', () => {
+    let state = position(five, ['day-talk', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'say', text: '   ' });
+    expect(state.chat).toHaveLength(0);
+    expect(state.talkQueue).not.toContain('s1');
+    expect(mafia.phase(state).actor).toBe('s2');
+  });
+
+  it('an empty mafia speech does not add a placeholder line', () => {
+    const roles: Record<string, Role> = {
+      s1: 'mafia',
+      s2: 'mafia',
+      s3: 'villager',
+      s4: 'villager',
+      s5: 'villager',
+    };
+    let state = position(roles, ['mafia-talk']);
+    state = mafia.apply(state, 's1', { type: 'raise' });
+    state = mafia.apply(state, 's2', { type: 'raise' });
+    const speaker = mafia.phase(state).actor;
+    expect(speaker).not.toBeNull();
+    state = mafia.apply(state, speaker as string, { type: 'say', text: '  ' });
+    expect(state.chat.filter((line) => line.channel === 'mafia')).toHaveLength(0);
+  });
+
   it('eliminates the majority target and every voter gets a spoken line', () => {
     const start = position(five, ['day-vote']);
     expect([...start.voteQueue].sort()).toEqual(['s1', 's2', 's3', 's4', 's5']);

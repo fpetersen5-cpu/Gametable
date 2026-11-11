@@ -21,6 +21,7 @@ import {
 import { ResultsStore, toRecord, type MatchRecord } from '@gametable/stats';
 import { generateDebrief } from './debrief.js';
 import { Budget, BudgetExceeded } from './budget.js';
+import { turnHoldMs } from './pacing.js';
 import type {
   MatchSummary,
   ReplayBundle,
@@ -38,25 +39,47 @@ import { REPLAY_FORMAT_VERSION } from '../shared/api.js';
 class Gate {
   paused = false;
   speed = 1;
+  pacing = true;
+  private holdUntil = 0;
   private waiting: Array<() => void> = [];
+
+  /** Keep the current action on screen for at least this long. */
+  hold(ms: number): void {
+    if (!this.pacing || ms <= 0) return;
+    this.holdUntil = Math.max(this.holdUntil, Date.now() + ms);
+  }
 
   async wait(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
-    while (this.paused) {
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          signal.removeEventListener('abort', abort);
-          this.waiting = this.waiting.filter((entry) => entry !== resume);
-        };
-        const resume = () => { cleanup(); resolve(); };
-        const abort = () => { cleanup(); reject(signal.reason); };
-        this.waiting.push(resume);
-        signal.addEventListener('abort', abort, { once: true });
-      });
-      signal.throwIfAborted();
+    while (true) {
+      while (this.paused) {
+        await new Promise<void>((resolve, reject) => {
+          const cleanup = () => {
+            signal.removeEventListener('abort', abort);
+            this.waiting = this.waiting.filter((entry) => entry !== resume);
+          };
+          const resume = () => { cleanup(); resolve(); };
+          const abort = () => { cleanup(); reject(signal.reason); };
+          this.waiting.push(resume);
+          signal.addEventListener('abort', abort, { once: true });
+        });
+        signal.throwIfAborted();
+      }
+      if (!this.pacing) return;
+
+      const remaining = this.holdUntil - Date.now();
+      if (remaining > 0) {
+        await delay(remaining, undefined, { signal });
+        continue;
+      }
+      if (this.holdUntil === 0) {
+        // First AI turn: a small beat so the opening position is visible.
+        await delay(Math.round(700 / this.speed), undefined, { signal });
+        if (this.holdUntil === 0) this.holdUntil = Date.now();
+        continue;
+      }
+      return;
     }
-    if (this.speed >= 6) return;
-    await delay(Math.round(700 / this.speed), undefined, { signal });
   }
 
   setPaused(paused: boolean): void {
@@ -136,6 +159,8 @@ export interface SessionDeps {
   sendError: (message: string) => void;
   sendDebrief: (debrief: { matchId: string; text: string; model: string; costUsd: number }) => void;
   debriefModel: string | null;
+  /** Minimum on-screen time per turn. Tests disable it; the app leaves it on. */
+  pacing?: boolean;
   saveDebrief?: (
     matchId: string,
     debrief: { text: string; model: string; costUsd: number },
@@ -213,6 +238,8 @@ export class MatchSession {
     this.human = deps.seats.find((seat) => seat.kind === 'human') ?? null;
     this.speed = deps.request.speed ?? 1;
     this.gate.speed = this.speed;
+    // Tests exercise match logic, not the reading pause.
+    this.gate.pacing = deps.pacing ?? !process.env.VITEST;
     this.seed = deps.resume?.seed ?? deps.request.seed ?? Math.floor(Math.random() * 1e9);
     this.budget = new Budget(deps.request.budgetUsd, () => {
       if (this.status === 'finished') return;
@@ -506,6 +533,7 @@ export class MatchSession {
   private onEvent(event: MatchEvent, state: unknown): void {
     this.events.push(event);
     this.capture(state);
+    this.gate.hold(turnHoldMs(event.action, this.speed));
     this.push();
 
     if (this.budget.remaining() <= 0 && !this.deps.def.terminal(state)) {

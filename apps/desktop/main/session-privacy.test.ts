@@ -27,7 +27,7 @@ describe('live IPC projection', () => {
         saveBundle: async () => undefined,
         send: (snapshot) => snapshots.push(structuredClone(snapshot)),
         sendPreview: () => undefined, sendFinished: () => undefined,
-        sendError: () => undefined, sendDebrief: () => undefined, debriefModel: null,
+        sendError: () => undefined, sendDebrief: () => undefined, debriefModel: null, pacing: false,
       });
       session.setPaused(true);
       const running = session.start();

@@ -38,7 +38,7 @@ describe('durable match completion', () => {
       clearLive: async () => rm(join(dir, 'live.json'), { force: true }),
       send: (snapshot) => { latest = snapshot; },
       sendPreview: () => undefined, sendFinished: () => undefined,
-      sendError: (message) => errors.push(message), sendDebrief: () => undefined, debriefModel: null,
+      sendError: (message) => errors.push(message), sendDebrief: () => undefined, debriefModel: null, pacing: false,
       ...overrides,
     });
   }

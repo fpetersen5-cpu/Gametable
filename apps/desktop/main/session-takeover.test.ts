@@ -61,6 +61,7 @@ describe('live seat takeover', () => {
       sendError: (message) => errors.push(message),
       sendDebrief: () => undefined,
       debriefModel: null,
+      pacing: false,
       ...overrides,
     });
     return session;

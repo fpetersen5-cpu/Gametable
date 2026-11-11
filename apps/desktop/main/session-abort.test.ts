@@ -59,6 +59,7 @@ describe('cancelling live model requests', () => {
       sendError: (message) => errors.push(message),
       sendDebrief: () => undefined,
       debriefModel: null,
+      pacing: false,
     });
     running = session.start();
   }

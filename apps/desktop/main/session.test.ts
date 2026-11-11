@@ -46,6 +46,7 @@ describe('resumable seat memory', () => {
       sendError: () => undefined,
       sendDebrief: () => undefined,
       debriefModel: null,
+      pacing: false,
       saveLive: async (snapshot) => {
         latest = snapshot as Saved;
       },
@@ -89,6 +90,7 @@ describe('resumable seat memory', () => {
       sendError: () => undefined,
       sendDebrief: () => undefined,
       debriefModel: null,
+      pacing: false,
       resume: {
         seed: saved.seed,
         state: saved?.state,
