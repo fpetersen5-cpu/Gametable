@@ -8,15 +8,15 @@ it as-is.** A human maintainer must independently author/rewrite and review the
 final manifest, own the pull request, and make any required AI-use disclosure
 for the application and documentation.
 
-> **0.2.0 status:** the pinned source is still `2a12e4e`, before the UI overhaul
-> and the 3D Mafia scene. Regenerate with the 0.2.0 commit and replace the
-> screenshots before treating this draft as current.
+> **0.2.0 status:** pinned to `c12c7e4` (version 0.2.0), which includes the UI
+> overhaul, the 3D Mafia scene and fresh 1440×810 screenshots. The commit must be
+> pushed to the public repository before submission so Flathub can fetch it.
 
 ## Contents
 
 | File | Purpose |
 |---|---|
-| `io.github.fpetersen5_cpu.GameTable.json` | Single flattened manifest, pinned to commit `2a12e4e8932961cb323d325bec045c4ebedfad89`, runtime `26.08` |
+| `io.github.fpetersen5_cpu.GameTable.json` | Single flattened manifest, pinned to commit `c12c7e4f6f39ac2fb6315f659f56f8a4d917cec5`, runtime `26.08` |
 | `node-sources.json` | Generated offline npm sources |
 | `flathub.json` | x86_64-only build |
 | `piper.CMakeLists.txt`, `espeak-no-sonic-download.patch` | Small local build integration/patch files |

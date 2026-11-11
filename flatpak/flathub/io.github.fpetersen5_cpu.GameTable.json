@@ -245,7 +245,7 @@
 				{
 					"type": "git",
 					"url": "https://github.com/fpetersen5-cpu/Gametable.git",
-					"commit": "2a12e4e8932961cb323d325bec045c4ebedfad89"
+					"commit": "c12c7e4f6f39ac2fb6315f659f56f8a4d917cec5"
 				},
 				"node-sources.json",
 				{
@@ -283,7 +283,8 @@
 				"install -Dm644 flatpak/io.github.fpetersen5_cpu.GameTable.svg /app/share/icons/hicolor/scalable/apps/io.github.fpetersen5_cpu.GameTable.svg",
 				"install -Dm644 LICENSE /app/share/licenses/io.github.fpetersen5_cpu.GameTable/gametable/LICENSE",
 				"install -Dm644 node_modules/electron/LICENSE /app/share/licenses/io.github.fpetersen5_cpu.GameTable/electron/LICENSE",
-				"install -Dm644 node_modules/electron/dist/LICENSES.chromium.html /app/share/licenses/io.github.fpetersen5_cpu.GameTable/electron/LICENSES.chromium.html"
+				"install -Dm644 node_modules/electron/dist/LICENSES.chromium.html /app/share/licenses/io.github.fpetersen5_cpu.GameTable/electron/LICENSES.chromium.html",
+				"install -Dm644 node_modules/three/LICENSE /app/share/licenses/io.github.fpetersen5_cpu.GameTable/three/LICENSE"
 			]
 		}
 	]
