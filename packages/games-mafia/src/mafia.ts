@@ -305,6 +305,11 @@ function passDayTalk(state: MafiaState, seatId: SeatId): void {
   }
 }
 
+/** Compare speech without case, punctuation or spacing differences. */
+function normalizeSpeech(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function resolveVotes(state: MafiaState): void {
   const step = state.steps[0];
   const { top } = tally(state.votes);
@@ -640,6 +645,18 @@ export const mafia: GameDef<MafiaState> = {
         passDayTalk(next, seatId);
         return next;
       }
+      const previous = next.chat.findLast(
+        (line) =>
+          line.seatId === seatId &&
+          line.phaseId === 'day-talk' &&
+          line.round === next.day,
+      );
+      if (previous && normalizeSpeech(previous.text) === normalizeSpeech(spoken)) {
+        // Repeating the same line adds nothing; treat it as a pass.
+        pushLog(next, `${nameOf(next, seatId)} has nothing new to add.`);
+        passDayTalk(next, seatId);
+        return next;
+      }
       const text = spoken;
       const to = typeof action.to === 'string' && next.alive.includes(action.to) ? action.to : undefined;
       next.chat.push({
@@ -652,19 +669,37 @@ export const mafia: GameDef<MafiaState> = {
         round: next.day,
       });
       next.stats.speeches += 1;
-
-      // Whoever was addressed speaks next; the speaker goes to the back of
-      // the queue and may speak again later.
       next.speechesToday += 1;
+
+      // A seat gets two self-initiated speeches per day. It can still answer
+      // when someone addresses it, but it cannot loop the table.
+      const spokenToday = next.chat.filter(
+        (line) =>
+          line.phaseId === 'day-talk' &&
+          line.round === next.day &&
+          line.seatId === seatId,
+      ).length;
+      const canSpeakAgain = spokenToday < 2;
       const rest = next.talkQueue.filter((id) => id !== seatId);
       if (to) {
-        next.talkQueue = [to, ...rest.filter((id) => id !== to), seatId];
-      } else {
+        next.talkQueue = [
+          to,
+          ...rest.filter((id) => id !== to),
+          ...(canSpeakAgain ? [seatId] : []),
+        ];
+      } else if (canSpeakAgain) {
         next.talkQueue = [...rest, seatId];
+      } else {
+        next.talkQueue = rest;
       }
       next.passesInRow = 0;
       if (next.speechesToday >= Math.max(8, next.alive.length * 4)) {
         pushLog(next, 'The table has talked itself out.');
+        finishStep(next);
+        return next;
+      }
+      if (next.talkQueue.length === 0) {
+        pushLog(next, 'Everyone has had their say.');
         finishStep(next);
       }
       return next;
@@ -782,7 +817,7 @@ export const mafia: GameDef<MafiaState> = {
       '- Night: the mafia have a private two-minute discussion. Raise a hand to speak; when the floor is yours, say your piece.',
       '- If nobody raises a hand, the mafia go straight to choosing a victim.',
       '- Then the mafia kill one townsperson; the doctor may save one; the detective checks one alignment.',
-      '- Day: discussion runs for up to five minutes. Seats speak in turn and may keep taking turns.',
+      '- Day: discussion runs for up to five minutes. Seats speak in turn; each seat may make two points unless someone addresses it.',
       '- You can address someone by choosing a "say" action with a `to` target; they speak next.',
       '- Choose "pass" when you have nothing to add. Passing leaves the rotation until someone addresses you; when the floor is empty, the vote begins.',
       '- A tied vote goes to a runoff between the tied seats; a tied runoff kills nobody.',

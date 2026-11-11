@@ -206,6 +206,46 @@ describe('day', () => {
     expect(state.chat.filter((line) => line.channel === 'mafia')).toHaveLength(0);
   });
 
+  it('a seat leaves the rotation after two self-initiated speeches', () => {
+    let state = position(five, ['day-talk', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'say', text: 'First.' });
+    expect(state.talkQueue).toContain('s1');
+
+    for (const seat of ['s2', 's3', 's4', 's5']) {
+      state = mafia.apply(state, seat, { type: 'pass' });
+    }
+    expect(mafia.phase(state).actor).toBe('s1');
+    state = mafia.apply(state, 's1', { type: 'say', text: 'Second.' });
+    expect(state.talkQueue).not.toContain('s1');
+  });
+
+  it('an addressed seat can speak beyond the cap', () => {
+    let state = position(five, ['day-talk', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'say', text: 'First.' });
+    for (const seat of ['s2', 's3', 's4', 's5']) {
+      state = mafia.apply(state, seat, { type: 'say', text: 'Noted.' });
+    }
+    state = mafia.apply(state, 's1', { type: 'say', text: 'Second.' });
+    expect(state.talkQueue).not.toContain('s1');
+
+    state = mafia.apply(state, 's2', { type: 'say', text: 's1, respond?', to: 's1' });
+    expect(mafia.phase(state).actor).toBe('s1');
+    state = mafia.apply(state, 's1', { type: 'say', text: 'Third.' });
+    expect(state.chat.filter((line) => line.seatId === 's1')).toHaveLength(3);
+  });
+
+  it('an exact repeat is treated as a pass', () => {
+    let state = position(five, ['day-talk', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'say', text: 'I was with the doctor.' });
+    for (const seat of ['s2', 's3', 's4', 's5']) {
+      state = mafia.apply(state, seat, { type: 'pass' });
+    }
+    const before = state.chat.length;
+    state = mafia.apply(state, 's1', { type: 'say', text: 'I was with the doctor!' });
+    expect(state.chat).toHaveLength(before);
+    expect(state.talkQueue).not.toContain('s1');
+  });
+
   it('eliminates the majority target and every voter gets a spoken line', () => {
     const start = position(five, ['day-vote']);
     expect([...start.voteQueue].sort()).toEqual(['s1', 's2', 's3', 's4', 's5']);

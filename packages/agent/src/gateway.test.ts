@@ -276,6 +276,32 @@ describe('prompt construction', () => {
     expect(content).not.toContain('line 29');
   });
 
+  it('tells the model not to repeat itself and shows its own recent lines', () => {
+    const chat = [
+      { id: 'c1', seatId: 's1', channel: 'public', text: 'First line', phaseId: 'day-talk', round: 1 },
+      { id: 'c2', seatId: 's2', channel: 'public', text: 'Other line', phaseId: 'day-talk', round: 1 },
+      { id: 'c3', seatId: 's1', channel: 'public', text: 'Second line', phaseId: 'day-talk', round: 1 },
+    ];
+    const system = buildSystemPrompt({
+      gameName: 'Mafia',
+      briefing: 'rules',
+      seat: { id: 's1', name: 'Atlas', kind: 'llm' },
+      legalActions: [],
+    });
+    expect(system).toMatch(/Do not\s+repeat/);
+
+    const prompt = buildUserPrompt({
+      view: view({ chat }),
+      seatNames: new Map(),
+      memoryNotes: '',
+    });
+    const content = prompt[0]?.content ?? '';
+    expect(content).toContain('Your recent lines');
+    expect(content).toContain('- First line');
+    expect(content).toContain('- Second line');
+    expect(content).not.toContain('- Other line');
+  });
+
   it('parses fenced JSON replies', () => {
     expect(parseJsonReply('```json\n{"action":{"type":"probe"}}\n```')).toEqual({
       action: { type: 'probe' },

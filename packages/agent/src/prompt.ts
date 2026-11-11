@@ -39,6 +39,11 @@ export function buildSystemPrompt(args: {
     'RULES',
     briefing.trim(),
     '',
+    'DISCUSSION',
+    'During discussion, respond to the latest table talk. Add new information,',
+    'ask a direct question, or challenge a specific claim with a reason. Do not',
+    'repeat or rephrase your earlier lines. Keep each speech focused rather than long.',
+    '',
     'HOW TO RESPOND',
     'Reply with a single JSON object and nothing else:',
     '{"action": {"type": "...", ...fields}, "notes": "your private memory"}',
@@ -65,6 +70,7 @@ export function buildUserPrompt(args: {
   const limit = Math.max(4, args.maxChatLines ?? 18);
   const recent = view.chat.slice(-limit);
   const omitted = view.chat.length - recent.length;
+  const ownLines = view.chat.filter((line) => line.seatId === view.seatId).slice(-3);
   const visibleSeats = view.seats.map((s) => ({
     seatId: s.id,
     name: s.name,
@@ -79,6 +85,11 @@ export function buildUserPrompt(args: {
     `<game-state phase="${escapeTableTalk(view.phase.label)}" round="${view.phase.round ?? 0}">`,
     JSON.stringify({ seats: visibleSeats, you: view.data }, null, 2),
     '</game-state>',
+    '',
+    'Your recent lines (do not repeat them):',
+    ownLines.length
+      ? ownLines.map((line) => `- ${escapeTableTalk(line.text)}`).join('\n')
+      : '(none yet)',
     '',
     `Your private notes so far:\n${memoryNotes.trim() || '(none)'}`,
     '',

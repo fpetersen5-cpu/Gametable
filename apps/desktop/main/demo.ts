@@ -52,6 +52,22 @@ const TALK = [
   'I have nothing to hide. Investigate me.',
   'Someone changed their story between rounds.',
   'Let us not waste the day on noise.',
+  'If we rush this, the mafia wins by default.',
+  'I want to hear from the quiet seats before I vote.',
+  'That accusation came out of nowhere.',
+  'I can explain my vote, can you explain yours?',
+  'The doctor should stay hidden, not take the stand.',
+  'We need one clear target, not five maybes.',
+  'I am more suspicious of the people agreeing too fast.',
+  'Save the theories. Give me a name and a reason.',
+  'I would rather lose a day than lynch a townsperson.',
+  'The last person who spoke this confidently was mafia.',
+  'I will hold my vote until the runoff.',
+  'Something about that claim does not add up.',
+  'If I die tonight, look at who pushed this vote.',
+  'We are going in circles. Someone make a case.',
+  'I trust the detective more than the loudest voice.',
+  'Fine. I will vote with the majority, but I am watching.',
 ];
 
 interface SchemaNode {
@@ -79,7 +95,7 @@ export class DemoClient implements CompletionClient {
     for (const [key, field] of Object.entries(variant?.properties ?? {})) {
       const spec = field as SchemaField;
       if (Object.prototype.hasOwnProperty.call(spec, 'const')) action[key] = spec.const;
-      else if (spec.type === 'string') action[key] = TALK[this.calls % TALK.length];
+      else if (spec.type === 'string') action[key] = TALK[(this.calls * 7) % TALK.length];
       else action[key] = null;
     }
 
