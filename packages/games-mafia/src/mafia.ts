@@ -208,8 +208,9 @@ function eliminate(state: MafiaState, seatId: SeatId, cause: 'night' | 'vote'): 
   const role = state.roles[seatId] as Role;
   pushLog(
     state,
-    `${nameOf(state, seatId)} was ${cause === 'night' ? 'killed in the night' : 'voted out'}. ` +
-      `They were the ${role}.`,
+    cause === 'night'
+      ? `${nameOf(state, seatId)} was killed in the night.`
+      : `${nameOf(state, seatId)} was voted out. They were the ${role}.`,
   );
   if (cause === 'vote') state.stats.lynched += 1;
   if (cause === 'vote' && role === 'jester') {
@@ -822,7 +823,7 @@ export const mafia: GameDef<MafiaState> = {
       '- Choose "pass" when you have nothing to add. Passing leaves the rotation until someone addresses you; when the floor is empty, the vote begins.',
       '- A tied vote goes to a runoff between the tied seats; a tied runoff kills nobody.',
       '- The town wins when every mafia is gone. The mafia win when they equal or outnumber the town.',
-      '- Roles are revealed when a seat dies. Seats may lie about anything they say.',
+      '- Vote-outs reveal their role; night kills do not. Seats may lie about anything they say.',
     ];
     if (role === 'detective') {
       const checks = Object.entries(state.checks[seatId] ?? {});

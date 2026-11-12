@@ -98,6 +98,18 @@ describe('night', () => {
     expect(killed.log.join(' ')).toMatch(/Seat 3 was killed in the night/);
   });
 
+  it('does not reveal the role of a night kill', () => {
+    const state = position(five, ['night-kill', 'dawn', 'day-talk', 'day-vote']);
+    const killed = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
+    const log = killed.log.join(' ');
+    expect(log).toMatch(/Seat 3 was killed in the night\./);
+    expect(log).not.toMatch(/They were the/);
+    expect(log).not.toMatch(/Seat 3.*villager/);
+
+    const view = mafia.view(killed, 's4').data as { log: string[] };
+    expect(view.log.join(' ')).not.toMatch(/They were the/);
+  });
+
   it('the doctor can prevent the kill', () => {
     let state = position(five, ['night-kill', 'night-save', 'dawn']);
     state = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
