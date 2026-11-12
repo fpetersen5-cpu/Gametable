@@ -165,8 +165,9 @@ export class LlmController implements Controller {
     ];
 
     const schema = actionSchema(legal);
-    // A preview is only safe when every spoken variant is public; whispers
-    // carry a `to` field and must never reach another seat's screen early.
+    // A preview is only safe when the game marks the action type public.
+    // `to` is game-defined: Mafia's addressed day talk is public, while
+    // mafia-talk is suppressed by previewIsPublic.
     const spoken = legal.filter((entry) => typeof entry.text === 'string');
     const canPreview =
       Boolean(this.deps.onPreview) &&

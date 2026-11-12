@@ -32,6 +32,9 @@ import type {
 } from '../shared/api.js';
 import { REPLAY_FORMAT_VERSION } from '../shared/api.js';
 
+/** Keep enough per-event controller memory for repeated one-turn rewinds. */
+const CONTROLLER_HISTORY_LIMIT = 512;
+
 /**
  * Paces AI seats and implements pause. The human seat is never gated: when it
  * is your turn, the table waits for you regardless of the speed setting.
@@ -223,6 +226,8 @@ export class MatchSession {
   private readonly llmControllers = new Map<SeatId, LlmController>();
   /** Last known seat memory, kept across takeover and resume. */
   private readonly seatMemory = new Map<SeatId, LlmSeatState>();
+  /** Controller memory at each event count, so rewind cannot leak future turns. */
+  private readonly controllerHistory = new Map<number, Record<SeatId, LlmSeatState>>();
   private phaseKey = '';
   private phaseStartedAt = Date.now();
   private phaseLimitMs: number | null = null;
@@ -292,6 +297,7 @@ export class MatchSession {
 
     this.events = this.events.slice(0, Math.max(0, this.events.length - steps));
     const state = this.replayAndCapture(this.events);
+    this.restoreControllers(this.events.length);
     this.persistLive(state);
     this.abort = new AbortController();
     this.status = 'running';
@@ -309,6 +315,7 @@ export class MatchSession {
     this.running = true;
     try {
       if (this.controllers.size === 0) this.buildControllers();
+      if (this.controllerHistory.size === 0) this.rememberControllers();
       const resumed = initial ?? (this.deps.resume
         ? { state: this.deps.resume.state, events: this.deps.resume.events }
         : undefined);
@@ -532,6 +539,7 @@ export class MatchSession {
 
   private onEvent(event: MatchEvent, state: unknown): void {
     this.events.push(event);
+    this.rememberControllers();
     this.capture(state);
     this.gate.hold(turnHoldMs(event.action, this.speed));
     this.push();
@@ -699,6 +707,35 @@ export class MatchSession {
       this.seatMemory.set(seatId, controller.snapshot());
     }
     return Object.fromEntries(this.seatMemory);
+  }
+
+  /** Remember the controller state after the current event. */
+  private rememberControllers(): void {
+    this.controllerHistory.set(this.events.length, this.controllerSnapshots());
+    if (this.controllerHistory.size > CONTROLLER_HISTORY_LIMIT) {
+      const oldest = this.controllerHistory.keys().next().value;
+      if (oldest !== undefined) this.controllerHistory.delete(oldest);
+    }
+  }
+
+  /**
+   * Restore the memory that existed at the target event count. Spend and
+   * health counters stay current: those calls really happened, even when the
+   * user undoes the turn. Only notes and capability flags are rolled back.
+   */
+  private restoreControllers(eventCount: number): void {
+    const saved = this.controllerHistory.get(eventCount);
+    for (const [seatId, controller] of this.llmControllers) {
+      const current = controller.snapshot();
+      const target = saved?.[seatId];
+      controller.restore({
+        ...current,
+        notes: target?.notes ?? '',
+        schemaSupported: target?.schemaSupported ?? current.schemaSupported,
+        temperatureSupported: target?.temperatureSupported ?? current.temperatureSupported,
+      });
+    }
+    this.controllerHistory.set(eventCount, this.controllerSnapshots());
   }
 
   private refreshCost(): void {

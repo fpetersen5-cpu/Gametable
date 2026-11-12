@@ -480,3 +480,24 @@ describe('view purity', () => {
     expect(state.roles[first]).toBe(current);
   });
 });
+
+describe('preview policy', () => {
+  it('treats addressed day talk as public and mafia night talk as private', () => {
+    const day = position(five, ['day-talk', 'day-vote']);
+    expect(mafia.previewIsPublic!(mafia.view(day, 's1'), 'say')).toBe(true);
+
+    const after = mafia.apply(day, 's1', { type: 'say', text: 'Hello', to: 's2' });
+    const publicView = mafia.view(after, 's3');
+    expect(
+      publicView.chat.some(
+        (line) => line.text === 'Hello' && line.to === 's2' && line.channel === 'public',
+      ),
+    ).toBe(true);
+
+    const night = position(
+      { s1: 'mafia', s2: 'mafia', s3: 'villager', s4: 'villager', s5: 'villager' },
+      ['mafia-talk'],
+    );
+    expect(mafia.previewIsPublic!(mafia.view(night, 's1'), 'say')).toBe(false);
+  });
+});
