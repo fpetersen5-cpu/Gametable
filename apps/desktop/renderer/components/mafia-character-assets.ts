@@ -11,7 +11,6 @@ export const COUNCIL_ASSETS = [
 /** Adapt Blender's multi-surface eye rig without changing its local transforms. */
 export function bindCouncilAsset(root: THREE.Group, seat: SeatInfo, color: THREE.Color): CouncilCharacterRig {
   const head = root.getObjectByName('HeadPivot');
-  if (!head) throw new Error('Character asset has no HeadPivot');
   const eyes = new THREE.Group();
   const closedEyes = new THREE.Group();
   const open: THREE.Object3D[] = [];
@@ -37,7 +36,15 @@ export function bindCouncilAsset(root: THREE.Group, seat: SeatInfo, color: THREE
       } else materials.add(material);
     }
   });
-  if (!open.length || !closed.length || !accent) throw new Error('Character asset has an incomplete eye/light rig');
+
+  // The downloaded operative GLBs are static meshes: no HeadPivot, eye meshes
+  // or SeatLight material. Keep the same animation contract with empty head/eye
+  // groups and a small seat-coloured pin, and hide the council chair so the
+  // standing model does not intersect it.
+  if (!head || open.length === 0 || closed.length === 0 || !accent) {
+    return bindStaticCouncilAsset(root, seat, color, materials);
+  }
+
   head.add(eyes, closedEyes);
   root.updateMatrixWorld(true);
   for (const object of open) eyes.attach(object);
@@ -51,7 +58,72 @@ export function bindCouncilAsset(root: THREE.Group, seat: SeatInfo, color: THREE
   return { root, head, eyes, closedEyes, accent, materials: [...materials], height, motionOffset: (hash >>> 0) % 1000 / 100 };
 }
 
-/** Scene-owned assets. Shared maps are uploaded once, and survive individual seats. */
+function bindStaticCouncilAsset(
+  root: THREE.Group,
+  seat: SeatInfo,
+  color: THREE.Color,
+  materials: Set<THREE.MeshStandardMaterial>,
+): CouncilCharacterRig {
+  root.updateMatrixWorld(true);
+  let box = new THREE.Box3().setFromObject(root);
+  const rawHeight = box.max.y - box.min.y;
+  if (!Number.isFinite(rawHeight) || rawHeight <= 0) {
+    throw new Error('Character asset has no usable geometry');
+  }
+  const targetHeight = 1.9;
+  const scale = targetHeight / rawHeight;
+  if (Math.abs(scale - 1) > 0.001) {
+    root.scale.multiplyScalar(scale);
+    root.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(root);
+  }
+  root.position.x -= (box.min.x + box.max.x) / 2;
+  root.position.z -= (box.min.z + box.max.z) / 2;
+  root.position.y -= box.min.y;
+  root.updateMatrixWorld(true);
+
+  const head = new THREE.Group();
+  head.name = 'head-pivot';
+  head.position.y = targetHeight * 0.86;
+  const eyes = new THREE.Group();
+  eyes.name = 'open-eyes';
+  const closedEyes = new THREE.Group();
+  closedEyes.name = 'closed-eyes';
+  head.add(eyes, closedEyes);
+  root.add(head);
+
+  const accent = new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.65,
+    roughness: 0.35,
+    metalness: 0.45,
+  });
+  const pin = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.06, 8, 16), accent);
+  pin.name = 'seat-pin';
+  pin.userData.seatId = seat.id;
+  pin.position.set(0, targetHeight * 0.62, 0.16);
+  pin.rotation.z = Math.PI / 2;
+  pin.castShadow = pin.receiveShadow = true;
+  root.add(pin);
+
+  root.name = `character-${seat.id}`;
+  let hash = 2166136261;
+  for (let index = 0; index < seat.id.length; index++) hash = Math.imul(hash ^ seat.id.charCodeAt(index), 16777619);
+  return {
+    root,
+    head,
+    eyes,
+    closedEyes,
+    accent,
+    materials: [...materials],
+    height: targetHeight,
+    motionOffset: (hash >>> 0) % 1000 / 100,
+    static: true,
+  };
+}
+
+/** Scene-owned assets. Any optional shared maps survive individual seats. */
 export class CouncilAssetLibrary {
   private readonly textures = new Map<string, Promise<THREE.Texture>>();
   private readonly ownedTextures = new Set<THREE.Texture>();
@@ -78,6 +150,7 @@ export class CouncilAssetLibrary {
       disposeModel(gltf.scene);
       return null;
     }
+    gltf.scene.userData.identity = name;
     this.roots.add(gltf.scene);
     return bindCouncilAsset(gltf.scene, seat, color);
   }

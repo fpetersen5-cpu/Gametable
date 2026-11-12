@@ -26,6 +26,21 @@ for path in sorted(args.source.glob('*/manifest.json')):
         continue
     bpy.ops.wm.open_mainfile(filepath=str(path.parent / manifest['blend']))
     objects = [obj for obj in bpy.data.objects if obj.type == 'MESH' and 'source_part' in obj]
+    detail_groups = {}
+    for obj in objects:
+        if obj.get('oni_generated'):
+            key = (obj.parent, obj['surface'])
+            detail_groups.setdefault(key, []).append(obj)
+    for (parent, surface), group in detail_groups.items():
+        if len(group) < 2:
+            continue
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in group:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = group[0]
+        bpy.ops.object.join()
+        group[0].name = f'Oni {surface} {"face" if parent.name == "HeadPivot" else "tailoring"}'
+    objects = [obj for obj in bpy.data.objects if obj.type == 'MESH' and 'source_part' in obj]
     for obj in objects:
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
@@ -36,9 +51,9 @@ for path in sorted(args.source.glob('*/manifest.json')):
             bpy.ops.object.modifier_apply(modifier=modifier.name)
         obj.data.calc_loop_triangles()
         count = len(obj.data.loop_triangles)
-        target = {'Fabric': 100000, 'Skin': 100000, 'Leather': 40000, 'Metal': 30000}.get(obj['surface'], 30000)
+        target = {'Fabric': 85000, 'Skin': 45000, 'Leather': 25000, 'Metal': 20000}.get(obj['surface'], 30000)
         if obj['source_part'] == 'sculpted-head':
-            target = 120000 if obj['surface'] == 'Skin' else 80000
+            target = 100000 if obj['surface'] == 'Skin' else 80000
         if obj['source_part'] in {'open-eyes', 'closed-eyes'}:
             target = 12000
         if count > target:
@@ -46,6 +61,9 @@ for path in sorted(args.source.glob('*/manifest.json')):
             modifier.ratio = target / count
             modifier.use_collapse_triangulate = True
             bpy.ops.object.modifier_apply(modifier=modifier.name)
+        if any(len(polygon.vertices) > 4 for polygon in obj.data.polygons):
+            triangulate = obj.modifiers.new('Export tangent topology', 'TRIANGULATE')
+            bpy.ops.object.modifier_apply(modifier=triangulate.name)
     # glTF multiplies the base texture by COLOR_0 automatically.
     for mat in {mat for obj in objects for mat in obj.data.materials}:
         shader = mat.node_tree.nodes.get('Principled BSDF')
@@ -74,6 +92,7 @@ for path in sorted(args.source.glob('*/manifest.json')):
     bpy.ops.export_scene.gltf(
         filepath=str(args.output / f"{manifest['name']}.glb"), export_format='GLB',
         use_selection=True, export_apply=True, export_extras=True, export_yup=True,
-        export_texcoords=True, export_normals=True, export_tangents=True, export_materials='EXPORT',
+        export_texcoords=True, export_normals=True,
+        export_tangents=pivot.parent.get('asset_revision') != 'oni-v1', export_materials='EXPORT',
         export_vertex_color='NAME', export_vertex_color_name='Pigment')
     print('RUNTIME_EXPORTED ' + manifest['name'], flush=True)

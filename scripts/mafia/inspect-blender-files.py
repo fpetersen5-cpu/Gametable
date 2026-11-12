@@ -15,11 +15,19 @@ for manifest_path in sorted(root.glob('*/manifest.json')):
     assert metadata['name'] == manifest['name']
     assert metadata['triangles'] == manifest['triangles']
     images = [image for image in bpy.data.images if image.source == 'FILE']
-    assert len(images) == 15, f'{path}: expected 15 PBR maps'
-    assert all(image.packed_file and tuple(image.size) == (2048, 2048) for image in images)
+    oni = manifest.get('art_direction') == 'oni-v1'
+    if oni:
+        assert not images, f'{path}: low-poly sources must not depend on texture maps'
+        assert 5_000 <= metadata['triangles'] < 80_000
+    else:
+        assert len(images) == 15, f'{path}: expected 15 PBR maps'
+        assert all(image.packed_file and tuple(image.size) == (2048, 2048) for image in images)
     meshes = [obj for obj in bpy.data.objects if obj.type == 'MESH' and 'source_part' in obj]
     assert meshes and all(obj.data.uv_layers and obj.data.color_attributes.get('Pigment') for obj in meshes)
-    assert any(obj.modifiers.get('High-poly surface refinement') for obj in meshes)
+    if oni:
+        assert any(obj.get('oni_generated') for obj in meshes), f'{path}: missing operative armour'
+    else:
+        assert any(obj.modifiers.get('High-poly surface refinement') for obj in meshes)
     pivot = bpy.data.objects.get('HeadPivot')
     assert pivot and pivot.parent and pivot.parent['identity'] == manifest['name']
     assert all(obj.parent == pivot for obj in meshes if obj['head_part'])

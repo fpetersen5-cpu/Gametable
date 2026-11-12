@@ -39,6 +39,8 @@ export interface CouncilCharacterRig {
   eyes: THREE.Object3D;
   closedEyes: THREE.Object3D;
   motionOffset: number;
+  /** True for downloaded static GLBs without the Blender eye/head rig. */
+  static?: boolean;
 }
 
 export interface CouncilCharacter extends CouncilCharacterRig {

@@ -157,23 +157,24 @@ channel only if it is mafia, and investigations only if it is the detective.
 ### Blender character sources
 
 The [Mafia character library](assets/mafia/README.md) documents eleven editable
-high-poly `.blend` projects, packed 2K PBR textures, self-contained GLB exports,
-and Cycles portraits. The editable source library is kept outside git; the
-tracked runtime exports live in `assets/mafia/runtime/` (251 MB) and are what
-Mafia loads. They use lossless 2K PBR maps, smoothed high-detail geometry,
-asynchronous loading and the animated head/eye rig. The asset documentation
-includes reproducible Blender build and validation commands; the local gallery
-lives in the external source library.
+high-fidelity `.blend` projects, packed 2K PBR materials, self-contained GLB
+exports and Cycles portraits. Their original anime-operative art direction pairs
+Oni-inspired cyberpunk clothing with smooth sculpted hair, refined facial surfaces,
+rounded armour, metallic piping and layered tailoring. The editable source library
+is kept outside git; the tracked runtime exports live in `assets/mafia/runtime/`
+and are what Mafia loads. The eight Blender characters use approximately 350–450K
+triangles and 2K maps; Vanguard, Liaison and Veteran use downloaded static GLBs
+budgeted at 250K triangles and 1K maps. Asynchronous loading and the animated
+head/eye rig remain for the Blender cast. The asset documentation includes
+reproducible Blender build, stylization and validation commands; the local gallery
+lives in the source library.
 
 ### 3D performance
 
-The 3D scene is GPU-heavy. On an Intel Arc A770 at 1069×466 CSS pixels
-(devicePixelRatio 1), an 11-seat Mafia match reached a fully loaded 3D scene in
-3.0–4.8 s and rendered at about 69–71 FPS in a focused window. The renderer
-process used about 410–430 MB working set (peak ~610–650 MB); the GPU process
-used about 195–255 MB. A recent discrete GPU is recommended. Turn off
-**Settings → 3D table** to use the 2D table on integrated or older GPUs; the
-match, replay and action panel are unchanged.
+The high-fidelity character cast uses detailed geometry and 2K PBR textures. The
+interactive chamber, reflective table, lighting and skyline also use GPU rendering.
+Turn off **Settings → 3D table** to use the 2D table on integrated or older GPUs;
+the match, replay and action panel are unchanged.
 
 ## Coup
 
@@ -235,13 +236,14 @@ fails the build if a literal `gameId` comparison appears outside
 2. **Match** — the seat ring shows who is alive, thinking, and (once revealed)
    what they were. Mafia also opens an original real-time 3D council chamber:
    select a seat for a cinematic close-up, switch to a tactical orbital camera,
-    or drag to orbit the scene. All eleven seats get distinct Blender-derived
-    seated character models: sculpted facial surfaces, shaped eyelids, individual
-   fingers and nails, layered hair, tailored uniforms, seams and operative equipment.
-   Skin, fabric, leather, hair and metal use separate physically based materials;
-    repeated AI models still receive different silhouettes. Shared PBR textures
-    and budgeted surface geometry support blinking, breathing and speaker-facing head
-   movements. The reference-inspired security council has upholstered chairs,
+   or drag to orbit the scene. All eleven seats get distinct operative models:
+   eight use the seated Blender rig and three use downloaded static GLBs with an
+   original Oni-inspired anime-cyberpunk direction: sculpted hair, expressive eyes,
+   layered armour, fitted uniforms, metallic trim and seat-coloured light strips.
+   Detailed geometry and PBR maps preserve close-up fidelity; repeated AI models
+   still receive different identities. A warm selected-character fill keeps faces
+   readable at night. Budgeted geometry supports blinking, breathing and
+   speaker-facing head movements for the Blender cast. The security council has upholstered chairs,
    a reflective circular table, glass bays, warm light strips, plants and an
    illuminated skyline with traffic. Compact seat markers keep faces readable.
    At night, the

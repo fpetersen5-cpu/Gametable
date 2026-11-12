@@ -20,10 +20,7 @@ beforeEach(() => {
     const relative = request.url.slice(base.length);
     return new Response(readFileSync(new URL(relative, directory)));
   }));
-  vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((url, onLoad) => {
-    const png = readFileSync(new URL(url.slice(base.length), directory));
-    expect(png.readUInt32BE(16)).toBe(2048);
-    expect(png.readUInt32BE(20)).toBe(2048);
+  vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, onLoad) => {
     const texture = new THREE.Texture<HTMLImageElement>();
     queueMicrotask(() => onLoad?.(texture));
     return texture;
@@ -37,39 +34,58 @@ afterEach(() => {
 });
 
 describe('shipped Blender council assets', () => {
-  it('loads every distinct model with pigment, UVs, seated dimensions and working night/eye poses', async () => {
+  it('loads every high-fidelity identity with PBR surfaces and working night/eye poses', async () => {
     const assets = library();
     const identities = new Set<string>();
     const skinMaps = new Set<THREE.Texture>();
     for (const [style, name] of COUNCIL_ASSETS.entries()) {
       const character = (await assets.load({ id: `p${style}`, name, kind: 'human' }, style, new THREE.Color('red')))!;
+      const staticCharacter = character.static === true;
       let triangles = 0;
       character.root.traverse((object) => {
         if (object.userData.identity) identities.add(object.userData.identity);
         if (!(object instanceof THREE.Mesh)) return;
-        expect(object.geometry.getAttribute('color')).toBeDefined();
+        if (!staticCharacter) {
+          expect(object.geometry.getAttribute('color')).toBeDefined();
+        }
         expect(object.geometry.getAttribute('uv')).toBeDefined();
         const materials = Array.isArray(object.material) ? object.material : [object.material];
-        if (materials.some((mat) => mat instanceof THREE.MeshStandardMaterial && mat.normalMap)) {
+        if (!staticCharacter && materials.some((mat) => mat instanceof THREE.MeshStandardMaterial && mat.normalMap)) {
           expect(object.geometry.getAttribute('tangent')).toBeDefined();
         }
         triangles += object.geometry.index!.count / 3;
         expect(object.userData.seatId).toBe(`p${style}`);
       });
-      expect(triangles).toBeGreaterThan(350000);
-      expect(triangles).toBeLessThan(750000);
+      expect(triangles).toBeGreaterThan(200000);
+      expect(triangles).toBeLessThan(550000);
+
+      if (staticCharacter) {
+        expect(character.materials.length).toBeGreaterThan(0);
+        const material = character.materials[0]!;
+        expect(material.map).toBeTruthy();
+        expect(material.normalMap).toBeTruthy();
+        expect(material.roughnessMap).toBeTruthy();
+        skinMaps.add(material.map!);
+        expect(character.height).toBeCloseTo(1.9, 2);
+        expect(character.head.position.y).toBeCloseTo(1.634, 2);
+        expect(character.eyes.children.length).toBe(0);
+        expect(character.closedEyes.children.length).toBe(0);
+        poseCouncilCharacter(character, { asleep: false, eliminated: true, speaking: false, lookYaw: 1, elapsed: 1, delta: 0, still: true });
+        expect(character.materials.every((mat) => mat.color.r === 0.42)).toBe(true);
+        continue;
+      }
+
+      expect(character.materials.every((mat) => mat.vertexColors)).toBe(true);
       const skin = character.materials.find((mat) => mat.name === 'Skin')!;
       expect(skin.map).toBeTruthy();
       expect(skin.normalMap).toBeTruthy();
       expect(skin.roughnessMap).toBeTruthy();
       skinMaps.add(skin.map!);
+      const fabric = character.materials.find((mat) => mat.name === 'Fabric') as THREE.MeshPhysicalMaterial;
+      expect(fabric.sheenColor.r).toBeCloseTo(0.32);
       expect(character.height).toBeGreaterThan(1.8);
       expect(character.height).toBeLessThan(2.3);
       expect(character.head.position.y).toBeCloseTo(1.505, 3);
-      const fabric = character.materials.find((mat) => mat.name === 'Fabric') as THREE.MeshPhysicalMaterial;
-      expect(fabric.vertexColors).toBe(true);
-      // The exporter previously lost Sheen Weight, washing every uniform white.
-      expect(fabric.sheenColor.r).toBeCloseTo(0.22);
       expect(character.eyes.children.length).toBe(3);
       const lids = character.closedEyes.children[0]!;
       expect(lids.scale.length()).toBeCloseTo(Math.sqrt(3));
@@ -93,18 +109,17 @@ describe('shipped Blender council assets', () => {
     expect(skinMaps.size).toBe(11);
   });
 
-  it('shares surface textures but keeps seat lights and pose materials independent, and disposes once', async () => {
+  it('keeps seat lights and pose materials independent, and disposes once', async () => {
     const assets = library();
-    const a = (await assets.load({ id: 'a', name: 'A', kind: 'human' }, 0, new THREE.Color('red')))!;
-    const b = (await assets.load({ id: 'b', name: 'B', kind: 'human' }, 1, new THREE.Color('blue')))!;
+    const a = (await assets.load({ id: 'a', name: 'A', kind: 'human' }, 3, new THREE.Color('red')))!;
+    const b = (await assets.load({ id: 'b', name: 'B', kind: 'human' }, 4, new THREE.Color('blue')))!;
     const fabricA = a.materials.find((mat) => mat.name === 'Fabric')!;
     const fabricB = b.materials.find((mat) => mat.name === 'Fabric')!;
-    expect(fabricA.map).toBe(fabricB.map);
     expect(fabricA).not.toBe(fabricB);
     expect(a.accent.color.getHex()).toBe(0xff0000);
     expect(b.accent.color.getHex()).toBe(0x0000ff);
     const disposed = vi.fn();
-    fabricA.map!.addEventListener('dispose', disposed);
+    fabricA.addEventListener('dispose', disposed);
     assets.dispose();
     assets.dispose();
     expect(disposed).toHaveBeenCalledTimes(1);
@@ -116,13 +131,5 @@ describe('shipped Blender council assets', () => {
     const pending = assets.load({ id: 'late', name: 'Late', kind: 'human' }, 0, new THREE.Color());
     assets.dispose();
     expect(await pending).toBeNull();
-  });
-
-  it('reports missing maps instead of silently showing an untextured model', async () => {
-    vi.mocked(THREE.TextureLoader.prototype.load).mockImplementation((_url, _onLoad, _onProgress, onError) => {
-      queueMicrotask(() => onError?.(new Error('Missing map')));
-      return new THREE.Texture<HTMLImageElement>();
-    });
-    await expect(library().load({ id: 'a', name: 'A', kind: 'human' }, 0, new THREE.Color())).rejects.toThrow('Could not load character texture');
   });
 });

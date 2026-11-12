@@ -24,6 +24,7 @@ export interface MafiaDioramaFrame {
 
 interface SeatVisual {
   root: THREE.Group;
+  chair: THREE.Group;
   ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
   label: THREE.Sprite;
   position: THREE.Vector3;
@@ -266,10 +267,11 @@ export class MafiaDiorama {
       this.endCamera.set(0, this.tableRadius * 3.3, this.tableRadius * 1.8);
       this.endTarget.set(0, 0.8, 0);
     } else if (focus) {
-      this.endTarget.copy(focus.position).add(new THREE.Vector3(0, 1.58, 0));
+      const staticFocus = focus.character?.static === true;
+      this.endTarget.copy(focus.position).add(new THREE.Vector3(0, staticFocus ? 1.15 : 1.58, 0));
       const tangent = new THREE.Vector3(-focus.position.z, 0, focus.position.x).normalize();
-      this.endCamera.copy(focus.position).multiplyScalar(0.18).add(tangent.multiplyScalar(0.75));
-      this.endCamera.y = 2.05;
+      this.endCamera.copy(focus.position).multiplyScalar(0.18).add(tangent.multiplyScalar(staticFocus ? 1.4 : 0.75));
+      this.endCamera.y = staticFocus ? 2.2 : 2.05;
     } else {
       this.endCamera.set(this.tableRadius * 1.95, this.tableRadius * 1.05, this.tableRadius * 2.3);
       this.endTarget.set(0, 1.25, 0);
@@ -326,10 +328,11 @@ export class MafiaDiorama {
       visual.label.visible = this.frame.mode === 'tactical' || !this.frame.focusSeatId || focused || active || selected;
       visual.label.material.opacity = dead ? 0.3 : asleep && !selected ? 0.72 : 0.92;
       if (visual.character) visual.character.accent.emissiveIntensity = dead || asleep ? 0 : active ? 1.8 : 0.85;
-      if (seatId === focusId && (!night || active)) {
+      if (seatId === focusId && (!night || active || selected)) {
         this.activeLight.position.copy(visual.position).multiplyScalar(0.85);
         this.activeLight.position.y = visual.position.y + 2.6;
-        this.activeLight.color.set(0xd7e4ff);
+        this.activeLight.color.set(selected ? 0xffdfbf : 0xd7e4ff);
+        this.activeLight.intensity = selected ? 9 : 4;
         this.activeLight.visible = !dead;
       }
     }
@@ -547,7 +550,8 @@ export class MafiaDiorama {
       root.position.copy(position);
       root.rotation.y = Math.atan2(-position.x, -position.z);
 
-      root.add(createCouncilChair());
+      const chair = createCouncilChair();
+      root.add(chair);
 
       const ringMaterial = new THREE.MeshBasicMaterial({ color: seatThreeColor(seat.id), transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false });
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.012, 12, 64), ringMaterial);
@@ -577,7 +581,7 @@ export class MafiaDiorama {
       root.add(pick);
       this.pickable.push(pick);
       this.scene.add(root);
-      this.visuals.set(seat.id, { root, ring, label, position, character: null });
+      this.visuals.set(seat.id, { root, chair, ring, label, position, character: null });
     });
   }
 
@@ -593,6 +597,8 @@ export class MafiaDiorama {
         if (this.disposed || !character) return;
         const visual = this.visuals.get(seat.id)!;
         visual.character = character;
+        // Static operative GLBs stand at the seat; the seated chair would clip them.
+        visual.chair.visible = !character.static;
         const current = this.frame.seats.find((entry) => entry.id === seat.id);
         // Apply the latest private projection before the model becomes visible.
         poseCouncilCharacter(character, {

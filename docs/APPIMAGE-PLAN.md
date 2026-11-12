@@ -22,7 +22,7 @@ with x86_64 and manual download/replacement updates.
 |---|---|
 | `apps/desktop/build.mjs` | Bundles main/preload; Electron is the only explicit external. Package the generated output rather than the workspace dependency tree. |
 | `apps/desktop/vite.config.ts` | Uses `base: './'`, suitable for relocated `file://` assets. Include every renderer asset, including lazy-loaded 3D chunks. |
-| `assets/mafia/runtime/` | Tracked 251 MB of 3D character exports; Vite copies it to `dist/renderer/mafia-characters/`. The editable Blender sources are external and not needed for the build. |
+| `assets/mafia/runtime/` | Tracked 187 MB of 3D character exports; Vite copies it to `dist/renderer/mafia-characters/`. The editable Blender sources are external and not needed for the build. |
 | `apps/desktop/package.json` | Product name `GameTable`, version `0.1.0`, Electron pinned to `44.9.3` at planning time. Read these values during packaging. |
 | `flatpak/io.github.fpetersen5_cpu.GameTable.yml` | Contains the pinned Electron archive and voice/model metadata hashes. Reuse the source identities and checksums. |
 | `flatpak/modules/` | Source recipes for Piper, eSpeak NG and ONNX Runtime, dependency pins, notices and a real synthesis smoke test. |

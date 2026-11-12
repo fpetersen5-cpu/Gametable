@@ -19,7 +19,7 @@ except OSError:
 sheet = Image.new('RGB', (2048, 2048), '#111824')
 draw = ImageDraw.Draw(sheet)
 draw.text((48, 35), 'MAFIA / CHARACTER LIBRARY', fill='#edf3fb', font=title_font)
-draw.text((50, 108), 'BLENDER 5.2  /  HIGH POLY  /  2K PBR TEXTURES', fill='#99b5d4', font=small_font)
+draw.text((50, 108), 'BLENDER 5.2  /  HIGH FIDELITY  /  2K PBR', fill='#99b5d4', font=small_font)
 cards = []
 for i, path in enumerate(manifests):
     manifest = json.loads(path.read_text())
@@ -41,7 +41,7 @@ sheet.save(root / 'character-sheet.jpg', quality=94)
 (root / 'index.html').write_text('''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mafia — Blender character library</title><style>
 body{margin:0;padding:36px;background:#111824;color:#edf3fb;font:16px system-ui,sans-serif}header{max-width:900px;margin-bottom:36px}h1{font-size:36px;letter-spacing:.02em}p{color:#a8bdd3;line-height:1.6}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px}article{background:#1a2534;border:1px solid #304158;border-radius:12px;overflow:hidden;padding-bottom:22px}img{width:100%;display:block}h2,article p,nav{margin-left:18px;margin-right:18px}h2{font-size:21px}nav{display:flex;gap:12px;flex-wrap:wrap}a{color:#9ed2ff}footer{margin-top:32px;color:#a8bdd3}
-</style><header><h1>MAFIA / CHARACTER LIBRARY</h1><p>Eleven editable high-poly Blender characters. Original GameTable blockouts refined in Blender, with packed 2048 × 2048 PBR textures and self-contained GLB exports. The images below are actual Cycles renders.</p><a href="character-sheet.jpg">Character sheet</a> · <a href="../README.md">Asset documentation</a></header><main>'''
-    + '\n'.join(cards) + '</main><footer>Original models and textures · MIT license · Visual identities are independent of hidden game roles.</footer></html>')
+</style><header><h1>MAFIA / CHARACTER LIBRARY</h1><p>Eleven editable high-fidelity Blender operatives with sculpted hair, layered cyberpunk tailoring, modeled trim and packed 2K PBR materials. The images below are actual Cycles renders.</p><a href="character-sheet.jpg">Character sheet</a> · <a href="../README.md">Asset documentation</a></header><main>'''
+    + '\n'.join(cards) + '</main><footer>Original models · MIT license · Visual identities are independent of hidden game roles.</footer></html>')
 print(f'Gallery: {root / "index.html"}')
 print(f'Contact sheet: {root / "character-sheet.jpg"}')

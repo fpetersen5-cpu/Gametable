@@ -2,60 +2,60 @@
   "characters": [
     {
       "name": "analyst",
-      "triangles": 509664,
-      "geometry_bytes": 18414304
+      "triangles": 402943,
+      "geometry_bytes": 14575596
     },
     {
       "name": "courier",
-      "triangles": 499464,
-      "geometry_bytes": 18076744
+      "triangles": 392744,
+      "geometry_bytes": 14229080
     },
     {
       "name": "ember",
-      "triangles": 485160,
-      "geometry_bytes": 17575288
+      "triangles": 391833,
+      "geometry_bytes": 14262928
     },
     {
       "name": "envoy",
-      "triangles": 503288,
-      "geometry_bytes": 18185760
+      "triangles": 402942,
+      "geometry_bytes": 14719344
     },
     {
       "name": "liaison",
-      "triangles": 493088,
-      "geometry_bytes": 17794832
+      "triangles": 249999,
+      "geometry_bytes": 7951060
     },
     {
       "name": "navigator",
-      "triangles": 493088,
-      "geometry_bytes": 17815552
+      "triangles": 392744,
+      "geometry_bytes": 14225888
     },
     {
       "name": "nightfall",
-      "triangles": 492920,
-      "geometry_bytes": 17836496
+      "triangles": 391836,
+      "geometry_bytes": 14245360
     },
     {
       "name": "sentinel",
-      "triangles": 499464,
-      "geometry_bytes": 18032560
+      "triangles": 391144,
+      "geometry_bytes": 14165160
     },
     {
       "name": "silver",
-      "triangles": 499464,
-      "geometry_bytes": 18041296
+      "triangles": 392743,
+      "geometry_bytes": 14348636
     },
     {
       "name": "vanguard",
-      "triangles": 503352,
-      "geometry_bytes": 18196224
+      "triangles": 250000,
+      "geometry_bytes": 7837792
     },
     {
       "name": "veteran",
-      "triangles": 499464,
-      "geometry_bytes": 17969112
+      "triangles": 249999,
+      "geometry_bytes": 7860308
     }
   ],
-  "texture_size": 2048,
-  "surface_revision": "surfaces-v2"
+  "texture_size": 1024,
+  "surface_revision": "oni-v3-operative"
 }

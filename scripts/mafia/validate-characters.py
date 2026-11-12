@@ -55,11 +55,17 @@ for manifest_path in sorted(args.directory.glob('*/manifest.json')):
             indices = primitive['indices']
             assert all(0 <= row[0] < count for row in accessor(indices))
             triangles += gltf['accessors'][indices]['count'] // 3
-    assert 250_000 <= triangles < 3_000_000, f'Unexpected high-poly budget: {triangles}'
+    oni = manifest.get('art_direction') == 'oni-v1'
+    if oni:
+        assert 5_000 <= triangles < 80_000, f'Unexpected low-poly budget: {triangles}'
+    else:
+        assert 250_000 <= triangles < 3_000_000, f'Unexpected high-poly budget: {triangles}'
     assert any(n.get('name') == 'HeadPivot' for n in gltf['nodes'])
     closed = [n for n in gltf['nodes'] if n.get('extras', {}).get('default_visible') is False]
     assert closed and all(n.get('scale') == [0, 0, 0] for n in closed), 'Closed eyes obscure the resting face'
-    for image in gltf['images']:
+    if oni:
+        assert not gltf.get('images'), 'Low-poly GLB unexpectedly depends on textures'
+    for image in gltf.get('images', []):
         assert 'uri' not in image and 'bufferView' in image, 'GLB must be self-contained'
         view = gltf['bufferViews'][image['bufferView']]
         offset = view.get('byteOffset', 0)
@@ -69,10 +75,13 @@ for manifest_path in sorted(args.directory.glob('*/manifest.json')):
     for surface in ['Fabric', 'Skin', 'Hair', 'Leather', 'Metal']:
         mat = next(m for m in gltf['materials'] if m['name'] == surface)
         pbr = mat['pbrMetallicRoughness']
-        assert 'baseColorTexture' in pbr and 'metallicRoughnessTexture' in pbr
-        assert 'normalTexture' in mat, f'Missing normal texture: {surface}'
-    reports.append({'name': manifest['name'], 'triangles': triangles, 'embedded_textures': len(gltf['images']), 'glb_bytes': len(data)})
-    print(f"OK {manifest['name']}: {triangles:,} triangles, {len(gltf['images'])} embedded 2K maps")
+        if oni:
+            assert 'baseColorTexture' not in pbr and 'normalTexture' not in mat
+        else:
+            assert 'baseColorTexture' in pbr and 'metallicRoughnessTexture' in pbr
+            assert 'normalTexture' in mat, f'Missing normal texture: {surface}'
+    reports.append({'name': manifest['name'], 'triangles': triangles, 'embedded_textures': len(gltf.get('images', [])), 'glb_bytes': len(data)})
+    print(f"OK {manifest['name']}: {triangles:,} triangles, {len(gltf.get('images', []))} embedded maps")
 assert len(reports) == args.expected, f'Expected {args.expected} finished models; found {len(reports)}'
 (args.directory / 'validation.json').write_text(json.dumps(reports, indent=2) + '\n')
-print(f'Validated {len(reports)} independently textured characters.')
+print(f'Validated {len(reports)} self-contained characters.')

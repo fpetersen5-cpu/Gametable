@@ -1,4 +1,4 @@
-"""Split high-detail GLBs into local glTF/buffers and lossless shared 2K maps."""
+"""Split detailed GLBs into local glTF/buffers and shared lossless 2K maps."""
 import argparse
 import hashlib
 import io
@@ -29,14 +29,14 @@ for path in sorted(args.source.glob('*.glb')):
     length = struct.unpack_from('<I', data, 12)[0]
     gltf = json.loads(data[20:20 + length])
     # Blender's exporter emits the white sheen tint at full strength, omitting
-    # our Principled shader's 0.22 Sheen Weight. glTF encodes both in this factor.
+    # our Principled shader's 0.32 Sheen Weight. glTF encodes both in this factor.
     for material in gltf['materials']:
         sheen = material.get('extensions', {}).get('KHR_materials_sheen')
         if material['name'] == 'Fabric' and sheen:
-            sheen['sheenColorFactor'] = [channel * 0.22 for channel in sheen['sheenColorFactor']]
+            sheen['sheenColorFactor'] = [channel * 0.32 for channel in sheen['sheenColorFactor']]
     binary = data[28 + length:]
     image_views = set()
-    for image in gltf['images']:
+    for image in gltf.get('images', []):
         index = image.pop('bufferView')
         image_views.add(index)
         view = gltf['bufferViews'][index]
@@ -74,7 +74,7 @@ for path in sorted(args.source.glob('*.glb')):
     gltf['bufferViews'] = views
     gltf['buffers'] = [{'byteLength': len(packed), 'uri': path.stem + '.bin'}]
     triangles = sum(gltf['accessors'][p['indices']]['count'] // 3 for m in gltf['meshes'] for p in m['primitives'])
-    assert 350000 < triangles < 750000, (path, triangles)
+    assert 200000 < triangles < 550000, (path, triangles)
     (args.output / (path.stem + '.bin')).write_bytes(packed)
     (args.output / (path.stem + '.gltf')).write_text(json.dumps(gltf, separators=(',', ':')) + '\n')
     reports.append({'name': path.stem, 'triangles': triangles, 'geometry_bytes': len(packed)})
@@ -82,5 +82,5 @@ for path in sorted(args.source.glob('*.glb')):
 assert len(reports) == 11
 for uri in previous_maps - current_maps:
     (args.output / uri).unlink(missing_ok=True)
-(args.output / 'manifest.json').write_text(json.dumps({'characters': reports, 'texture_size': 2048, 'surface_revision': 'surfaces-v2'}, indent=2) + '\n')
+(args.output / 'manifest.json').write_text(json.dumps({'characters': reports, 'texture_size': 2048, 'surface_revision': 'oni-v2'}, indent=2) + '\n')
 print(f'{len(list(textures.glob("*.png")))} shared/individual texture maps')

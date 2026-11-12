@@ -71,10 +71,10 @@ def surfaces(folder: Path, kind: str, seed: int):
     elif kind == 'Hair':
         # Fine directional strands, with varying width and a muted satin finish.
         strand = np.cos(x * math.tau * 320 + np.sin(y * math.tau * 2) * 0.25)
-        height = strand * 0.065 + medium * 0.018
-        base = 0.87 + strand * 0.045 + broad * 0.055
-        roughness = 0.48 + medium * 0.12
-        strength = 0.8
+        height = strand * 0.14 + medium * 0.025
+        base = 0.84 + strand * 0.12 + broad * 0.055
+        roughness = 0.54 + medium * 0.12
+        strength = 1.2
     elif kind == 'Leather':
         grain = noise(rng, 220)
         height = grain * 0.11 + fine * 0.025

@@ -19,7 +19,7 @@ declare 1.0 or imply Flathub approval.
 
 ## Mafia 3D assets
 
-- Only `assets/mafia/runtime/` is tracked (251 MB, 68 files). The editable
+- Only `assets/mafia/runtime/` is tracked (187 MB, 68 files). The editable
   `characters/` source library (1.9 GB) is external and ignored by git.
 - `npm run build` fails if the runtime manifest is missing or a listed
   character lacks its `.gltf`/`.bin` pair.
