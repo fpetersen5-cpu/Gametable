@@ -131,14 +131,15 @@ into the next duel.
 ### Mafia / Werewolf (`packages/games-mafia`)
 
 5–11 seats. Roles by seat count: one mafia for 5–6, two for 7–9, three for
-10–11; a doctor always, a detective from 6 seats, a jester from 8. The mafia
-confer in a private channel and vote on a kill; the doctor may protect one
-seat; the detective learns one alignment. At dawn the result is announced;
-night-kill roles stay hidden. The town discusses in seat order (addressed speech
-and pass supported), then votes; vote-outs reveal their role; a tie goes to a
-runoff between the tied seats, and a tied runoff kills nobody. The town wins
-when every mafia is gone; the mafia win when they equal or outnumber the town;
-the jester wins by being voted out.
+10–11; a doctor always, a detective from 6 seats, a jester from 8, and two
+villagers are secretly lovers. The mafia confer in a private channel and vote on
+a kill; the doctor may protect one seat; the detective learns one alignment. At
+dawn the result is announced; night-kill roles stay hidden. If either lover
+dies, the other dies of grief. The town discusses in seat order (addressed
+speech and pass supported), then votes; vote-outs reveal their role; a tie goes
+to a runoff between the tied seats, and a tied runoff kills nobody. The town
+wins when every mafia is gone; the mafia win when they equal or outnumber the
+town; the jester wins by being voted out; the lovers win with the town.
 
 A seat's view contains its own role, the public log and chat, the mafia channel
 only if it is mafia, and investigations only if it is the detective.

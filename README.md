@@ -137,14 +137,15 @@ shell. The oracle is engine-side only and never reachable from a prompt.
 ## Mafia / Werewolf
 
 5 to 11 seats. Roles are dealt by seat count: one mafia for 5–6, two for 7–9,
-three for 10–11; a doctor always, a detective from 6 seats, a jester from 8.
-The mafia confer in a private channel, then vote on a kill; the doctor may
-protect one seat; the detective learns one alignment. At dawn the result is
-announced; night-kill roles stay hidden. The town discusses in seat order, then
-votes; vote-outs reveal their role; a tie goes to a runoff between the tied
+three for 10–11; a doctor always, a detective from 6 seats, a jester from 8, and
+two villagers are secretly lovers. The mafia confer in a private channel, then
+vote on a kill; the doctor may protect one seat; the detective learns one
+alignment. At dawn the result is announced; night-kill roles stay hidden. If
+either lover dies, the other dies of grief. The town discusses in seat order,
+then votes; vote-outs reveal their role; a tie goes to a runoff between the tied
 seats, and a tied runoff kills nobody. The town wins when every mafia is gone;
 the mafia win when they equal or outnumber the town; the jester wins by being
-voted out.
+voted out; the lovers win with the town.
 
 ```bash
 npm run cli -- run --game mafia --seats 8 --seed 11

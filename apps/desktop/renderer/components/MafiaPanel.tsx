@@ -20,6 +20,7 @@ export function MafiaPanel({ data, seats }: { data: MafiaRole; seats: SeatInfo[]
             {data.teammates.length > 0 && (
               <small>Partners: {data.teammates.map(name).join(', ')}</small>
             )}
+            {data.loverName && <small>Lover: {data.loverName}</small>}
           </div>
         </div>
       ) : (

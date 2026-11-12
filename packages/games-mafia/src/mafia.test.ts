@@ -54,13 +54,22 @@ const five: Record<string, Role> = {
   s5: 'villager',
 };
 
+const withLovers: Record<string, Role> = {
+  s1: 'mafia',
+  s2: 'doctor',
+  s3: 'lover',
+  s4: 'lover',
+  s5: 'villager',
+};
+
 describe('setup', () => {
   it('deals the right shape for 5 seats', () => {
     const state = mafia.setup({ seed: 9, seats: roster(5), options: {} });
     const roles = Object.values(state.roles);
     expect(roles.filter((r) => r === 'mafia')).toHaveLength(1);
     expect(roles.filter((r) => r === 'doctor')).toHaveLength(1);
-    expect(roles.filter((r) => r === 'villager')).toHaveLength(3);
+    expect(roles.filter((r) => r === 'lover')).toHaveLength(2);
+    expect(roles.filter((r) => r === 'villager')).toHaveLength(1);
     expect(state.steps[0]).toBe('night-kill');
     const actor = mafia.phase(state).actor;
     expect(actor).toBeTruthy();
@@ -73,6 +82,7 @@ describe('setup', () => {
     expect(roles.filter((r) => r === 'mafia')).toHaveLength(2);
     expect(roles.filter((r) => r === 'detective')).toHaveLength(1);
     expect(roles.filter((r) => r === 'jester')).toHaveLength(1);
+    expect(roles.filter((r) => r === 'lover')).toHaveLength(2);
     expect(state.steps[0]).toBe('mafia-talk');
   });
 
@@ -473,6 +483,71 @@ describe('full matches', () => {
     expect(
       speeches.every((event) => typeof event.action.text === 'string' && event.action.text.length > 0),
     ).toBe(true);
+  });
+});
+
+describe('lovers', () => {
+  it('deals exactly two lovers to villagers for every table size', () => {
+    for (let count = 5; count <= 11; count += 1) {
+      const state = mafia.setup({ seed: count, seats: roster(count), options: {} });
+      const roles = Object.values(state.roles);
+      expect(roles.filter((role) => role === 'lover')).toHaveLength(2);
+      expect(roles.filter((role) => role === 'villager').length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('lovers know each other and other seats do not', () => {
+    const state = position(withLovers, ['day-talk', 'day-vote']);
+    const view = mafia.view(state, 's3');
+    const data = view.data as { lover?: string | null; loverName?: string | null };
+    expect(data.lover).toBe('s4');
+    expect(data.loverName).toBe('Seat 4');
+    expect(view.briefing).toContain('Your lover: Seat 4');
+
+    const outsider = mafia.view(state, 's5');
+    expect((outsider.data as { lover?: string | null }).lover).toBeUndefined();
+    expect(outsider.briefing).not.toContain('Your lover:');
+  });
+
+  it('night-killing one lover kills the other of grief', () => {
+    const state = position(withLovers, ['night-kill', 'dawn', 'day-talk', 'day-vote']);
+    const killed = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
+    expect(killed.alive).not.toContain('s3');
+    expect(killed.alive).not.toContain('s4');
+    expect(killed.log.join(' ')).toMatch(/Seat 3 was killed in the night\./);
+    expect(killed.log.join(' ')).toMatch(/Seat 4 dies of grief\./);
+    expect(killed.log.join(' ')).not.toMatch(/They were the/);
+    expect(killed.over).toBeNull();
+  });
+
+  it('voting out one lover kills the other and reveals the voted role', () => {
+    const state = voteAll(position(withLovers, ['day-vote']), (actor) => actor === 's3' ? 's4' : 's3');
+    expect(state.alive).not.toContain('s3');
+    expect(state.alive).not.toContain('s4');
+    expect(state.log.join(' ')).toMatch(/Seat 3 was voted out\. They were the lover\./);
+    expect(state.log.join(' ')).toMatch(/Seat 4 dies of grief\./);
+    expect(state.stats.lynched).toBe(1);
+  });
+
+  it('lovers win with the town', () => {
+    const state = voteAll(position(withLovers, ['day-vote']), (actor) => actor === 's1' ? 's2' : 's1');
+    expect(state.over).toBe('town');
+    expect(mafia.scoring(state).winners).toEqual(expect.arrayContaining(['s3', 's4']));
+  });
+
+  it('two lovers dying can give the mafia the win', () => {
+    const roles: Record<string, Role> = {
+      s1: 'mafia',
+      s2: 'mafia',
+      s3: 'lover',
+      s4: 'lover',
+      s5: 'villager',
+    };
+    let state = position(roles, ['night-kill', 'dawn']);
+    state = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
+    state = mafia.apply(state, 's2', { type: 'kill', target: 's3' });
+    expect(state.alive).toEqual(['s1', 's2', 's5']);
+    expect(state.over).toBe('mafia');
   });
 });
 

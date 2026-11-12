@@ -21,7 +21,7 @@ import {
   type SetupContext,
 } from '@gametable/engine';
 
-export type Role = 'villager' | 'mafia' | 'doctor' | 'detective' | 'jester';
+export type Role = 'villager' | 'mafia' | 'doctor' | 'detective' | 'jester' | 'lover';
 
 export type StepId =
   | 'mafia-talk'
@@ -39,6 +39,7 @@ const ROLE_TEXT: Record<Role, string> = {
   doctor: 'Doctor — each night you may protect one person from the kill.',
   detective: 'Detective — each night you learn whether one person is mafia.',
   jester: 'Jester — you win the moment the town votes you out.',
+  lover: 'Lover — you and your lover die together; you win with the town.',
 };
 
 export interface MafiaState {
@@ -217,6 +218,13 @@ function eliminate(state: MafiaState, seatId: SeatId, cause: 'night' | 'vote'): 
     state.over = 'jester';
     return;
   }
+  if (role === 'lover') {
+    const partner = state.alive.find((id) => state.roles[id] === 'lover');
+    if (partner) {
+      state.alive = state.alive.filter((id) => id !== partner);
+      pushLog(state, `${nameOf(state, partner)} dies of grief.`);
+    }
+  }
   checkWin(state);
 }
 
@@ -392,6 +400,8 @@ function dealRoles(state: MafiaState, rng: Rng): void {
   grant('doctor');
   if (count >= 6) grant('detective');
   if (count >= 8) grant('jester');
+  grant('lover');
+  grant('lover');
   state.roles = roles;
 }
 
@@ -489,6 +499,9 @@ export const mafia: GameDef<MafiaState> = {
     const mafiaSeats = aliveWithRole(state, 'mafia');
     const teammates = role === 'mafia' ? mafiaSeats.filter((id) => id !== seatId) : [];
     const seatNames = new Map(state.seats.map((seat) => [seat.id, seat.name]));
+    const lover = role === 'lover'
+      ? state.alive.find((id) => id !== seatId && state.roles[id] === 'lover') ?? null
+      : null;
 
     const visibleChat = state.chat.filter(
       (line) => line.channel === 'public' || (line.channel === 'mafia' && role === 'mafia'),
@@ -533,6 +546,9 @@ export const mafia: GameDef<MafiaState> = {
         yourRole: role,
         yourRoleText: ROLE_TEXT[role],
         teammates,
+        ...(role === 'lover'
+          ? { lover, loverName: lover ? seatNames.get(lover) ?? lover : null }
+          : {}),
         alive: [...state.alive],
         votes,
         runoff: [...state.runoff],
@@ -823,8 +839,17 @@ export const mafia: GameDef<MafiaState> = {
       '- Choose "pass" when you have nothing to add. Passing leaves the rotation until someone addresses you; when the floor is empty, the vote begins.',
       '- A tied vote goes to a runoff between the tied seats; a tied runoff kills nobody.',
       '- The town wins when every mafia is gone. The mafia win when they equal or outnumber the town.',
+      '- Two villagers are secretly lovers. If either dies, the other dies of grief.',
       '- Vote-outs reveal their role; night kills do not. Seats may lie about anything they say.',
     ];
+    if (role === 'lover') {
+      const partner = state.alive.find((id) => id !== seatId && state.roles[id] === 'lover');
+      lines.push(
+        '',
+        `Your lover: ${partner ? nameOf(state, partner) : '(dead)'}. ` +
+          'If either of you dies, the other dies of grief. You win with the town.',
+      );
+    }
     if (role === 'detective') {
       const checks = Object.entries(state.checks[seatId] ?? {});
       lines.push(
@@ -856,6 +881,8 @@ export const mafia: GameDef<MafiaState> = {
         yourRole: null,
         yourRoleText: '',
         teammates: [],
+        lover: null,
+        loverName: null,
         checks: [],
         god: {
           roles: { ...state.roles },

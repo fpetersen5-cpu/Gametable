@@ -2129,6 +2129,10 @@ select {
   color: var(--gold);
 }
 
+.ring-role.role-lover {
+  color: #f39ac0;
+}
+
 .muted-role {
   color: var(--faint);
 }
@@ -2404,6 +2408,11 @@ button.mic.recording {
 .role-card.role-mafia {
   border-left-color: var(--danger);
   background: linear-gradient(150deg, rgba(251, 125, 131, 0.075), var(--bg-raised));
+}
+
+.role-card.role-lover {
+  border-left-color: #f39ac0;
+  background: linear-gradient(150deg, rgba(243, 154, 192, 0.08), var(--bg-raised));
 }
 
 .role-card.spectator {

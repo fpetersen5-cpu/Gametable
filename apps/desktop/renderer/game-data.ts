@@ -14,6 +14,8 @@ export interface MafiaRole {
   canAct: boolean;
   mafiaHands?: string[];
   mafiaSpeaker?: string | null;
+  lover?: string | null;
+  loverName?: string | null;
   over: string | null;
   god?: {
     roles: Record<string, string>;
@@ -132,6 +134,7 @@ export const ROLE_GLYPH: Record<string, string> = {
   doctor: '🩺',
   detective: '🔎',
   jester: '🃏',
+  lover: '💞',
   player: '🎯',
   dealer: '🎩',
   Duke: '👑',
