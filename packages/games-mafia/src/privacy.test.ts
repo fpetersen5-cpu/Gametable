@@ -11,6 +11,18 @@ function nightState(count = 8): MafiaState {
 }
 
 describe('Mafia hidden-information boundaries', () => {
+  it('lovers see each other but nobody else does', () => {
+    const state = nightState(8);
+    const lovers = state.alive.filter((id) => state.roles[id] === 'lover');
+    expect(lovers).toHaveLength(2);
+    const [a, b] = lovers as [string, string];
+    const aView = JSON.stringify(mafia.view(state, a));
+    expect(aView).toContain(b);
+    const outsider = state.alive.find((id) => state.roles[id] === 'villager')!;
+    expect(JSON.stringify(mafia.view(state, outsider))).not.toContain(`"lover":"${b}"`);
+    expect(JSON.stringify(mafia.view(state, outsider))).not.toContain('loverName');
+  });
+
   it('hides other living roles during day and night, including phase actors', () => {
     for (let count = mafia.minSeats; count <= mafia.maxSeats; count++) {
       const state = nightState(count);
@@ -24,6 +36,12 @@ describe('Mafia hidden-information boundaries', () => {
           const changed = structuredClone(before);
           const a = others[0]!;
           const b = others[i]!;
+          // Lovers see each other's role, so swapping a lover with another
+          // role legitimately changes the other lover's view. Skip swaps that
+          // involve a lover on either side unless the viewer is not a lover.
+          const viewerIsLover = before.roles[viewer] === 'lover';
+          const involvesLover = before.roles[a] === 'lover' || before.roles[b] === 'lover';
+          if (viewerIsLover && involvesLover) continue;
           [changed.roles[a], changed.roles[b]] = [before.roles[b]!, before.roles[a]!];
           assertViewNonInterference(mafia, viewer, before, changed);
         }

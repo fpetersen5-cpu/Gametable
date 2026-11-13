@@ -268,6 +268,18 @@ describe('day', () => {
     expect(state.talkQueue).not.toContain('s1');
   });
 
+  it('does not mistake different non-Latin speech for a repeat', () => {
+    let state = position(five, ['day-talk', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'say', text: '村人は嘘をついている。' });
+    for (const seat of ['s2', 's3', 's4', 's5']) {
+      state = mafia.apply(state, seat, { type: 'pass' });
+    }
+    const before = state.chat.length;
+    state = mafia.apply(state, 's1', { type: 'say', text: '議長は昨夜自分の家にいた。' });
+    expect(state.chat).toHaveLength(before + 1);
+    expect(state.chat.at(-1)?.text).toBe('議長は昨夜自分の家にいた。');
+  });
+
   it('eliminates the majority target and every voter gets a spoken line', () => {
     const start = position(five, ['day-vote']);
     expect([...start.voteQueue].sort()).toEqual(['s1', 's2', 's3', 's4', 's5']);
@@ -282,16 +294,81 @@ describe('day', () => {
     expect(votes.some((line) => line.text.includes('I vote for Seat 5'))).toBe(true);
   });
 
-  it('a tie goes to a runoff, and a tied runoff kills nobody', () => {
+  it('a tie goes to a runoff between only the tied seats, and a tied runoff kills nobody', () => {
     const start = position(five, ['day-vote']);
     start.alive = ['s1', 's2', 's3', 's4'];
 
+    // Day vote: s1 and s2 tie on s3/s1. Only s3 and s1 enter the runoff.
     const tied = voteAll(start, (actor) =>
       actor === 's1' || actor === 's2' ? 's3' : 's1',
     );
     expect(tied.alive).toHaveLength(4);
+    expect(tied.log.join(' ')).toMatch(/Runoff/);
+    const runoffChat = tied.chat.filter((line) => line.phaseId === 'runoff');
+    // Only the two tied seats vote in the runoff.
+    expect(runoffChat).toHaveLength(2);
+    expect(new Set(runoffChat.map((line) => line.seatId))).toEqual(new Set(['s1', 's3']));
     expect(tied.log.join(' ')).toMatch(/Nobody is eliminated/);
-    expect(tied.chat.filter((line) => line.phaseId === 'runoff')).toHaveLength(4);
+  });
+
+  it('a runoff between the tied seats: 1-1 kills nobody, unanimous eliminates', () => {
+    const mk = () => {
+      const s = position(five, ['day-vote']);
+      s.alive = ['s1', 's2', 's3', 's4'];
+      return s;
+    };
+    // Day vote ties s1/s3 (s1 and s3 each get two votes).
+    const tie = (s: MafiaState) => {
+      s = mafia.apply(s, 's1', { type: 'vote', target: 's3', text: '' });
+      s = mafia.apply(s, 's2', { type: 'vote', target: 's3', text: '' });
+      s = mafia.apply(s, 's3', { type: 'vote', target: 's1', text: '' });
+      s = mafia.apply(s, 's4', { type: 'vote', target: 's1', text: '' });
+      return s;
+    };
+    let state = tie(mk());
+    expect(state.steps[0]).toBe('runoff');
+    expect([...state.runoff].sort()).toEqual(['s1', 's3']);
+    expect([...state.voteQueue].sort()).toEqual(['s1', 's3']);
+    // In the runoff only the tied pair votes; split 1-1, nobody is eliminated.
+    for (const actor of [...state.voteQueue]) {
+      state = mafia.apply(state, actor, {
+        type: 'vote',
+        target: actor === 's3' ? 's1' : 's3',
+        text: '',
+      });
+    }
+    expect(state.log.join(' ')).toMatch(/The runoff is tied/);
+    expect(state.alive).toHaveLength(4);
+
+    // A fresh 2-way tie (s1, s3) where the pair splits 1-1 again stays safe.
+    let again = tie(mk());
+    expect(again.steps[0]).toBe('runoff');
+    for (const actor of [...again.voteQueue]) {
+      again = mafia.apply(again, actor, {
+        type: 'vote',
+        target: actor === 's3' ? 's1' : 's3',
+        text: '',
+      });
+    }
+    expect(again.log.join(' ')).toMatch(/The runoff is tied/);
+    expect(again.alive).toHaveLength(4);
+
+    // A 3-way tie (s1, s3, s4): s3 and s4 vote s1, s1 votes s3 -> s1 is eliminated.
+    let third = mk();
+    third = mafia.apply(third, 's1', { type: 'vote', target: 's3', text: '' });
+    third = mafia.apply(third, 's2', { type: 'vote', target: 's3', text: '' });
+    third = mafia.apply(third, 's3', { type: 'vote', target: 's1', text: '' });
+    third = mafia.apply(third, 's4', { type: 'vote', target: 's1', text: '' });
+    expect(third.steps[0]).toBe('runoff');
+    expect([...third.runoff].sort()).toEqual(['s1', 's3']);
+    for (const actor of [...third.voteQueue]) {
+      third = mafia.apply(third, actor, {
+        type: 'vote',
+        target: actor === 's3' ? 's1' : 's3',
+        text: '',
+      });
+    }
+    expect(third.log.join(' ')).toMatch(/The runoff is tied/);
   });
 });
 
@@ -509,15 +586,66 @@ describe('lovers', () => {
     expect(outsider.briefing).not.toContain('Your lover:');
   });
 
-  it('night-killing one lover kills the other of grief', () => {
+  it('night-killing one lover leaves the other alive and supportive', () => {
     const state = position(withLovers, ['night-kill', 'dawn', 'day-talk', 'day-vote']);
     const killed = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
     expect(killed.alive).not.toContain('s3');
-    expect(killed.alive).not.toContain('s4');
+    expect(killed.alive).toContain('s4');
     expect(killed.log.join(' ')).toMatch(/Seat 3 was killed in the night\./);
-    expect(killed.log.join(' ')).toMatch(/Seat 4 dies of grief\./);
+    expect(killed.log.join(' ')).not.toMatch(/dies of grief/);
     expect(killed.log.join(' ')).not.toMatch(/They were the/);
     expect(killed.over).toBeNull();
+
+    // The surviving lover still knows the partner and can act as town.
+    const survivor = mafia.view(killed, 's4');
+    expect((survivor.data as { lover?: string | null }).lover).toBeNull();
+    expect(survivor.briefing).toContain('(dead)');
+    expect(mafia.phase(killed).actors.length).toBeGreaterThan(0);
+  });
+
+  it('a surviving lover wins when the town wins even though the partner died at night', () => {
+    const roles: Record<string, Role> = {
+      s1: 'mafia',
+      s2: 'doctor',
+      s3: 'lover',
+      s4: 'lover',
+      s5: 'villager',
+    };
+    let state = position(roles, ['night-kill', 'dawn', 'day-vote']);
+    state = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
+    expect(state.alive).toContain('s4');
+    state = voteAll(state, (actor) => (actor === 's1' ? 's2' : 's1'));
+    expect(state.over).toBe('town');
+    const winners = mafia.scoring(state).winners;
+    expect(winners).toContain('s4');
+    expect(winners).toContain('s3'); // the dead partner shares the win
+  });
+
+  it('a dead lover still wins if the partner survived to a town victory', () => {
+    // 7 seats, 1 mafia: night-kill lover s3 (partner s4 survives), then vote
+    // out the mafia s1 for a town win. Both lovers share the win.
+    let state = position(
+      { s1: 'mafia', s2: 'doctor', s3: 'lover', s4: 'lover', s5: 'villager', s6: 'villager', s7: 'villager' },
+      ['night-kill', 'dawn', 'day-vote'],
+      7,
+    );
+    state.voteQueue = [...state.alive];
+    state = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
+    expect(state.alive).not.toContain('s3');
+    expect(state.alive).toContain('s4');
+    // Vote out the mafia s1 for a town win. Drive votes by the current actor.
+    let guard = 0;
+    while ((state.steps[0] === 'day-vote' || state.steps[0] === 'runoff') && guard++ < 30) {
+      const actor = mafia.phase(state).actor!;
+      const options = mafia.view(state, actor).legalActions;
+      const target = String(options.find((a) => a.target === 's1')?.target ?? options[0]!.target);
+      state = mafia.apply(state, actor, { type: 'vote', target, text: '' });
+      if (state.over) break;
+    }
+    expect(state.over).toBe('town');
+    const winners = mafia.scoring(state).winners;
+    expect(winners).toContain('s3');
+    expect(winners).toContain('s4');
   });
 
   it('voting out one lover kills the other and reveals the voted role', () => {
@@ -535,7 +663,7 @@ describe('lovers', () => {
     expect(mafia.scoring(state).winners).toEqual(expect.arrayContaining(['s3', 's4']));
   });
 
-  it('two lovers dying can give the mafia the win', () => {
+  it('a lover vote-out double death can still give the mafia the win', () => {
     const roles: Record<string, Role> = {
       s1: 'mafia',
       s2: 'mafia',
@@ -543,11 +671,18 @@ describe('lovers', () => {
       s4: 'lover',
       s5: 'villager',
     };
-    let state = position(roles, ['night-kill', 'dawn']);
-    state = mafia.apply(state, 's1', { type: 'kill', target: 's3' });
-    state = mafia.apply(state, 's2', { type: 'kill', target: 's3' });
+    let state = position(roles, ['day-vote']);
+    while (state.steps[0] === 'day-vote' || state.steps[0] === 'runoff') {
+      const actor = mafia.phase(state).actor!;
+      const options = mafia.view(state, actor).legalActions;
+      const target = String(options.find((a) => a.target === 's3')?.target ?? options[0]!.target);
+      state = mafia.apply(state, actor, { type: 'vote', target, text: '' });
+      if (state.over) break;
+    }
     expect(state.alive).toEqual(['s1', 's2', 's5']);
     expect(state.over).toBe('mafia');
+    // The mafia win, so the lovers do not share it.
+    expect(mafia.scoring(state).winners.sort()).toEqual(['s1', 's2']);
   });
 });
 

@@ -39,7 +39,7 @@ const ROLE_TEXT: Record<Role, string> = {
   doctor: 'Doctor — each night you may protect one person from the kill.',
   detective: 'Detective — each night you learn whether one person is mafia.',
   jester: 'Jester — you win the moment the town votes you out.',
-  lover: 'Lover — you and your lover die together; you win with the town.',
+  lover: 'Lover — you and your partner back each other; if one is voted out the other dies of grief, and if either survives to the end you both win.',
 };
 
 export interface MafiaState {
@@ -218,7 +218,9 @@ function eliminate(state: MafiaState, seatId: SeatId, cause: 'night' | 'vote'): 
     state.over = 'jester';
     return;
   }
-  if (role === 'lover') {
+  if (role === 'lover' && cause === 'vote') {
+    // Only a vote-out takes the partner with them. A night kill leaves the
+    // survivor alive to support (and if needed sacrifice for) the other.
     const partner = state.alive.find((id) => state.roles[id] === 'lover');
     if (partner) {
       state.alive = state.alive.filter((id) => id !== partner);
@@ -278,7 +280,7 @@ function settle(state: MafiaState): void {
     const step = state.steps[0];
     if (!step) break;
     if ((step === 'day-vote' || step === 'runoff') && state.voteQueue.length === 0) {
-      state.voteQueue = shuffleAlive(state);
+      state.voteQueue = step === 'runoff' ? [...state.runoff] : shuffleAlive(state);
       state.votes = {};
     }
     if (step === 'mafia-talk' && !state.nightOpen) {
@@ -314,9 +316,13 @@ function passDayTalk(state: MafiaState, seatId: SeatId): void {
   }
 }
 
-/** Compare speech without case, punctuation or spacing differences. */
+/** Compare speech with Unicode letters/numbers, ignoring case and punctuation. */
 function normalizeSpeech(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
 }
 
 function resolveVotes(state: MafiaState): void {
@@ -351,7 +357,8 @@ function resolveVotes(state: MafiaState): void {
     }
     state.runoff = top;
     state.votes = {};
-    state.voteQueue = shuffleAlive(state);
+    // Runoff is a duel: only the tied seats vote, and only for each other.
+    state.voteQueue = [...top];
     pushLog(
       state,
       `The vote is tied between ${top.map((id) => nameOf(state, id)).join(' and ')}. Runoff.`,
@@ -578,7 +585,8 @@ export const mafia: GameDef<MafiaState> = {
       chat: visibleChat,
       legalActions: canAct ? legalActionsFor(state, seatId) : [],
       terminal: state.over !== null,
-      winners: mafia.scoring(state).winners,
+      // Winners are only meaningful at the end; mid-game they would leak roles.
+      winners: state.over ? mafia.scoring(state).winners : [],
     };
   },
 
@@ -768,7 +776,9 @@ export const mafia: GameDef<MafiaState> = {
       next.votes[seatId] = target;
       next.stats.votes += 1;
       next.voteQueue = next.voteQueue.filter((id) => id !== seatId);
-      if (Object.keys(next.votes).length >= next.alive.length) resolveVotes(next);
+      // In a runoff only the tied seats vote; in a normal vote everyone living does.
+      const needed = step === 'runoff' ? state.runoff.length : next.alive.length;
+      if (Object.keys(next.votes).length >= needed) resolveVotes(next);
       return next;
     }
 
@@ -794,7 +804,7 @@ export const mafia: GameDef<MafiaState> = {
             ? role === 'mafia'
             : state.over === 'town'
               ? role !== 'mafia'
-              : false;
+              : role === 'lover'; // lovers also win if their partner survived to the end
       scores[seat.id] = winner ? 1 : 0;
     }
     const winners = state.seats.filter((seat) => scores[seat.id] === 1).map((seat) => seat.id);
@@ -837,9 +847,9 @@ export const mafia: GameDef<MafiaState> = {
       '- Day: discussion runs for up to five minutes. Seats speak in turn; each seat may make two points unless someone addresses it.',
       '- You can address someone by choosing a "say" action with a `to` target; they speak next.',
       '- Choose "pass" when you have nothing to add. Passing leaves the rotation until someone addresses you; when the floor is empty, the vote begins.',
-      '- A tied vote goes to a runoff between the tied seats; a tied runoff kills nobody.',
+      '- A tied vote goes to a runoff between only the tied seats; a tied runoff kills nobody.',
       '- The town wins when every mafia is gone. The mafia win when they equal or outnumber the town.',
-      '- Two villagers are secretly lovers. If either dies, the other dies of grief.',
+      '- Two villagers are secretly lovers. You back each other: if one is voted out, the other dies of grief; if either survives to the end, you both win.',
       '- Vote-outs reveal their role; night kills do not. Seats may lie about anything they say.',
     ];
     if (role === 'lover') {
@@ -847,7 +857,8 @@ export const mafia: GameDef<MafiaState> = {
       lines.push(
         '',
         `Your lover: ${partner ? nameOf(state, partner) : '(dead)'}. ` +
-          'If either of you dies, the other dies of grief. You win with the town.',
+          'Protect each other: a vote-out takes you both, but if either of you survives ' +
+          'to the end you both win. You can sacrifice yourself to save your partner.',
       );
     }
     if (role === 'detective') {
