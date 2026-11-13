@@ -91,6 +91,9 @@ for path in sorted(args.source.glob('*.glb')):
         accessor['bufferView'] = indices[accessor['bufferView']]
     gltf['bufferViews'] = views
     gltf['buffers'] = [{'byteLength': len(packed), 'uri': path.stem + '.bin'}]
+    # The operative pipeline rotates every source to face glTF +Z; record that
+    # so tests can assert the facing contract without rendering.
+    gltf.setdefault('asset', {}).setdefault('extras', {})['facing'] = '+Z'
 
     triangles = sum(
         gltf['accessors'][primitive['indices']]['count'] // 3

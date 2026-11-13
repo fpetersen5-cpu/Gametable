@@ -53,13 +53,13 @@ export interface CouncilCharacter extends CouncilCharacterRig {
 /** Identity survives replays, controller takeover, elimination and array ordering. */
 export function characterStylesForSeats(seats: readonly SeatInfo[]): Map<string, number> {
   const assigned = new Map<string, number>();
-  const used = new Set<number>();
-  for (const seat of [...seats].sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }))) {
-    let style = hash(seat.modelId ?? seat.name) % STYLES.length;
-    for (let tries = 0; used.has(style) && tries < STYLES.length; tries++) style = (style + 1) % STYLES.length;
-    used.add(style);
-    assigned.set(seat.id, style);
-  }
+  // Assign by sorted seat id, not by model hash: the first seats always get the
+  // first identities, so a full table shows every character and a small table
+  // still shows the leading ones (including replaced asset slots).
+  const ordered = [...seats].sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }));
+  ordered.forEach((seat, index) => {
+    assigned.set(seat.id, index % STYLES.length);
+  });
   return assigned;
 }
 

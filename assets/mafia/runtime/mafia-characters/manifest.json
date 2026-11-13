@@ -22,8 +22,8 @@
     },
     {
       "name": "liaison",
-      "triangles": 449999,
-      "geometry_bytes": 17799108
+      "triangles": 450000,
+      "geometry_bytes": 17799408
     },
     {
       "name": "navigator",
@@ -47,8 +47,8 @@
     },
     {
       "name": "vanguard",
-      "triangles": 449999,
-      "geometry_bytes": 17625732
+      "triangles": 450000,
+      "geometry_bytes": 17625360
     },
     {
       "name": "veteran",

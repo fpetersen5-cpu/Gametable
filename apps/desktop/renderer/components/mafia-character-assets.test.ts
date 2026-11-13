@@ -157,3 +157,16 @@ describe('asset URL containment', () => {
     expect(() => resolveAssetURL(base, '/etc/passwd')).toThrow(/escapes/);
   });
 });
+
+describe('operative GLB facing', () => {
+  it.each(['vanguard', 'liaison', 'veteran'])('%s faces glTF +Z (the table direction)', (name) => {
+    const gltf = JSON.parse(readFileSync(new URL(`${name}.gltf`, directory), 'utf8')) as {
+      asset?: { extras?: { facing?: unknown } };
+      nodes?: Array<Record<string, unknown>>;
+    };
+    expect(gltf.asset?.extras?.facing).toBe('+Z');
+    for (const node of gltf.nodes ?? []) {
+      expect(node.rotation).toBeUndefined();
+    }
+  });
+});

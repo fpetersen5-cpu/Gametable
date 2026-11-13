@@ -18,6 +18,13 @@ describe('council character meshes', () => {
     expect([...characterStylesForSeats(seats.map((seat) => ({ ...seat, kind: 'human' as const })))]).toEqual([...original]);
   });
 
+  it('assigns the leading identities to the leading seats so replaced characters are always shown', () => {
+    const small = characterStylesForSeats(seats.slice(0, 5));
+    expect([...small.values()]).toEqual([0, 1, 2, 3, 4]);
+    const full = characterStylesForSeats(seats);
+    expect([...full.values()]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
   it('builds independently owned, finite, pickable meshes within the scene geometry budget', () => {
     const styles = characterStylesForSeats(seats);
     const characters = seats.map((seat) => createCouncilCharacter(seat, styles.get(seat.id)!, new THREE.Color(0x7dbbdb)));

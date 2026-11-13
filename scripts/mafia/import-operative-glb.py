@@ -13,11 +13,12 @@ normalizes the height and floor position, and exports GLBs for
 package-runtime.py.
 """
 import argparse
+import math
 import sys
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 parser = argparse.ArgumentParser()
 parser.add_argument('source', type=Path)
@@ -32,6 +33,18 @@ MAPPING = {
     'Vanguard_Operative.glb': 'vanguard',
     'Liaison_Operative.glb': 'liaison',
     'Veteran_Operative.glb': 'veteran',
+}
+
+# Facing correction about Blender's up axis (Z), baked into the mesh data with
+# obj.data.transform (transform_apply silently no-ops on glTF imports in
+# background mode). The downloaded models were measured to face glTF +X ==
+# Blender +X (front renders show the face). Seats orient characters so local
+# +Z faces the table, and Blender +Y-up export maps Blender -Y to glTF +Z, so
+# +X must rotate by -90 degrees about Z to reach -Y.
+ROTATIONS = {
+    'Vanguard_Operative.glb': -90,
+    'Liaison_Operative.glb': -90,
+    'Veteran_Operative.glb': -90,
 }
 
 
@@ -60,6 +73,11 @@ for source_name, runtime_name in MAPPING.items():
     if len(meshes) > 1:
         bpy.ops.object.join()
     obj = bpy.context.view_layer.objects.active
+    # Face the table: bake the correction into the mesh (transform_apply does
+    # not modify glTF-imported meshes in background mode).
+    angle = ROTATIONS.get(source_name, 0)
+    if angle:
+        obj.data.transform(Matrix.Rotation(math.radians(angle), 4, 'Z'))
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
     obj.data.calc_loop_triangles()
