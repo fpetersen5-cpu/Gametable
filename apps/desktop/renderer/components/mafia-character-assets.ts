@@ -123,6 +123,19 @@ function bindStaticCouncilAsset(
   };
 }
 
+/**
+ * Resolve a glTF image URI against the asset base and refuse anything that
+ * escapes it. Bundled assets are trusted, but this keeps a replaced or
+ * hand-edited .gltf from pointing outside the packaged directory.
+ */
+export function resolveAssetURL(baseURL: string, uri: string): string {
+  const resolved = new URL(uri, baseURL).href;
+  if (!resolved.startsWith(baseURL)) {
+    throw new Error(`Character asset reference escapes the asset directory: ${uri}`);
+  }
+  return resolved;
+}
+
 /** Scene-owned assets. Any optional shared maps survive individual seats. */
 export class CouncilAssetLibrary {
   private readonly textures = new Map<string, Promise<THREE.Texture>>();
@@ -142,10 +155,10 @@ export class CouncilAssetLibrary {
       loadTexture: (index: number) => {
         const definition = parser.json.textures[index];
         const image = parser.json.images[definition.source];
-        return this.texture(new URL(image.uri, this.baseURL).href);
+        return this.texture(resolveAssetURL(this.baseURL, image.uri));
       },
     }));
-    const gltf = await loader.loadAsync(new URL(`${name}.gltf`, this.baseURL).href);
+    const gltf = await loader.loadAsync(resolveAssetURL(this.baseURL, `${name}.gltf`));
     if (this.disposed) {
       disposeModel(gltf.scene);
       return null;

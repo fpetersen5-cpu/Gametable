@@ -41,8 +41,8 @@ export class MafiaDiorama {
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
   private readonly controls: OrbitControls;
-  private readonly resizeObserver: ResizeObserver;
-  private readonly intersectionObserver: IntersectionObserver;
+  private readonly resizeObserver: ResizeObserver | null = null;
+  private readonly intersectionObserver: IntersectionObserver | null = null;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly visuals = new Map<string, SeatVisual>();
@@ -160,6 +160,10 @@ export class MafiaDiorama {
       this.animate();
       this.ready = this.loadCharacters(frame.seats);
     } catch (error) {
+      // Anything created before the failure must not leak.
+      cancelAnimationFrame(this.animation);
+      this.resizeObserver?.disconnect();
+      this.intersectionObserver?.disconnect();
       this.assets.dispose();
       this.renderer.dispose();
       throw error;
@@ -182,8 +186,8 @@ export class MafiaDiorama {
     this.assets.dispose();
     cancelAnimationFrame(this.animation);
     this.clock.dispose();
-    this.resizeObserver.disconnect();
-    this.intersectionObserver.disconnect();
+    this.resizeObserver?.disconnect();
+    this.intersectionObserver?.disconnect();
     this.controls.removeEventListener('start', this.cancelTransition);
     this.controls.dispose();
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);

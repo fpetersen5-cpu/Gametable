@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { COUNCIL_ASSETS, CouncilAssetLibrary } from './mafia-character-assets';
+import { COUNCIL_ASSETS, CouncilAssetLibrary, resolveAssetURL } from './mafia-character-assets';
 import { poseCouncilCharacter } from './mafia-characters';
 
 const directory = new URL('../../../../assets/mafia/runtime/mafia-characters/', import.meta.url);
@@ -131,5 +131,29 @@ describe('shipped Blender council assets', () => {
     const pending = assets.load({ id: 'late', name: 'Late', kind: 'human' }, 0, new THREE.Color());
     assets.dispose();
     expect(await pending).toBeNull();
+  });
+
+  it.each([0, 3])(
+    'reports a missing texture map instead of silently showing an untextured model (style %i)',
+    async (style) => {
+      vi.mocked(THREE.TextureLoader.prototype.load).mockImplementation((_url, _onLoad, _onProgress, onError) => {
+        queueMicrotask(() => onError?.(new Error('Missing map')));
+        return new THREE.Texture<HTMLImageElement>();
+      });
+      const assets = library();
+      await expect(
+        assets.load({ id: 'a', name: 'A', kind: 'human' }, style, new THREE.Color()),
+      ).rejects.toThrow('Could not load character texture');
+    },
+  );
+});
+
+describe('asset URL containment', () => {
+  it('resolves in-directory URIs and rejects escapes and absolute remotes', () => {
+    expect(resolveAssetURL(base, 'textures/abc.png')).toBe(`${base}textures/abc.png`);
+    expect(resolveAssetURL(base, 'vanguard.gltf')).toBe(`${base}vanguard.gltf`);
+    expect(() => resolveAssetURL(base, '../secrets.json')).toThrow(/escapes/);
+    expect(() => resolveAssetURL(base, 'https://evil.invalid/x.png')).toThrow(/escapes/);
+    expect(() => resolveAssetURL(base, '/etc/passwd')).toThrow(/escapes/);
   });
 });

@@ -32,6 +32,10 @@ export default function MafiaScene({ seats, phase, humanSeatId, chat, previews, 
     const canvas = canvasRef.current;
     const initialFrame = frameRef.current;
     if (!canvas || !initialFrame) return;
+    // preventDefault on webglcontextlost lets the browser restore the
+    // context; rebuild the renderer when that happens, exactly like Retry.
+    const onRestored = () => setRetry((value) => value + 1);
+    canvas.addEventListener('webglcontextrestored', onRestored);
     try {
       const engine = new MafiaDiorama(canvas, initialFrame, (seatId) => {
         setSelectedSeatId((current) => (current === seatId ? null : seatId));
@@ -40,10 +44,12 @@ export default function MafiaScene({ seats, phase, humanSeatId, chat, previews, 
       engineRef.current = engine;
       setError(null);
       return () => {
+        canvas.removeEventListener('webglcontextrestored', onRestored);
         engine.dispose();
         engineRef.current = null;
       };
     } catch (failure) {
+      canvas.removeEventListener('webglcontextrestored', onRestored);
       setError(failure instanceof Error ? failure.message : 'WebGL is unavailable on this device.');
     }
   }, [seatKey, retry]);
