@@ -27,9 +27,8 @@ pauldrons are actual geometry. Sleeveless identities omit shoulder armour. Small
 operative lights retain each seat's dynamic colour.
 
 The eight Blender characters are approximately 350–450K triangles with lossless
-2048 × 2048 PBR maps. The three static operative GLBs are budgeted at 250K
-triangles with 1024 × 1024 maps so the 11-seat scene keeps the previous frame
-rate. Source projects retain denser editable surfaces and non-destructive
+2048 × 2048 PBR maps. The three static operative GLBs are budgeted at 450K
+triangles with 2048 × 2048 maps, matching the Blender cast. Source projects retain denser editable surfaces and non-destructive
 subdivision. Skin uses subsurface scattering; fabric uses sheen; hair uses
 anisotropic strand shading; eyes retain a clear coat.
 
@@ -69,7 +68,7 @@ Blender exports contain geometry, normals, tangents, UVs and `COLOR_0` pigment;
 the three static operative GLBs contain geometry, normals, UVs and individual
 PBR maps. Shared fabric/hair/leather/metal maps and individual skin maps are
 local PNGs. Vite serves/copies only `runtime/` into the renderer build.
-Characters load sequentially with progress and retry UI. The scene owns their
+Characters load concurrently with progress and retry UI. The scene owns their
 geometry, materials and shared textures and discards late loading results after
 unmount. Hidden-role projections continue to control sleeping poses; appearance
 is independent of roles.
@@ -96,12 +95,12 @@ python3 scripts/mafia/merge-operative-runtime.py \
   /tmp/opencode/mafia-operative assets/mafia/runtime/mafia-characters
 ```
 
-`import-operative-glb.py` joins the static mesh, decimates it to 250K triangles,
+`import-operative-glb.py` joins the static mesh, decimates it to 450K triangles,
 normalizes the height and floor position and exports a GLB.
-`merge-operative-runtime.py` extracts the embedded maps, resizes them to 1024,
+`merge-operative-runtime.py` extracts the embedded maps, resizes them to 2048,
 splits geometry into `.gltf`/`.bin` and updates the manifest without touching
-the other eight characters. Pass `--triangles 450000 --texture-size 2048` to
-both scripts for a higher-fidelity, heavier build.
+the other eight characters. Pass lower `--triangles`/`--texture-size` values
+only when building for weaker hardware.
 
 `HeadPivot` controls the head. Named open-eye and closed-eye surface objects stay
 separate. Closed-eye parts have `default_visible: false`, scale zero and an

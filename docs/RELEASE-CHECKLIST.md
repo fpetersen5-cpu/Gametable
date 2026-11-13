@@ -19,14 +19,16 @@ declare 1.0 or imply Flathub approval.
 
 ## Mafia 3D assets
 
-- Only `assets/mafia/runtime/` is tracked (187 MB, 68 files). The editable
+- Only `assets/mafia/runtime/` is tracked (229 MB, 68 files). The editable
   `characters/` source library (1.9 GB) is external and ignored by git.
 - `npm run build` fails if the runtime manifest is missing or a listed
   character lacks its `.gltf`/`.bin` pair.
 - The Flatpak installs `three`'s MIT license; the AppImage plan includes it.
-- Manual GPU smoke test: 11-seat Mafia on a discrete GPU; all characters load,
-  ~60 FPS, and **Settings → 3D table** off falls back to 2D. Arc A770 baseline:
-  3.0–4.8 s to a fully loaded scene, ~69–71 FPS, ~410–430 MB renderer working set.
+- Manual GPU smoke test: 11-seat Mafia on a discrete GPU; all characters load
+  concurrently, and **Settings → 3D table** off falls back to 2D. Target envelope:
+  16 GB VRAM, 16 GB system RAM, 20 GB game storage (the runtime assets are about
+  230 MB). Arc A770 baseline: 3.4–4.5 s to a fully loaded scene, ~69–71 FPS in a
+  focused window, ~400–550 MB renderer working set (peak ~780 MB).
 
 ## Source-built speech stack
 

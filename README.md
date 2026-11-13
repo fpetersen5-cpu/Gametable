@@ -165,16 +165,18 @@ rounded armour, metallic piping and layered tailoring. The editable source libra
 is kept outside git; the tracked runtime exports live in `assets/mafia/runtime/`
 and are what Mafia loads. The eight Blender characters use approximately 350–450K
 triangles and 2K maps; Vanguard, Liaison and Veteran use downloaded static GLBs
-budgeted at 250K triangles and 1K maps. Asynchronous loading and the animated
+budgeted at 450K triangles and 2K maps. Asynchronous loading and the animated
 head/eye rig remain for the Blender cast. The asset documentation includes
 reproducible Blender build, stylization and validation commands; the local gallery
 lives in the source library.
 
 ### 3D performance
 
-The high-fidelity character cast uses detailed geometry and 2K PBR textures. The
-interactive chamber, reflective table, lighting and skyline also use GPU rendering.
-Turn off **Settings → 3D table** to use the 2D table on integrated or older GPUs;
+The game targets a desktop GPU with 16 GB of VRAM and 16 GB of system RAM; the
+runtime assets are about 230 MB, well inside the 20 GB storage allowance. The
+high-fidelity cast uses detailed geometry, 2K PBR maps, 8× anisotropy and a 4096
+shadow map. The interactive chamber, reflective table, lighting and skyline also
+use GPU rendering. **Settings → 3D table** remains available as a 2D fallback;
 the match, replay and action panel are unchanged.
 
 ## Coup

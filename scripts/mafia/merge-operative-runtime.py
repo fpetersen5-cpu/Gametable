@@ -22,7 +22,7 @@ from PIL import Image
 parser = argparse.ArgumentParser()
 parser.add_argument('source', type=Path)
 parser.add_argument('output', type=Path)
-parser.add_argument('--texture-size', type=int, default=1024)
+parser.add_argument('--texture-size', type=int, default=2048)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 textures = args.output / 'textures'

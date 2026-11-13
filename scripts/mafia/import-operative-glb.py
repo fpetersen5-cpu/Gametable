@@ -22,7 +22,7 @@ from mathutils import Vector
 parser = argparse.ArgumentParser()
 parser.add_argument('source', type=Path)
 parser.add_argument('output', type=Path)
-parser.add_argument('--triangles', type=int, default=250_000)
+parser.add_argument('--triangles', type=int, default=450_000)
 parser.add_argument('--height', type=float, default=1.9)
 args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
 args.output.mkdir(parents=True, exist_ok=True)

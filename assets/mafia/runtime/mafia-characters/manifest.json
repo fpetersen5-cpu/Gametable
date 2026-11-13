@@ -22,8 +22,8 @@
     },
     {
       "name": "liaison",
-      "triangles": 249999,
-      "geometry_bytes": 7951060
+      "triangles": 449999,
+      "geometry_bytes": 17799108
     },
     {
       "name": "navigator",
@@ -47,15 +47,15 @@
     },
     {
       "name": "vanguard",
-      "triangles": 250000,
-      "geometry_bytes": 7837792
+      "triangles": 449999,
+      "geometry_bytes": 17625732
     },
     {
       "name": "veteran",
-      "triangles": 249999,
-      "geometry_bytes": 7860308
+      "triangles": 449999,
+      "geometry_bytes": 17660004
     }
   ],
-  "texture_size": 1024,
+  "texture_size": 2048,
   "surface_revision": "oni-v3-operative"
 }

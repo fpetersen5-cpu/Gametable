@@ -102,14 +102,14 @@ export class MafiaDiorama {
       antialias: true,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.assets = new CouncilAssetLibrary(new URL('mafia-characters/', document.baseURI).href,
-      Math.min(4, this.renderer.capabilities.getMaxAnisotropy()));
+      Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
     const studio = new RoomEnvironment();
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.environment = pmrem.fromScene(studio, 0.04);
@@ -352,7 +352,7 @@ export class MafiaDiorama {
     const moon = this.keyLight;
     moon.position.set(-9, 16, 8);
     moon.castShadow = true;
-    moon.shadow.mapSize.set(2048, 2048);
+    moon.shadow.mapSize.set(4096, 4096);
     moon.shadow.camera.left = -7;
     moon.shadow.camera.right = 7;
     moon.shadow.camera.top = 7;
@@ -589,9 +589,11 @@ export class MafiaDiorama {
     const styles = characterStylesForSeats(seats);
     let loaded = 0;
     this.onLoading({ loaded, total: seats.length });
-    try {
-      // Limit decode/upload peaks and keep interaction available while loading.
-      for (const seat of seats) {
+    // The local budget allows the whole cast to decode concurrently. One broken
+    // asset must not cancel the others, so settle every load and report the
+    // first failure after the rest have finished.
+    const results = await Promise.allSettled(
+      seats.map(async (seat) => {
         if (this.disposed) return;
         const character = await this.assets.load(seat, styles.get(seat.id)!, seatThreeColor(seat.id));
         if (this.disposed || !character) return;
@@ -609,10 +611,20 @@ export class MafiaDiorama {
         visual.root.add(character.root);
         visual.label.position.y = character.height + 0.17;
         this.onLoading({ loaded: ++loaded, total: seats.length });
-      }
-    } catch (failure) {
-      if (!this.disposed) this.onLoading({ loaded, total: seats.length,
-        error: failure instanceof Error ? failure.message : 'Could not load council characters.' });
+      }),
+    );
+    if (this.disposed) return;
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (failure) {
+      this.onLoading({
+        loaded,
+        total: seats.length,
+        error: failure.reason instanceof Error
+          ? failure.reason.message
+          : 'Could not load council characters.',
+      });
     }
   }
 }

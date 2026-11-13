@@ -130,7 +130,7 @@ export class CouncilAssetLibrary {
   private readonly roots = new Set<THREE.Group>();
   private disposed = false;
 
-  constructor(private readonly baseURL: string, private readonly anisotropy = 4) {}
+  constructor(private readonly baseURL: string, private readonly anisotropy = 8) {}
 
   async load(seat: SeatInfo, style: number, color: THREE.Color): Promise<CouncilCharacterRig | null> {
     if (this.disposed) return null;

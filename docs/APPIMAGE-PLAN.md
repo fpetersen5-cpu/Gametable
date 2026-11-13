@@ -22,7 +22,7 @@ with x86_64 and manual download/replacement updates.
 |---|---|
 | `apps/desktop/build.mjs` | Bundles main/preload; Electron is the only explicit external. Package the generated output rather than the workspace dependency tree. |
 | `apps/desktop/vite.config.ts` | Uses `base: './'`, suitable for relocated `file://` assets. Include every renderer asset, including lazy-loaded 3D chunks. |
-| `assets/mafia/runtime/` | Tracked 187 MB of 3D character exports; Vite copies it to `dist/renderer/mafia-characters/`. The editable Blender sources are external and not needed for the build. |
+| `assets/mafia/runtime/` | Tracked 229 MB of 3D character exports; Vite copies it to `dist/renderer/mafia-characters/`. The editable Blender sources are external and not needed for the build. |
 | `apps/desktop/package.json` | Product name `GameTable`, version `0.1.0`, Electron pinned to `44.9.3` at planning time. Read these values during packaging. |
 | `flatpak/io.github.fpetersen5_cpu.GameTable.yml` | Contains the pinned Electron archive and voice/model metadata hashes. Reuse the source identities and checksums. |
 | `flatpak/modules/` | Source recipes for Piper, eSpeak NG and ONNX Runtime, dependency pins, notices and a real synthesis smoke test. |
@@ -203,9 +203,9 @@ Fedora, and openSUSE Leap/Tumbleweed. Cover GNOME and KDE, X11 and Wayland.
   Push-to-talk transcription uses OpenRouter and is tested separately online.
 - Mafia's lazy-loaded 3D scene renders on a real GPU; verify graceful behavior
   without usable WebGL. Xvfb launch alone cannot prove graphics compatibility.
-  Arc A770 baseline: 3.0–4.8 s to a fully loaded 11-character scene, ~69–71 FPS,
-  ~410–430 MB renderer working set; verify **Settings → 3D table** off falls
-  back to 2D.
+  Arc A770 baseline: 3.4–4.5 s to a fully loaded 11-character scene, ~69–71 FPS in a focused window,
+  ~400–550 MB renderer working set on a 16 GB VRAM / 16 GB RAM target; verify
+  **Settings → 3D table** off falls back to 2D.
 - Local-model discovery/play via loopback and an OpenRouter match with a test
   key; confirm budget stops, network errors and secret persistence.
 - Flatpak-to-AppImage backup migration and subsequent manual AppImage update
