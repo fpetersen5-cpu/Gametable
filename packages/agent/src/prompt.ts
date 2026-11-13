@@ -91,7 +91,7 @@ export function buildUserPrompt(args: {
       ? ownLines.map((line) => `- ${escapeTableTalk(line.text)}`).join('\n')
       : '(none yet)',
     '',
-    `Your private notes so far:\n${memoryNotes.trim() || '(none)'}`,
+    `Your private notes so far (the [skill: …] block is your standing instruction; keep it in your notes only if you rewrote it):\n${memoryNotes.trim() || '(none)'}`,
     '',
     'Choose your action now. Respond with JSON only.',
   ].join('\n');

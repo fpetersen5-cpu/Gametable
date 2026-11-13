@@ -252,6 +252,12 @@ Buffered calls remain the fallback for providers that reject streaming.
   `model-memory.json` file. Current-match notes remain per seat; if the same
   model is used in multiple seats, those seats share that model's long-term
   memory but not their live notes.
+- Memory is framed by a per-game **skill** (`apps/desktop/main/game-skills.ts`):
+  a short standing instruction telling the model what to remember in that game
+  (roles and votes in Mafia, shell history in Buckshot, claims and blocks in
+  Coup), plus a **start prompt** injected when the model has no notes yet. The
+  skill block is delimited (`[skill: …]` … `[notes]`) and stripped again before
+  persisting, so only the model's own notes are stored.
 - A seat may have its own `budgetUsd`; a match or arena may impose a shared
   `SharedBudget`. The shared cap is checked before every call and trips the
   match immediately instead of overspending.

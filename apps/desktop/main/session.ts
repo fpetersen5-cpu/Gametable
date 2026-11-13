@@ -22,6 +22,7 @@ import { ResultsStore, toRecord, type MatchRecord } from '@gametable/stats';
 import { generateDebrief } from './debrief.js';
 import { Budget, BudgetExceeded } from './budget.js';
 import { turnHoldMs } from './pacing.js';
+import { composeMemory, stripSkillBlock, type GameSkill } from './game-skills.js';
 import type {
   MatchSummary,
   ReplayBundle,
@@ -149,7 +150,6 @@ export interface SessionDeps {
   def: GameDef<any>;
   seats: Seat[];
   request: StartMatchRequest;
-  /** Default provider used when no per-seat resolver is given. */
   client: CompletionClient | null;
   /** Per-seat provider selection (OpenRouter vs. a local endpoint). */
   clientForSeat?: (seat: Seat) => CompletionClient | null;
@@ -169,6 +169,8 @@ export interface SessionDeps {
     read: (key: string) => string;
     save: (key: string, notes: string) => void;
   };
+  /** Per-game skill and start prompt prepended to the model's long-term memory. */
+  skill?: GameSkill;
   saveDebrief?: (
     matchId: string,
     debrief: { text: string; model: string; costUsd: number },
@@ -533,12 +535,17 @@ export class MatchSession {
         ...(seat.budgetUsd === undefined ? {} : { budgetUsd: seat.budgetUsd }),
       };
       const key = this.memoryKey(seat, index);
+      const stored = this.deps.memory?.read(key) ?? '';
+      const skill = this.deps.skill;
+      const initialMemory = skill
+        ? composeMemory(skill, stored)
+        : stored;
       const controller = new LlmController({
         client: this.budget.client(client),
         gameName: this.deps.def.name,
         config,
-        initialMemory: this.deps.memory?.read(key) ?? '',
-        onMemory: (notes) => this.deps.memory?.save(key, notes),
+        initialMemory,
+        onMemory: (notes) => this.deps.memory?.save(key, stripSkillBlock(notes)),
         onPreview: (text) => this.deps.sendPreview(seat.id, text),
         isPreviewPublic: (view, type) => this.deps.def.previewIsPublic?.(view, type) ?? false,
       });

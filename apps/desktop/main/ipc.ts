@@ -30,6 +30,7 @@ import {
 import { redact } from '@gametable/agent';
 import { ModelCatalogCache } from './catalog.js';
 import { ModelMemoryStore } from './model-memory.js';
+import { skillForGame } from './game-skills.js';
 import { MatchSession } from './session.js';
 import { ArenaRunner } from './arena.js';
 import { DEMO_MODELS, DemoClient } from './demo.js';
@@ -390,6 +391,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         read: (key) => modelMemory.get(key),
         save: (key, notes) => modelMemory.set(key, notes),
       },
+      skill: skillForGame(def.id),
       store: results,
       saveBundle: async (bundle) => {
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
@@ -611,6 +613,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
         read: (key) => modelMemory.get(key),
         save: (key, notes) => modelMemory.set(key, notes),
       },
+      skill: skillForGame(def.id),
       store: results,
       matchId: saved.matchId,
       resume: {

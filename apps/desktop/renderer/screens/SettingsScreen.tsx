@@ -292,9 +292,11 @@ export function SettingsScreen({
       <section className="settings-card">
         <h2>Model memory</h2>
         <p className="muted">
-          Each model keeps private notes between matches, keyed by provider and model. Notes can
-          contain hidden roles and private chat, so they stay in a local owner-only file and are
-          not included in backups. Arena runs never read or write this memory.
+          Each model keeps private notes between matches, keyed by provider and model, and follows
+          a per-game memory skill (a different one for Mafia, Buckshot and Coup) with a start prompt
+          for models that have none yet. Notes can contain hidden roles and private chat, so they
+          stay in a local owner-only file and are not included in backups. Arena runs never read or
+          write this memory.
         </p>
         {memoryError && <p className="error">{memoryError}</p>}
         {memories === null ? (

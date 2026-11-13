@@ -289,10 +289,13 @@ fails the build if a literal `gameId` comparison appears outside
 Each model keeps private notes between matches, keyed by provider and model
 identity. The notes are loaded into that model's prompt on its next turn and
 saved after every turn, so a model can carry observations, grudges and plans
-across tables and app restarts. They are capped at 4,000 characters, stored in
-an owner-only local file, excluded from backups, and can be reviewed or
-forgotten per model in **Settings → Model memory**. Arena runs deliberately skip
-long-term memory so benchmark matches stay independent.
+across tables and app restarts. Each game frames the notes with its own memory
+skill — Mafia remembers claims, votes and roles; Buckshot remembers shells,
+damage and items; Coup remembers claims, challenges and blocks — and models
+with no notes yet get a start prompt for that game. Notes are capped at 4,000
+characters, stored in an owner-only local file, excluded from backups, and can
+be reviewed or forgotten per model in **Settings → Model memory**. Arena runs
+deliberately skip long-term memory so benchmark matches stay independent.
 
 Startup has a 20-second loading deadline and a retry screen with access to the
 data folder. Key checks and model catalogue requests have a 10-second network
