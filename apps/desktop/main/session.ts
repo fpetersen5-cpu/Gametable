@@ -164,6 +164,11 @@ export interface SessionDeps {
   debriefModel: string | null;
   /** Minimum on-screen time per turn. Tests disable it; the app leaves it on. */
   pacing?: boolean;
+  /** Persistent per-model memory, keyed by provider and model identity. */
+  memory?: {
+    read: (key: string) => string;
+    save: (key: string, notes: string) => void;
+  };
   saveDebrief?: (
     matchId: string,
     debrief: { text: string; model: string; costUsd: number },
@@ -503,11 +508,19 @@ export class MatchSession {
     };
   }
 
+  private memoryKey(seat: Seat, index: number): string {
+    const configured = this.deps.request.seats[index];
+    if (configured?.provider === 'local') {
+      return `local:${configured.baseUrl ?? 'default'}:${seat.modelId ?? ''}`;
+    }
+    return `openrouter:${seat.modelId ?? ''}`;
+  }
+
   private buildControllers(): void {
-    for (const seat of this.deps.seats) {
+    this.deps.seats.forEach((seat, index) => {
       if (seat.kind === 'human') {
         this.controllers.set(seat.id, new HumanController(this));
-        continue;
+        return;
       }
       const client = this.deps.clientForSeat?.(seat) ?? this.deps.client;
       if (!client) {
@@ -519,10 +532,13 @@ export class MatchSession {
         ...(seat.persona ? { persona: seat.persona } : {}),
         ...(seat.budgetUsd === undefined ? {} : { budgetUsd: seat.budgetUsd }),
       };
+      const key = this.memoryKey(seat, index);
       const controller = new LlmController({
         client: this.budget.client(client),
         gameName: this.deps.def.name,
         config,
+        initialMemory: this.deps.memory?.read(key) ?? '',
+        onMemory: (notes) => this.deps.memory?.save(key, notes),
         onPreview: (text) => this.deps.sendPreview(seat.id, text),
         isPreviewPublic: (view, type) => this.deps.def.previewIsPublic?.(view, type) ?? false,
       });
@@ -530,7 +546,7 @@ export class MatchSession {
       if (saved) controller.restore(saved);
       this.llmControllers.set(seat.id, controller);
       this.controllers.set(seat.id, controller);
-    }
+    });
     const restored = [...this.llmControllers.values()].reduce(
       (total, controller) => total + (controller.usage().costUsd ?? 0), 0,
     );

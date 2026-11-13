@@ -29,6 +29,7 @@ import {
 } from './validation.js';
 import { redact } from '@gametable/agent';
 import { ModelCatalogCache } from './catalog.js';
+import { ModelMemoryStore } from './model-memory.js';
 import { MatchSession } from './session.js';
 import { ArenaRunner } from './arena.js';
 import { DEMO_MODELS, DemoClient } from './demo.js';
@@ -53,6 +54,7 @@ import {
   type GameInfo,
   type KeyResult,
   type LeaderboardRow,
+  type ModelMemorySummary,
   type MatchSummary,
   type ModelCatalogResult,
   type ReplayBundle,
@@ -82,6 +84,7 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     },
   );
   const catalog = new ModelCatalogCache(join(userDataDir, 'models.json'));
+  const modelMemory = new ModelMemoryStore(join(userDataDir, 'model-memory.json'));
   const configFile = join(userDataDir, 'config.json');
   const results = new ResultsStore(join(userDataDir, 'results.jsonl'));
   const matchesDir = join(userDataDir, 'matches');
@@ -376,12 +379,17 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
     if (generation !== launchGeneration) return { ok: false, error: 'Match launch cancelled.' };
     const providers = createMatchProviders(request, seats, key, catalogue?.models ?? []);
+    await modelMemory.ready;
 
     const session: MatchSession = new MatchSession({
       def,
       seats,
       request,
       ...providers,
+      memory: {
+        read: (key) => modelMemory.get(key),
+        save: (key, notes) => modelMemory.set(key, notes),
+      },
       store: results,
       saveBundle: async (bundle) => {
         await secureWrite(join(matchesDir, `${bundle.summary.matchId}.json`), JSON.stringify(bundle));
@@ -593,11 +601,16 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     const catalogue = await catalog.read(30 * 24 * 60 * 60 * 1000);
     if (generation !== launchGeneration) return { ok: false, error: 'Match launch cancelled.' };
     const providers = createMatchProviders(saved.request, saved.seats, key, catalogue?.models ?? []);
+    await modelMemory.ready;
     const session: MatchSession = new MatchSession({
       def,
       seats: saved.seats,
       request: saved.request,
       ...providers,
+      memory: {
+        read: (key) => modelMemory.get(key),
+        save: (key, notes) => modelMemory.set(key, notes),
+      },
       store: results,
       matchId: saved.matchId,
       resume: {
@@ -932,6 +945,21 @@ export function registerIpc(userDataDir: string, getWindow: () => BrowserWindow 
     } catch (error) {
       return { error: describe(error) };
     }
+  });
+
+  handle('memory:list', async (): Promise<ModelMemorySummary[]> => {
+    await modelMemory.ready;
+    return modelMemory
+      .export()
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((entry) => ({ key: entry.key, memory: entry.memory, updatedAt: entry.updatedAt }));
+  });
+
+  handle('memory:clear', async (_event, key: unknown) => {
+    if (key !== undefined && typeof key !== 'string') throw new BadRequest('memory key must be a string');
+    await modelMemory.ready;
+    modelMemory.clear(typeof key === 'string' ? key : undefined);
+    await modelMemory.flush();
   });
 
   handle('app:open-data', async () => {

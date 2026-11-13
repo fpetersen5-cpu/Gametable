@@ -284,6 +284,14 @@ fails the build if a literal `gameId` comparison appears outside
     human never appears on the board. Filter by game to recalculate ratings,
     counts and costs from only that game's matches.
 
+Each model keeps private notes between matches, keyed by provider and model
+identity. The notes are loaded into that model's prompt on its next turn and
+saved after every turn, so a model can carry observations, grudges and plans
+across tables and app restarts. They are capped at 4,000 characters, stored in
+an owner-only local file, excluded from backups, and can be reviewed or
+forgotten per model in **Settings → Model memory**. Arena runs deliberately skip
+long-term memory so benchmark matches stay independent.
+
 Startup has a 20-second loading deadline and a retry screen with access to the
 data folder. Key checks and model catalogue requests have a 10-second network
 deadline, including retries. Invalid saved settings are reported instead of

@@ -572,6 +572,27 @@ describe('streaming previews', () => {
 });
 
 describe('seat memory and shared budgets', () => {
+  it('loads persistent memory and reports updates', async () => {
+    const client = new FakeClient([
+      '{"action":{"type":"probe","target":"s2"},"notes":"fresh notes"}',
+    ]);
+    const onMemory = vi.fn();
+    const controller = new LlmController({
+      client,
+      gameName: 'Probe',
+      config: { model: 'x/y' },
+      initialMemory: 'PERSISTED-MEMORY',
+      onMemory,
+    });
+    await controller.act(request());
+    const prompt = client.calls[0]?.messages
+      .map((message) => (typeof message.content === 'string' ? message.content : ''))
+      .join('\n') ?? '';
+    expect(prompt).toContain('PERSISTED-MEMORY');
+    expect(onMemory).toHaveBeenCalledWith('fresh notes');
+    expect(controller.privateNotes).toBe('fresh notes');
+  });
+
   it('round-trips notes, counters and capabilities through a snapshot', async () => {
     const client: CompletionClient = {
       async complete(req) {

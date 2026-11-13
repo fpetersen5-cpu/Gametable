@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { AppConfig, AppStatus } from '../../shared/api';
+import type { AppConfig, AppStatus, ModelMemorySummary } from '../../shared/api';
 
 interface Props {
   status: AppStatus;
@@ -30,6 +30,32 @@ export function SettingsScreen({
   const [endpointDraft, setEndpointDraft] = useState(config.localEndpoint);
   const [endpointError, setEndpointError] = useState<string | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [memories, setMemories] = useState<ModelMemorySummary[] | null>(null);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+
+  const loadMemories = async () => {
+    setMemoryError(null);
+    try {
+      setMemories(await window.gametable.listMemories());
+    } catch (failure) {
+      setMemoryError(failure instanceof Error ? failure.message : 'Could not read model memory');
+      setMemories([]);
+    }
+  };
+
+  useEffect(() => {
+    void loadMemories();
+  }, []);
+
+  const forgetMemory = async (key?: string) => {
+    setMemoryError(null);
+    try {
+      await window.gametable.clearMemory(key);
+      await loadMemories();
+    } catch (failure) {
+      setMemoryError(failure instanceof Error ? failure.message : 'Could not clear model memory');
+    }
+  };
 
   useEffect(() => {
     setEndpointDraft(config.localEndpoint);
@@ -261,6 +287,47 @@ export function SettingsScreen({
           />
           Show the 3D Mafia council chamber
         </label>
+      </section>
+
+      <section className="settings-card">
+        <h2>Model memory</h2>
+        <p className="muted">
+          Each model keeps private notes between matches, keyed by provider and model. Notes can
+          contain hidden roles and private chat, so they stay in a local owner-only file and are
+          not included in backups. Arena runs never read or write this memory.
+        </p>
+        {memoryError && <p className="error">{memoryError}</p>}
+        {memories === null ? (
+          <p className="muted">Loading…</p>
+        ) : memories.length === 0 ? (
+          <p className="muted">No model has written memory yet.</p>
+        ) : (
+          <>
+            <ul className="memory-list">
+              {memories.map((entry) => (
+                <li key={entry.key} className="memory-row">
+                  <div>
+                    <strong>{entry.key.replace(/^openrouter:/, '').replace(/^local:/, 'local · ')}</strong>
+                    <small className="muted">
+                      {entry.updatedAt
+                        ? new Date(entry.updatedAt).toLocaleString()
+                        : 'unknown time'}
+                    </small>
+                    <p className="memory-preview">{entry.memory}</p>
+                  </div>
+                  <button className="ghost" onClick={() => void forgetMemory(entry.key)}>
+                    Forget
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="head-actions">
+              <button className="ghost danger" onClick={() => void forgetMemory()}>
+                Forget all model memory
+              </button>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="settings-card">

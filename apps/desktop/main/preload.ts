@@ -60,6 +60,8 @@ const api: DesktopApi = {
   onArena: (handler) => subscribe<ArenaProgress>('arena:progress', handler),
 
   openDataFolder: () => ipcRenderer.invoke('app:open-data'),
+  listMemories: () => ipcRenderer.invoke('memory:list'),
+  clearMemory: (key) => ipcRenderer.invoke('memory:clear', key),
 };
 
 contextBridge.exposeInMainWorld('gametable', api);

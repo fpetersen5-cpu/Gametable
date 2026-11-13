@@ -65,6 +65,10 @@ export interface DesktopApi {
   speak(text: string, seatId: string, voice?: number): Promise<{ audio?: string; error?: string }>;
   transcribe(wavBase64: string): Promise<{ text?: string; error?: string }>;
   openDataFolder(): Promise<void>;
+  /** Long-term per-model memory, newest first. */
+  listMemories(): Promise<ModelMemorySummary[]>;
+  /** Forget one model's memory, or every model's when omitted. */
+  clearMemory(key?: string): Promise<void>;
 }
 
 export interface AppStatus {
@@ -375,6 +379,13 @@ export interface ExportResult {
   ok: boolean;
   path?: string;
   error?: string;
+}
+
+/** A model's remembered notes, shown in Settings. */
+export interface ModelMemorySummary {
+  key: string;
+  memory: string;
+  updatedAt: number;
 }
 
 export interface BackupBundle {

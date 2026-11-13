@@ -245,6 +245,13 @@ Buffered calls remain the fallback for providers that reject streaming.
 - Each seat keeps notes, counters (calls, tokens, cost, latency, invalid
   actions, fallbacks, errors) and capability flags. `snapshot()` / `restore()`
   persist this across resume, takeover and release.
+- Each model also has dedicated long-term memory keyed by provider and model
+  identity (`openrouter:<model>`, `local:<endpoint>:<model>`). The controller
+  loads it at match start and saves its updated private notes after each turn.
+  The notes are bounded to 4,000 characters and stored in the private
+  `model-memory.json` file. Current-match notes remain per seat; if the same
+  model is used in multiple seats, those seats share that model's long-term
+  memory but not their live notes.
 - A seat may have its own `budgetUsd`; a match or arena may impose a shared
   `SharedBudget`. The shared cap is checked before every call and trips the
   match immediately instead of overspending.
@@ -301,7 +308,8 @@ validate and apply it, emit snapshots/events, enforce timeouts and budgets. It
 supports pause, speed changes, abort, one-turn rewind (rebuild from seed + log),
 and seat takeover/release. A live snapshot is written after every event and
 includes the per-seat controller state, so a closed app can resume with each
-seat's notes and spend intact.
+seat's notes and spend intact. Long-term model memory is stored separately in
+`model-memory.json` and survives across matches and app restarts.
 
 Replay bundles store seed, seats, options, events and per-action views plus a
 god view for the debrief. `formatVersion: 2` bundles validate a rebuilt match

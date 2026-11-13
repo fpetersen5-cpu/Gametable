@@ -116,6 +116,12 @@ Post-game replay and spectator modes deliberately expose full information.
 The post-game model debrief also sends an omniscient match record to the
 selected OpenRouter model; it is not a seat-playing prompt.
 
+Each model also has long-term memory in `model-memory.json`, written through
+`secureWrite` (`0600`). Notes are keyed by provider and model, can contain
+hidden roles and private chat, are capped at 4,000 characters per model, and
+are excluded from backups. The Settings screen lists them and can forget one
+model or all of them. Arena runs do not read or write this memory.
+
 ### Transcript exports
 
 - **Public is the default**, including for a spectator match. It includes only
@@ -164,9 +170,10 @@ Not protected against:
 - **Local endpoint URL validation is not a network firewall.** The main process
   accepts only http(s) URLs without credentials, queries or fragments, but a
   user-supplied endpoint can reach LAN hosts. Use endpoints you trust.
-- **Backup contents.** Backups exclude the API key, live sessions and browser
-  state, but contain settings, results and full replays (including hidden roles
-  and private chat). They are written owner-only; review before sharing.
+- **Backup contents.** Backups exclude the API key, live sessions, model memory
+  and browser state, but contain settings, results and full replays (including
+  hidden roles and private chat). They are written owner-only; review before
+  sharing.
 - **Replay/transcript contents.** They are game records and may contain
   private chat and hidden roles. They are not encrypted at rest, only
   permission-restricted.

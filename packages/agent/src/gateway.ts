@@ -96,6 +96,13 @@ export interface LlmControllerDeps {
   /** Shared across every seat so the key is not hammered. */
   semaphore?: Semaphore;
   /**
+   * Long-term memory loaded for this model before the match. The controller
+   * keeps it in its private notes and reports updates through `onMemory`.
+   */
+  initialMemory?: string;
+  /** Persist the model's private notes after a turn or a restore. */
+  onMemory?: (notes: string) => void;
+  /**
    * Live preview of a public speech as it is generated. Only called for
    * actions that are public in every legal variant, so a private whisper can
    * never flash on the table. An empty string clears the preview.
@@ -107,6 +114,9 @@ export interface LlmControllerDeps {
    */
   isPreviewPublic?: (view: GameView, actionType: string) => boolean;
 }
+
+/** Long-term notes are bounded so prompts and the memory file stay small. */
+export const MODEL_MEMORY_LIMIT = 4_000;
 
 export interface CompletionClient {
   complete(req: CompletionRequest): Promise<CompletionResult>;
@@ -138,7 +148,9 @@ export class LlmController implements Controller {
   private lastOkCall = -1;
   private lastErrorCall = -1;
 
-  constructor(private readonly deps: LlmControllerDeps) {}
+  constructor(private readonly deps: LlmControllerDeps) {
+    this.notes = deps.initialMemory?.trim().slice(-MODEL_MEMORY_LIMIT) ?? '';
+  }
 
   async act(req: ActionRequest): Promise<GameAction> {
     req.signal?.throwIfAborted();
@@ -235,7 +247,8 @@ export class LlmController implements Controller {
     }
 
     if (typeof reply?.notes === 'string' && reply.notes.trim()) {
-      this.notes = reply.notes.trim().slice(-1_200);
+      this.notes = reply.notes.trim().slice(-MODEL_MEMORY_LIMIT);
+      this.deps.onMemory?.(this.notes);
     }
     return action;
   }
@@ -308,7 +321,7 @@ export class LlmController implements Controller {
     const saved = state as Partial<LlmSeatState>;
     const number = (value: unknown): number =>
       typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-    this.notes = typeof saved.notes === 'string' ? saved.notes.slice(-1_200) : '';
+    this.notes = typeof saved.notes === 'string' ? saved.notes.slice(-MODEL_MEMORY_LIMIT) : '';
     this.counters = {
       calls: number(saved.calls),
       tokensIn: number(saved.tokensIn),
@@ -329,6 +342,7 @@ export class LlmController implements Controller {
       typeof saved.lastErrorKind === 'string'
         ? (saved.lastErrorKind as ProviderErrorKind)
         : null;
+    this.deps.onMemory?.(this.notes);
   }
 
   /** The most recent transport/API failure, for the table banner. */
